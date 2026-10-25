@@ -4,16 +4,31 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+    inputs:
+      build:
+        description: Full release or software checks using an existing MkIII FPGA artifact
+        type: choice
+        options: [all, software]
+        default: all
+      fpga_run_id:
+        description: Run containing fpga-mk3 (required for software checks)
+        type: string
+      compare_toolchains:
+        description: Compare Ubuntu 22.04 GCC 10 with Ubuntu 24.04 GCC 13
+        type: boolean
+        default: false
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
-  group: firmware-${{ github.ref }}
+  group: firmware-${{ github.ref }}-${{ inputs.build || 'all' }}
   cancel-in-progress: true
 
 jobs:
   fpga:
+    if: inputs.build != 'software'
     name: Build ${{ matrix.board }} FPGA images
     runs-on: ubuntu-22.04
     timeout-minutes: 360
@@ -36,11 +51,15 @@ jobs:
         env:
           BOARD: ${{ matrix.board }}
         run: |
-          args=(--rm --user 0:0 --volume "$GITHUB_WORKSPACE:/work" --workdir /work)
+          container_name="sd2snes-$BOARD"
+          args=(--rm --name "$container_name" --user 0:0 --volume "$GITHUB_WORKSPACE:/work" --workdir /work)
           if [[ "$BOARD" == mk2 ]]; then
             # Host ID of the bundled ISE VM license (documented by upstream ise14).
             args+=(--mac-address 08:00:27:68:c9:35)
           fi
+          bash .github/scripts/report-activity.sh "$container_name" &
+          activity_pid=$!
+          trap 'kill "$activity_pid" 2>/dev/null || true; wait "$activity_pid" 2>/dev/null || true' EXIT
           docker run "${args[@]}" --entrypoint /bin/bash "sd2snes-ci:$BOARD" \
             .github/scripts/build.sh "$BOARD"
 
@@ -74,9 +93,103 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+  menus:
+    name: Build SNES menus and onboarding
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: ./.github/actions/prepare-build-image
+        with:
+          target: software
+
+      - name: Compile and validate menus
+        run: |
+          docker run --rm --user 0:0 --volume "$GITHUB_WORKSPACE:/work" --workdir /work \
+            sd2snes-ci:software /bin/bash .github/scripts/build.sh menus
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: menus
+          path: |
+            snes/menu.bin
+            snes/m3nu.bin
+            snes/igmenu.bin
+            snes/onboarding.bin
+            snes/lang_*.bin
+            snes/lang_*.fnt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload menu failure reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: menu-failure-reports
+          path: |
+            snes/*.log
+            snes/*.map
+            snes/onboarding/*.log
+          if-no-files-found: ignore
+          retention-days: 14
+
+  stm32:
+    if: inputs.build == 'software'
+    name: Check STM32 without LTO (${{ matrix.runner }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: ${{ fromJSON(inputs.compare_toolchains && '["ubuntu-22.04","ubuntu-24.04"]' || '["ubuntu-22.04"]') }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Verify FPGA artifact sources
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FPGA_RUN_ID: ${{ inputs.fpga_run_id }}
+        run: |
+          [[ "$FPGA_RUN_ID" =~ ^[0-9]+$ ]]
+          fpga_sha=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$FPGA_RUN_ID" --jq .head_sha)
+          git diff --exit-code "$fpga_sha" HEAD -- verilog/
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: fpga-mk3
+          run-id: ${{ inputs.fpga_run_id }}
+          github-token: ${{ github.token }}
+          path: .
+
+      - name: Install ARM build tools on hosted runner
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential \
+            gcc-arm-none-eabi libnewlib-arm-none-eabi gawk
+
+      - name: Compile STM32 without LTO
+        run: bash .github/scripts/check-stm32.sh
+
+      - name: Upload STM32 binaries and size reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stm32-${{ matrix.runner }}
+          path: |
+            stm32-build.log
+            stm32-toolchain.log
+            src/obj-mk3-stm32/*.map
+            src/obj-mk3-stm32/*.elf
+            src/obj-mk3-stm32/firmware.stm
+          if-no-files-found: error
+          retention-days: 14
+
   firmware:
     name: Build and package Mk.II and Mk.III firmware
-    needs: fpga
+    needs: [fpga, menus]
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:

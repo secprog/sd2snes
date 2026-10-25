@@ -14,8 +14,11 @@ case "${1:-}" in
   firmware)
     make all FPGA_PREBUILT=1
     ;;
+  menus)
+    make -C snes all
+    ;;
   *)
-    echo "Usage: $0 {mk2|mk3|firmware}" >&2
+    echo "Usage: $0 {mk2|mk3|firmware|menus}" >&2
     exit 2
     ;;
 esac

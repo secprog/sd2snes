@@ -4,6 +4,17 @@
 requests, and manual runs from the Actions tab. It uses public container images;
 no installer URLs or repository secrets need to be configured.
 
+The independent **Build SNES menus and onboarding** job builds and checks both
+board menus, the in-game menu, onboarding, and language assets. Its `menus`
+artifact is available without waiting for either FPGA build.
+
+For a quick STM32/menu check, manually select `build: software` and supply the
+run ID containing a successful `fpga-mk3` artifact. This mode checks that the
+artifact's Verilog sources match the current checkout and compiles STM32 on a
+GitHub-hosted runner without LTO. It does not start FPGA builds. Enable
+`compare_toolchains` to compare Ubuntu 22.04 GCC 10 and Ubuntu 24.04 GCC 13;
+compiler versions, full command lines, maps and binaries are uploaded.
+
 The MkII and MkIII jobs run in parallel and build the FPGA cores listed in
 `MK2CORES` and `MK3CORES` in the root Makefile, including each board's mini
 configuration image. The firmware job downloads both jobs' artifacts from the
@@ -29,6 +40,8 @@ missing; ordinary local `make all` still builds the FPGA images.
 Vendor and Ubuntu base images are pinned by digest in `.github/docker/`.
 FPGA timing checks remain enabled. Failed builds upload their compiler and
 timing reports as separate Actions artifacts.
+During FPGA compilation, the log also reports container CPU/memory usage and
+process CPU time every minute, including while ISE is quiet during routing.
 
 ## Cache behavior
 

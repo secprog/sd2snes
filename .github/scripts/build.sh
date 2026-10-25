@@ -16,6 +16,7 @@ case "${1:-}" in
     ;;
   menus)
     make -C snes all
+    python3 .github/scripts/check-menu-languages.py
     ;;
   *)
     echo "Usage: $0 {mk2|mk3|firmware|menus}" >&2

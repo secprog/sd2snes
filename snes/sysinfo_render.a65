@@ -32,18 +32,116 @@
 #define CM_TITLE_MAX    46
 
 ; ======================================================================
-;  si_render_reset -- called once when the screen opens.
+;  Main-menu auxiliary strings share the file manager's existing C3 pool.
+;  The guide viewer may have borrowed it: check FMB1 before ANY table/string
+;  access, restoring the bank through the existing bounded FM_OP_BANK path.
+;  This code stays in C1, so checking a missing C3 bank never executes its data.
+;  A valid magic needs no MCU command (important while a music module plays).
+; ======================================================================
+menu_aux_bank_ok:
+  .as : .xl
+  jsr fmr_magic              ; C1 resident check; also accepts older firmware with C3 loaded
+  bcs menu_aux_bank_present
+  ; Bank restoration drains cover requests, whose PPU accesses require DB=0
+  ; and whose direct-page state requires DP=0. The generic resolver uses DB=$7E.
+  phb
+  phd
+  rep #$20 : .al
+  pea $0000
+  pld
+  sep #$20 : .as
+  lda #$00
+  pha
+  plb
+  jsl @fm_bank_ok
+  pld                       ; PLD/PLB preserve the restoration result in carry
+  plb
+  rtl
+menu_aux_bank_present:
+  .as : .xl
+  sec
+  rtl
+
+; Called only by resolve_str, after it saved A/X/Y/P/D/B and set DP=0,
+; DB=$7E, .as/.xl. Changes print_src/print_bank, with an empty safe result
+; if the menu bank cannot be restored. Runtime string bytes are unchanged.
+menu_aux_resolve:
+  .as : .xl
+  jsl @menu_aux_bank_ok
+  bcc menu_aux_missing
+  rep #$20 : .al
+  lda print_src
+  cmp #!fmtab_lo
+  bcc menu_aux_out
+  cmp #!fmtab_hi
+  bcs menu_aux_out           ; a plain C3 string, already resolved
+  sep #$20 : .as
+  lda cur_lang
+  cmp @fmtab_nlang
+  bcc menu_aux_col
+  lda #$00
+menu_aux_col:
+  .as : .xl
+  rep #$20 : .al
+  and #$00ff
+  tax                       ; keep the language for fmpool_bank
+  asl
+  clc
+  adc print_src
+  sta resolve_ptr
+  sep #$20 : .as
+  lda #^fmtab_lo
+  sta resolve_ptr+2
+  rep #$20 : .al
+  lda [resolve_ptr]
+  sta print_src
+  sep #$20 : .as
+  lda @fmpool_bank, x        ; C3 for Latin, existing WRAM pool for Japanese/Chinese
+  sta print_bank
+menu_aux_out:
+  rtl
+menu_aux_missing:
+  .as : .xl
+  rep #$20 : .al
+  lda #!menu_aux_empty
+  sta print_src
+  sep #$20 : .as
+  lda #^menu_aux_empty
+  sta print_bank
+  rtl
+menu_aux_empty:
+  .byt 0
+
+; ======================================================================
+;  si_render_reset -- called before CMD_SYSINFO starts its dedicated MCU loop.
+;  Restore C3 now, while the normal menu loop can still service CMD_FM.
+;  Carry set = ready; clear = caller must close the window without starting it.
 ; ======================================================================
 si_render_reset:
   php
   phb
+  phd
   sep #$20 : .as
+  rep #$10 : .xl
+  pea $0000
+  pld
   lda #$7e
   pha
   plb
   stz si_nomagic
+  jsl @menu_aux_bank_ok
+  bcs si_reset_ready
+  pld
   plb
   plp
+  clc
+  rtl
+si_reset_ready:
+  .as : .xl
+  pld
+  plb
+  plp
+  sec
   .as : .xl
   rtl
 

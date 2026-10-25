@@ -40,6 +40,12 @@ resolve_str:
   pha
   plb
   lda print_bank
+  cmp #^fmtab_lo
+  bne resolve_str_resident
+  jsl @menu_aux_resolve      ; main-menu C3 strings, with the borrowed bank restored first
+  bra resolve_str_out
+resolve_str_resident:
+  .as : .xl
   cmp #^strtab_lo
   bne resolve_str_out
   rep #$20 : .al

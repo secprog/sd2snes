@@ -460,8 +460,8 @@ def main():
 
     # text_fm_* / mtext_fm_* / mdesc_fm_*: the file manager's strings live with its code in bank $C3
     # (const_lang_fm.a65, its own tables + pool), so they cost nothing in the full $C0-$C2.
-    # The bank is not resident everywhere (the Ficha's guide viewer borrows it), so these
-    # labels must never be reached from code outside $C3: resolve_str would not know them.
+    # The guide viewer borrows this bank. Main-menu readers reach it through
+    # resolve_str's guarded auxiliary resolver; in-game readers never use it.
     # text_gopt_* / mtext_gopt_* / mdesc_gopt_*: the game options screen (gameopt.a65), the
     # other tenant of $C3, same rules.
     # mtext_gims_* / mdesc_gims_*: the "Stop music on game info" row (gimenu.a65), built in
@@ -469,7 +469,11 @@ def main():
     FM_PREFIXES = ("text_fm_", "mtext_fm_", "mdesc_fm_",
                    "text_gopt_", "mtext_gopt_", "mdesc_gopt_",
                    "mtext_gims_", "mdesc_gims_",
-                   "text_lock_", "mtext_lock_", "mdesc_lock_")
+                   "text_lock_", "mtext_lock_", "mdesc_lock_",
+                   # Main-menu screens only. Their formatters all language-resolve
+                   # through ui.a65; none is read by the in-game overlay.
+                   "text_si_", "text_mtl_", "text_mt_",
+                   "text_pcm_", "text_nsf_", "text_media_")
     out, order, fm_neutral = [], [], []
     for line in lines:
         m = LINE_RE.match(line)
@@ -847,6 +851,9 @@ def main():
     fmout += fm_neutral
     fm_path = out_path.with_name(out_path.stem + "_fm" + out_path.suffix)
     fm_path.write_text("\n".join(fmout) + "\n")
+    print(f"auxiliary C3 pool: {len(fm_pool_order)} strings / "
+          f"{sum(len(args_to_bytes(args)) for args in fm_pool_order)} B, "
+          f"{len(fm_tabledefs)} dispatch tables / {len(fm_tabledefs) * nlang * 2} B")
 
     out_path.write_text("\n".join(out) + "\n")
     cjk_path = out_path.with_name(out_path.stem + "_cjk" + out_path.suffix)

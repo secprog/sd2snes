@@ -95,6 +95,12 @@ select_pcm:
                               ; line-composition vars are all below $2000, i.e. inside the
                               ; $00:0000-$1FFF mirror of bank $7E, so they read the same
                               ; memory either way.
+  ; Restore the main-menu strings BEFORE opening either music module. Any
+  ; command other than MOD_OPEN/MOD_CTL would unload an active NSF module.
+  ; Nothing in the player borrows C3 after this successful check, so later
+  ; string resolution sees FMB1 and sends no bank-restoration command.
+  jsl @menu_aux_bank_ok
+  bcc select_pcm_done
   ; The browser's .pcm arm also takes .nsf (one compare in $C0): the NSF player
   ; (nsfplay.a65) is this screen with a 2A03 behind it.
   rep #$20 : .al

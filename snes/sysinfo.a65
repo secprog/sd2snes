@@ -43,6 +43,10 @@ copy_snes_system_text:
   ; clears the grace counter it uses to decide when a firmware is too old to publish
   ; that block at all.
   jsl @si_render_reset
+  bcs sysinfo_printloop
+  plp                       ; no auxiliary bank: do not enter the MCU's SYSINFO loop
+  jsr pop_window
+  rtl
 
 sysinfo_printloop:
   sep #$20 : .as

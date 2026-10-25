@@ -7,7 +7,7 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Free hosted runner disk space
+    - name: Free hosted runner disk space for FPGA tools
       if: inputs.target != 'software'
       shell: bash
       run: |
@@ -20,7 +20,15 @@ runs:
       uses: actions/cache/restore@v4
       with:
         path: ${{ runner.temp }}/sd2snes-images/${{ inputs.target }}.tar
-        key: ${{ runner.os }}-${{ runner.arch }}-sd2snes-image-v1-${{ inputs.target }}-${{ hashFiles(format('.github/docker/{0}.Dockerfile', inputs.target), '.github/docker/trim-ise.sh') }}
+        key: ${{ runner.os }}-${{ runner.arch }}-sd2snes-image-v1-${{ inputs.target }}-${{ hashFiles(format('.github/docker/{0}.Dockerfile', inputs.target), format('.github/docker/{0}', inputs.target == 'software' && 'build-gcc13.sh' || 'trim-ise.sh')) }}
+
+    - name: Free hosted runner disk space for software preparation
+      if: inputs.target == 'software' && steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache \
+          /usr/local/.ghcup /usr/share/swift /usr/local/share/powershell
+        df -h /
 
     - name: Build toolchain image on cache miss
       if: steps.cache.outputs.cache-hit != 'true'

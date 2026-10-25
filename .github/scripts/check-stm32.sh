@@ -3,10 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 
 {
-  arm-none-eabi-gcc --version
-  dpkg-query -W gcc-arm-none-eabi libnewlib-arm-none-eabi binutils-arm-none-eabi
-  arm-none-eabi-gcc -mthumb -mcpu=cortex-m4 -mfloat-abi=hard -print-multi-directory
-  arm-none-eabi-gcc -mthumb -mcpu=cortex-m4 -mfloat-abi=hard -print-file-name=libc.a
+  bash .github/scripts/toolchain-info.sh mk3-stm32
   sha256sum verilog/sd2snes_mini/fpga_mini.bi3
 } | tee stm32-toolchain.log
 

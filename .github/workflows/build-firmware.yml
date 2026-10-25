@@ -13,10 +13,9 @@ on:
       fpga_run_id:
         description: Run containing fpga-mk3 (required for software checks)
         type: string
-      compare_toolchains:
-        description: Compare Ubuntu 22.04 GCC 10 with Ubuntu 24.04 GCC 13
-        type: boolean
-        default: false
+      mk2_run_id:
+        description: Optional run containing fpga-mk2-mini, to reuse the MkII bootstrap
+        type: string
 
 permissions:
   contents: read
@@ -27,6 +26,16 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  prepare-software:
+    name: Prepare cached GCC 13.5 toolchain
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/prepare-build-image
+        with:
+          target: software
+
   fpga:
     if: inputs.build != 'software' && inputs.build != 'menus'
     name: Build ${{ matrix.board }} FPGA images
@@ -95,6 +104,7 @@ jobs:
 
   menus:
     name: Build SNES menus and onboarding
+    needs: prepare-software
     runs-on: ubuntu-22.04
     timeout-minutes: 30
     steps:
@@ -135,7 +145,7 @@ jobs:
           retention-days: 14
 
   mini-mk2:
-    if: inputs.build == 'software' && !inputs.compare_toolchains
+    if: inputs.build == 'software' && inputs.mk2_run_id == ''
     name: Build MkII firmware bootstrap
     runs-on: ubuntu-22.04
     timeout-minutes: 45
@@ -157,15 +167,21 @@ jobs:
           retention-days: 14
 
   mcu:
-    needs: mini-mk2
-    if: ${{ always() && inputs.build == 'software' && (inputs.compare_toolchains || needs.mini-mk2.result == 'success') }}
+    needs: [mini-mk2, prepare-software]
+    if: ${{ !cancelled() && inputs.build == 'software' && needs.prepare-software.result == 'success' && (inputs.mk2_run_id != '' || needs.mini-mk2.result == 'success') }}
     name: Check ${{ matrix.board }} firmware (${{ matrix.runner }})
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(inputs.compare_toolchains && '[{"board":"mk3-stm32","runner":"ubuntu-22.04"},{"board":"mk3-stm32","runner":"ubuntu-24.04"}]' || '[{"board":"mk2","runner":"ubuntu-24.04"},{"board":"mk3","runner":"ubuntu-24.04"},{"board":"mk3-stm32","runner":"ubuntu-24.04"}]') }}
+        include:
+          - board: mk2
+            runner: ubuntu-24.04
+          - board: mk3
+            runner: ubuntu-24.04
+          - board: mk3-stm32
+            runner: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
         with:
@@ -175,10 +191,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           FPGA_RUN_ID: ${{ inputs.fpga_run_id }}
+          MK2_RUN_ID: ${{ inputs.mk2_run_id }}
         run: |
-          [[ "$FPGA_RUN_ID" =~ ^[0-9]+$ ]]
-          fpga_sha=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$FPGA_RUN_ID" --jq .head_sha)
-          git diff --exit-code "$fpga_sha" HEAD -- verilog/ utils/
+          for run_id in "$FPGA_RUN_ID" ${MK2_RUN_ID:+"$MK2_RUN_ID"}; do
+            [[ "$run_id" =~ ^[0-9]+$ ]]
+            fpga_sha=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" --jq .head_sha)
+            git diff --exit-code "$fpga_sha" HEAD -- verilog/ utils/
+          done
 
       - uses: actions/download-artifact@v4
         with:
@@ -188,29 +207,17 @@ jobs:
           path: .
 
       - uses: actions/download-artifact@v4
-        if: ${{ !inputs.compare_toolchains }}
         with:
           name: fpga-mk2-mini
+          run-id: ${{ inputs.mk2_run_id || github.run_id }}
+          github-token: ${{ github.token }}
           path: verilog/sd2snes_mini/
 
-      - name: Install ARM build tools on hosted runner
-        if: inputs.compare_toolchains
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends build-essential \
-            gcc-arm-none-eabi libnewlib-arm-none-eabi gawk
-
-      - name: Compile STM32 with comparison toolchain
-        if: inputs.compare_toolchains
-        run: bash .github/scripts/check-stm32.sh
-
       - uses: ./.github/actions/prepare-build-image
-        if: ${{ !inputs.compare_toolchains }}
         with:
           target: software
 
       - name: Compile firmware using cached release toolchain
-        if: ${{ !inputs.compare_toolchains }}
         env:
           BOARD: ${{ matrix.board }}
         run: |

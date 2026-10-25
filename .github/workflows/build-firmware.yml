@@ -93,14 +93,6 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
-  menu-pools:
-    if: inputs.build == 'menus'
-    name: Analyze resident language string pools
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v6
-      - run: python3 snes/utils/analyze_i18n_pools.py --c1-bytes 75170 --c2-bytes 59575
-
   menus:
     name: Build SNES menus and onboarding
     runs-on: ubuntu-22.04
@@ -186,7 +178,7 @@ jobs:
         run: |
           [[ "$FPGA_RUN_ID" =~ ^[0-9]+$ ]]
           fpga_sha=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$FPGA_RUN_ID" --jq .head_sha)
-          git diff --exit-code "$fpga_sha" HEAD -- verilog/
+          git diff --exit-code "$fpga_sha" HEAD -- verilog/ utils/
 
       - uses: actions/download-artifact@v4
         with:

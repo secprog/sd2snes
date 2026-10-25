@@ -298,6 +298,29 @@ def args_to_bytes(args):
     return bytes(out)
 
 
+def pack_string_suffixes(order):
+    """Keep complete NUL-terminated strings, sharing any matching tail bytes.
+
+    Return emitted root strings and args -> (root args, byte offset). A table
+    can address the suffix directly, so the font renderer and ROM banks do not
+    change. Longest-first order also folds byte-identical spellings with
+    different `.byt` argument formatting into one emitted root.
+    """
+    data = {args: args_to_bytes(args) for args in order}
+    if any(not value.endswith(b"\0") for value in data.values()):
+        raise ValueError("resident string pool contains an unterminated string")
+    roots, aliases = [], {}
+    for args in sorted(data, key=lambda value: (-len(data[value]), value)):
+        value = data[args]
+        root = next((candidate for candidate in roots
+                     if data[candidate].endswith(value)), None)
+        if root is None:
+            roots.append(args)
+            root = args
+        aliases[args] = (root, len(data[root]) - len(value))
+    return roots, aliases
+
+
 def load_dict(path):
     spec = importlib.util.spec_from_file_location(Path(path).stem, path)
     mod = importlib.util.module_from_spec(spec)
@@ -611,7 +634,7 @@ def main():
     # Pool A = the const_lang_str object ($C2), pool B = appended to const_lang_tab
     # ($C1, which has tens of KB free). The biggest columns go to pool B. A string
     # shared by columns in different pools is stored once in EACH pool.
-    POOL_B_LANGS = ("ru", "nl", "ptpt")
+    POOL_B_LANGS = ("fr", "ru")
     pools = ({}, {})          # `.byt` args -> shared label, one dict per pool
     pool_orders = ([], [])    # preserve emission order
     pool_prefix = ("strpool_", "strpoolb_")
@@ -680,6 +703,28 @@ def main():
         tabledefs.append((label, [intern_ext(col_code[c], args) if col_code[c] in ext
                                   else "!" + intern(args, col_pool[c])
                                   for c, args in enumerate(strings)]))
+
+    # Both Portuguese variants share pool A, so their identical entries intern
+    # together. Complete NUL-terminated suffixes may also share storage. Only
+    # these two resident pools participate: CJK files and the file-manager pool
+    # keep their existing layout. Tables point directly at root+byte_offset,
+    # avoiding assembler aliases and any change to the runtime string reader.
+    resident_aliases = {}
+    for which in range(2):
+        original = pool_orders[which]
+        roots, aliases = pack_string_suffixes(original)
+        before = sum(len(args_to_bytes(args)) for args in original)
+        after = sum(len(args_to_bytes(args)) for args in roots)
+        for args, (root, offset) in aliases.items():
+            pointer = "!" + pools[which][root]
+            if offset:
+                pointer += "+" + str(offset)
+            resident_aliases["!" + pools[which][args]] = pointer
+        original[:] = roots
+        print(f"resident pool {'AB'[which]}: {len(aliases)} strings / {before} B -> "
+              f"{len(roots)} roots / {after} B ({before - after} B shared suffixes)")
+    for _, labels in tabledefs:
+        labels[:] = [resident_aliases.get(pointer, pointer) for pointer in labels]
 
     if plaindefs:
         out += ["", "; ==== language-neutral labels (same in all langs): no table ===="]

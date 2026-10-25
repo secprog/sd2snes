@@ -73,7 +73,8 @@ def main():
 
     def pool_bytes(group):
         unique = set().union(*(strings[code] for code in group))
-        return sum(sizes[text] for text in unique)
+        roots, _ = bc.pack_string_suffixes(unique)
+        return sum(sizes[text] for text in roots)
 
     baseline_a = pool_bytes(set(latin) - current_b)
     baseline_b = pool_bytes(current_b)
@@ -105,7 +106,8 @@ def main():
     candidates.sort(key=rank)
     report = {"baseline": {"pool_b": sorted(current_b),
                            "a_bytes": baseline_a, "b_bytes": baseline_b,
-                           "resident_dispatch_tables": table_count},
+                           "resident_dispatch_tables": table_count,
+                           "packing": "complete NUL-terminated suffix sharing"},
               "candidates": candidates[:args.limit]}
     print(json.dumps(report, ensure_ascii=False, indent=2))
 

@@ -8,6 +8,10 @@ The independent **Build SNES menus and onboarding** job builds and checks both
 board menus, the in-game menu, onboarding, and language assets. Its `menus`
 artifact is available without waiting for either FPGA build.
 Select `build: menus` for a manual menu-only run.
+European Portuguese is a separate language choice, `Português (Portugal)`;
+existing language selections retain their saved IDs. Identical strings and
+complete string suffixes share ROM storage so the additional locale fits the
+existing menu banks.
 
 For software checks, manually select `build: software` and supply the
 run ID containing a successful `fpga-mk3` artifact. This mode checks that the
@@ -40,8 +44,7 @@ missing; ordinary local `make all` still builds the FPGA images.
 - Software: Ubuntu 24.04 with pinned ARM GCC 13.2, binutils 2.42, newlib 4.4, and the
   [SNES assembler/linker 1.8.1.1](https://bisqwit.iki.fi/source/snescom.html).
   The assembler archive is checked against its SHA-256 before compilation.
-  GCC 10/newlib 3.3 exceeded STM32 application flash by 508 bytes in the hosted
-  comparison; GCC 13/newlib 4.4 fits without STM32 LTO. The linker assertion also
+  GCC 13/newlib 4.4 fits without STM32 LTO. The linker assertion also
   checks the initialized data stored after the code and constants in flash.
 
 Vendor and Ubuntu base images are pinned by digest in `.github/docker/`.
@@ -66,5 +69,6 @@ that installation, and the image's size is printed in the job log.
 
 GitHub can evict caches that are unused or exceed the repository's storage
 limit; see [GitHub's cache limits](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#usage-limits-and-eviction-policy).
-An evicted cache is rebuilt automatically. FPGA images are compiled from the
-checked-out sources on every run.
+An evicted cache is rebuilt automatically. Full release runs compile FPGA images
+from the checked-out sources. Software checks reuse the specified MkIII artifact
+after verifying its sources against the current checkout.

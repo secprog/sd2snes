@@ -1,0 +1,118 @@
+name: Build firmware
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: firmware-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fpga:
+    name: Build ${{ matrix.board }} FPGA images
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - board: mk2
+            extension: bit
+          - board: mk3
+            extension: bi3
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: ./.github/actions/prepare-build-image
+        with:
+          target: ${{ matrix.board }}
+
+      - name: Compile FPGA images
+        env:
+          BOARD: ${{ matrix.board }}
+        run: |
+          args=(--rm --user 0:0 --volume "$GITHUB_WORKSPACE:/work" --workdir /work)
+          if [[ "$BOARD" == mk2 ]]; then
+            # Host ID of the bundled ISE VM license (documented by upstream ise14).
+            args+=(--mac-address 08:00:27:68:c9:35)
+          fi
+          docker run "${args[@]}" --entrypoint /bin/bash "sd2snes-ci:$BOARD" \
+            .github/scripts/build.sh "$BOARD"
+
+      - name: Collect FPGA images
+        env:
+          FPGA_EXT: ${{ matrix.extension }}
+        run: |
+          shopt -s nullglob
+          files=(verilog/*/fpga_*."$FPGA_EXT")
+          ((${#files[@]} > 0))
+          mkdir -p "$RUNNER_TEMP/fpga-artifact"
+          cp --parents "${files[@]}" "$RUNNER_TEMP/fpga-artifact/"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fpga-${{ matrix.board }}
+          path: ${{ runner.temp }}/fpga-artifact/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload FPGA failure reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fpga-${{ matrix.board }}-failure-reports
+          path: |
+            verilog/*/*.syr
+            verilog/*/*.par
+            verilog/*/output_files/*.rpt
+            verilog/*/output_files/*.summary
+          if-no-files-found: ignore
+          retention-days: 14
+
+  firmware:
+    name: Build and package Mk.II and Mk.III firmware
+    needs: fpga
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: ./.github/actions/prepare-build-image
+        with:
+          target: software
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: fpga-mk[23]
+          merge-multiple: true
+          path: .
+
+      - name: Compile firmware and menus and assemble package
+        run: |
+          docker run --rm --user 0:0 --volume "$GITHUB_WORKSPACE:/work" --workdir /work \
+            sd2snes-ci:software /bin/bash .github/scripts/build.sh firmware
+
+      - name: Upload firmware package
+        uses: actions/upload-artifact@v4
+        with:
+          name: sd2snes-firmware-${{ github.sha }}
+          path: release/v*/sd2snes_firmware_v*.zip
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload firmware failure reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-failure-reports
+          path: |
+            src/obj-*/*.map
+            snes/*.log
+            snes/onboarding/*.log
+          if-no-files-found: ignore
+          retention-days: 14

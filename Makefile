@@ -41,15 +41,33 @@ include src/version.mk
 TARGETPARENT := release/v$(CONFIG_VERSION)
 TARGET := $(TARGETPARENT)/sd2snes
 
-all: version fpga build release
+all: version fpga build
+	$(MAKE) release
 
-fpga: $(MK2FPGA) $(MK3FPGA)
+fpga: fpga-mk2 fpga-mk3
+
+fpga-mk2: $(MK2FPGA) $(MK2MINI)
+fpga-mk3: $(MK3FPGA) $(MK3MINI)
+
+# Build these before compressing FPGA images or building firmware.
+host-tools:
+	$(MAKE) -C $(UTILS)
+	$(MAKE) -C $(MCUSRC)/utils
+
+$(MK2FPGA) $(MK3FPGA) $(MK2MINI) $(MK3MINI): | host-tools
+
+# CI passes FPGA artifacts from the same workflow run to the software job.
+ifeq ($(FPGA_PREBUILT),1)
+$(MK2FPGA) $(MK3FPGA) $(MK2MINI) $(MK3MINI):
+	@test -s "$@" || { echo "Missing prebuilt FPGA image: $@" >&2; exit 1; }
+else
 
 $(MK2FPGA) $(MK2MINI):
 	$(MAKE) -C $(dir $@) mk2
 
 $(MK3FPGA) $(MK3MINI):
 	$(MAKE) -C $(dir $@) mk3
+endif
 
 $(MK2CLEAN):
 	$(MAKE) -C $(dir $@) mk2_clean
@@ -57,7 +75,7 @@ $(MK2CLEAN):
 $(MK3CLEAN):
 	$(MAKE) -C $(dir $@) mk3_clean
 
-build: $(MK2MINI) $(MK3MINI)
+build: $(MK2MINI) $(MK3MINI) | host-tools
 	$(MAKE) -C snes
 	$(MAKE) -C src CONFIG=config-mk2
 	$(MAKE) -C src CONFIG=config-mk3
@@ -83,6 +101,14 @@ endif
 	cp $(STMMCUPATH)/$(STMMCU) $(TARGET)
 	cp $(MENUPATH)/$(MK2MENU) $(TARGET)
 	cp $(MENUPATH)/$(MK3MENU) $(TARGET)
+	cp $(MENUPATH)/igmenu.bin $(MENUPATH)/onboarding.bin $(TARGET)
+	cp $(addprefix $(MK3MCUPATH)/,nsfplay.bin memtest.bin pcmplay.bin rtc7110.bin fileops.bin rmdir.bin xc_soc.bin) $(TARGET)
+	mkdir -p $(TARGET)/lang
+	cp $(MENUPATH)/fonts/*.txt $(TARGET)/lang
+	set -e; for lang in ja zh; do \
+		cp $(MENUPATH)/lang_$$lang.bin $(TARGET)/lang/$$lang.bin; \
+		cp $(MENUPATH)/lang_$$lang.fnt $(TARGET)/lang/$$lang.fnt; \
+	done
 ifneq ($(SAVESTATEPATH),)
 	cp $(SAVESTATEPATH)/$(SAVESTATEFILES) $(TARGET)
 endif
@@ -120,4 +146,4 @@ mk3-fw: $(MK3MINI)
 	$(MAKE) -C src CONFIG=config-mk3
 	$(MAKE) -C src CONFIG=config-mk3-stm32
 
-.PHONY: version release bsxpage mk3 mk3-fw $(MK2FPGA) $(MK3FPGA) $(MK2MINI) $(MK3MINI) $(MK2CLEAN) $(MK3CLEAN)
+.PHONY: all fpga fpga-mk2 fpga-mk3 host-tools build clean version release bsxpage mk3 mk3-fw $(MK2FPGA) $(MK3FPGA) $(MK2MINI) $(MK3MINI) $(MK2CLEAN) $(MK3CLEAN)

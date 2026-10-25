@@ -26,8 +26,11 @@ runs:
       if: inputs.target == 'software' && steps.cache.outputs.cache-hit != 'true'
       shell: bash
       run: |
-        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache \
-          /usr/local/.ghcup /usr/share/swift /usr/local/share/powershell
+        available_kib=$(df --output=avail -k / | tail -1)
+        if ((available_kib < 20 * 1024 * 1024)); then
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache \
+            /usr/local/.ghcup /usr/share/swift /usr/local/share/powershell
+        fi
         df -h /
 
     - name: Build toolchain image on cache miss

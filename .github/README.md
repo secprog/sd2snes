@@ -52,6 +52,8 @@ missing; ordinary local `make all` still builds the FPGA images.
   from pinned upstream releases with verified archive checksums. Newlib is
   compiled with GCC 13.5.0 before GCC's runtime libraries, so headers and
   libraries come from the same toolchain for all three MCU configurations.
+  Regular newlib uses its upstream `--enable-target-optspace`/`-Os` configuration
+  to fit the firmware flash budgets, retaining the regular library features.
   Runtime library preparation is limited to the Cortex-M0+, Cortex-M3 and
   Cortex-M4 variants used here, plus GCC's default library. Each long toolchain
   build step has a timeout and reports process CPU activity every minute.

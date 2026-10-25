@@ -132,8 +132,9 @@ test "$(arm-none-eabi-gcc -mthumb -mcpu=cortex-m4 -mfloat-abi=hard -print-multi-
 
 echo "=== Building newlib $newlib_version with GCC $gcc_version ==="
 cd /tmp/newlib-build
-CFLAGS_FOR_TARGET='-g0 -O2 -ffunction-sections -fdata-sections' \
+CFLAGS_FOR_TARGET='-g0 -Os -ffunction-sections -fdata-sections' \
   /tmp/newlib-source/configure --target=arm-none-eabi --prefix="$prefix" \
+  --enable-target-optspace \
   --enable-newlib-io-long-long --enable-newlib-register-fini \
   --disable-nls --disable-newlib-supplied-syscalls
 run_stage 15m make -j2

@@ -60,20 +60,20 @@ derive_clock_uncertainty
 # Set Clock Uncertainty
 #**************************************************************
 
-set_clock_uncertainty -rise_from [get_clocks {snes_dcm|altpll_component|auto_generated|pll1|clk[0]}] -rise_to [get_clocks {snes_dcm|altpll_component|auto_generated|pll1|clk[0]}]  0.020  
-set_clock_uncertainty -rise_from [get_clocks {snes_dcm|altpll_component|auto_generated|pll1|clk[0]}] -fall_to [get_clocks {snes_dcm|altpll_component|auto_generated|pll1|clk[0]}]  0.020  
-set_clock_uncertainty -fall_from [get_clocks {snes_dcm|altpll_component|auto_generated|pll1|clk[0]}] -rise_to [get_clocks {snes_dcm|altpll_component|auto_generated|pll1|clk[0]}]  0.020  
-set_clock_uncertainty -fall_from [get_clocks {snes_dcm|altpll_component|auto_generated|pll1|clk[0]}] -fall_to [get_clocks {snes_dcm|altpll_component|auto_generated|pll1|clk[0]}]  0.020  
-set_clock_uncertainty -rise_from [get_clocks {SPI_SCK}] -rise_to [get_clocks {snes_dcm|altpll_component|auto_generated|pll1|clk[0]}] -setup 0.080  
-set_clock_uncertainty -rise_from [get_clocks {SPI_SCK}] -rise_to [get_clocks {snes_dcm|altpll_component|auto_generated|pll1|clk[0]}] -hold 0.110  
-set_clock_uncertainty -rise_from [get_clocks {SPI_SCK}] -fall_to [get_clocks {snes_dcm|altpll_component|auto_generated|pll1|clk[0]}] -setup 0.080  
-set_clock_uncertainty -rise_from [get_clocks {SPI_SCK}] -fall_to [get_clocks {snes_dcm|altpll_component|auto_generated|pll1|clk[0]}] -hold 0.110  
+set_clock_uncertainty -rise_from [get_clocks {snes_pll|altpll_component|auto_generated|pll1|clk[0]}] -rise_to [get_clocks {snes_pll|altpll_component|auto_generated|pll1|clk[0]}]  0.020
+set_clock_uncertainty -rise_from [get_clocks {snes_pll|altpll_component|auto_generated|pll1|clk[0]}] -fall_to [get_clocks {snes_pll|altpll_component|auto_generated|pll1|clk[0]}]  0.020
+set_clock_uncertainty -fall_from [get_clocks {snes_pll|altpll_component|auto_generated|pll1|clk[0]}] -rise_to [get_clocks {snes_pll|altpll_component|auto_generated|pll1|clk[0]}]  0.020
+set_clock_uncertainty -fall_from [get_clocks {snes_pll|altpll_component|auto_generated|pll1|clk[0]}] -fall_to [get_clocks {snes_pll|altpll_component|auto_generated|pll1|clk[0]}]  0.020
+set_clock_uncertainty -rise_from [get_clocks {SPI_SCK}] -rise_to [get_clocks {snes_pll|altpll_component|auto_generated|pll1|clk[0]}] -setup 0.080
+set_clock_uncertainty -rise_from [get_clocks {SPI_SCK}] -rise_to [get_clocks {snes_pll|altpll_component|auto_generated|pll1|clk[0]}] -hold 0.110
+set_clock_uncertainty -rise_from [get_clocks {SPI_SCK}] -fall_to [get_clocks {snes_pll|altpll_component|auto_generated|pll1|clk[0]}] -setup 0.080
+set_clock_uncertainty -rise_from [get_clocks {SPI_SCK}] -fall_to [get_clocks {snes_pll|altpll_component|auto_generated|pll1|clk[0]}] -hold 0.110
 set_clock_uncertainty -rise_from [get_clocks {SPI_SCK}] -rise_to [get_clocks {SPI_SCK}]  0.020  
 set_clock_uncertainty -rise_from [get_clocks {SPI_SCK}] -fall_to [get_clocks {SPI_SCK}]  0.020  
-set_clock_uncertainty -fall_from [get_clocks {SPI_SCK}] -rise_to [get_clocks {snes_dcm|altpll_component|auto_generated|pll1|clk[0]}] -setup 0.080  
-set_clock_uncertainty -fall_from [get_clocks {SPI_SCK}] -rise_to [get_clocks {snes_dcm|altpll_component|auto_generated|pll1|clk[0]}] -hold 0.110  
-set_clock_uncertainty -fall_from [get_clocks {SPI_SCK}] -fall_to [get_clocks {snes_dcm|altpll_component|auto_generated|pll1|clk[0]}] -setup 0.080  
-set_clock_uncertainty -fall_from [get_clocks {SPI_SCK}] -fall_to [get_clocks {snes_dcm|altpll_component|auto_generated|pll1|clk[0]}] -hold 0.110  
+set_clock_uncertainty -fall_from [get_clocks {SPI_SCK}] -rise_to [get_clocks {snes_pll|altpll_component|auto_generated|pll1|clk[0]}] -setup 0.080
+set_clock_uncertainty -fall_from [get_clocks {SPI_SCK}] -rise_to [get_clocks {snes_pll|altpll_component|auto_generated|pll1|clk[0]}] -hold 0.110
+set_clock_uncertainty -fall_from [get_clocks {SPI_SCK}] -fall_to [get_clocks {snes_pll|altpll_component|auto_generated|pll1|clk[0]}] -setup 0.080
+set_clock_uncertainty -fall_from [get_clocks {SPI_SCK}] -fall_to [get_clocks {snes_pll|altpll_component|auto_generated|pll1|clk[0]}] -hold 0.110
 set_clock_uncertainty -fall_from [get_clocks {SPI_SCK}] -rise_to [get_clocks {SPI_SCK}]  0.020  
 set_clock_uncertainty -fall_from [get_clocks {SPI_SCK}] -fall_to [get_clocks {SPI_SCK}]  0.020  
 
@@ -100,7 +100,9 @@ set_clock_uncertainty -fall_from [get_clocks {SPI_SCK}] -fall_to [get_clocks {SP
 # Set False Path
 #**************************************************************
 
-set_false_path  -from  [get_clocks {SPI_SCK}]  -to  [get_clocks {snes_dcm|altpll_component|auto_generated|pll1|clk[0]}]
+# spi.v synchronizes the received-byte indication before sampling the data.
+# The MkIII PLL instance is snes_pll; snes_dcm belongs to the MkII build.
+set_false_path  -from  [get_clocks {SPI_SCK}]  -to  [get_clocks {snes_pll|altpll_component|auto_generated|pll1|clk[0]}]
 
 
 #**************************************************************

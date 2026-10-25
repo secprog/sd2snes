@@ -583,17 +583,21 @@ wire [7:0] regshadow_dout;
 // bytes of a stride-2 word onto the same cell, so under 1DEEP a word read serves
 // (v,v) -- exactly the pre-fix behaviour the overlay's double-writing restore loop
 // was written against.  The overlay keeps reading $F90500 + 2*reg in both builds.
+// Decode the read address in the same 96 MHz domain as the shadow RAM.  Reusing
+// the 80 MHz SNES_ADDR taps here creates an unnecessary 80 -> 96 MHz path into
+// its read-address register.  The existing rs96_ADDR taps settle earlier in the
+// same SNES bus cycle.  Bit 9 distinguishes the two served windows ($F905/$F907);
+// shadow_*_hit still gates the output, so addresses outside them are irrelevant.
 `ifdef REGSHADOW_1DEEP
-wire [8:0] regshadow_raddr = shadow_cpu_hit ? {4'b0010, SNES_ADDR[4:0]}
-                                            : {3'b000,  SNES_ADDR[6:1]};
+wire [8:0] regshadow_raddr = rs96_ADDR[9] ? {4'b0010, rs96_ADDR[4:0]}
+                                        : {3'b000, rs96_ADDR[6:1]};
 `else
-wire [8:0] regshadow_raddr = shadow_cpu_hit ? {4'b0100, SNES_ADDR[4:0]}
-                                            : {2'b00,  SNES_ADDR[6:0]};
+wire [8:0] regshadow_raddr = rs96_ADDR[9] ? {4'b0100, rs96_ADDR[4:0]}
+                                        : {2'b00, rs96_ADDR[6:0]};
 `endif
 regshadow snes_regshadow(
-  // Entirely in the 96 MHz snoop domain (see above): the write snoop needs the
-  // base-calibrated sampling; the read side's address is quasi-static during the
-  // SNES read cycle, so serving from this domain into the CLK2 mux is safe.
+  // Both RAM ports use the 96 MHz snoop domain.  The read result is served by
+  // the combinational SNES output mux after the bus address has settled.
   .clk(CLK96),
   .pawr_end(rs96_pawr_end_r),
   .wr_end(rs96_wr_end),

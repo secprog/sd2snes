@@ -1362,7 +1362,7 @@ def main():
                     if enc:
                         toks.append(enc)
                     toks.append("1" if k < len(text) - 1 else "0")
-                args = ", ".join(toks)
+                args = ", ".join(toks) or "0"  # an empty paragraph is an empty string
             else:
                 if any(ch in text for ch in "[]|"):
                     # colour markup is a paragraph thing: here it would print as is

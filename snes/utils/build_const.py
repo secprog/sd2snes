@@ -178,7 +178,9 @@ def encode_string(text, zero_width=()):
                 off += 1
             i = end + 1
             continue
-        if ch in ENCODE or ch == '"':      # '"' would close the literal: emit its code
+        # snescom's preprocessing rewrites semicolons to // even in quoted
+        # literals. Emit their byte value, just like a literal quote.
+        if ch in ENCODE or ch in ('"', ';'):
             if cur:
                 pieces.append(f'"{cur}"'); cur = ""
             pieces.append(str(ENCODE.get(ch, ord(ch))))

@@ -56,7 +56,7 @@ def main():
         for locale, code in LOCALES.items():
             args = english[label]
             if code != "en" and translations[code].get(label):
-                args = codec.encode_string(translations[code][label])
+                args = codec.encode_string(codec.mouse_keys(label, translations[code][label]))
             expected = codec.args_to_bytes(args)
             if main_lo <= address < main_hi:
                 bank = read(symbols["strpool_bank"] + locale, 1)[0]

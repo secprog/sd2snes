@@ -638,7 +638,7 @@ def main():
     # Pool A = the const_lang_str object ($C2), pool B = appended to const_lang_tab
     # ($C1, which has tens of KB free). The biggest columns go to pool B. A string
     # shared by columns in different pools is stored once in EACH pool.
-    POOL_B_LANGS = ("fr", "ru")
+    POOL_B_LANGS = ("fr", "nl")
     pools = ({}, {})          # `.byt` args -> shared label, one dict per pool
     pool_orders = ([], [])    # preserve emission order
     pool_prefix = ("strpool_", "strpoolb_")

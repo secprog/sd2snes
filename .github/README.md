@@ -8,12 +8,14 @@ The independent **Build SNES menus and onboarding** job builds and checks both
 board menus, the in-game menu, onboarding, and language assets. Its `menus`
 artifact is available without waiting for either FPGA build.
 
-For a quick STM32/menu check, manually select `build: software` and supply the
+For software checks, manually select `build: software` and supply the
 run ID containing a successful `fpga-mk3` artifact. This mode checks that the
-artifact's Verilog sources match the current checkout and compiles STM32 on a
-GitHub-hosted runner without LTO. It does not start FPGA builds. Enable
+artifact's Verilog sources match the current checkout. It builds only the small
+MkII bootstrap FPGA image, then checks all three MCU configurations and menus
+on GitHub-hosted runners. MkIII LPC and STM32 stay non-LTO. Enable
 `compare_toolchains` to compare Ubuntu 22.04 GCC 10 and Ubuntu 24.04 GCC 13;
-compiler versions, full command lines, maps and binaries are uploaded.
+compiler versions, full command lines, maps and binaries are uploaded. Comparison
+mode checks STM32 only and skips the MkII bootstrap build.
 The normal software check uses the same cached container as release packaging.
 
 The MkII and MkIII jobs run in parallel and build the FPGA cores listed in

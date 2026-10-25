@@ -15,7 +15,7 @@
   "onb_ui_done_l2": "Podes alterá-las depois nas Definições.",
   "onb_ui_done_go": "PRIME A PARA IR AO MENU",
   "name_1": "Idioma",
-  "text_1": "O menu e esta visita têm 11 idiomas. o menu durante o jogo tem 9. Move a barra para experimentar: o idioma muda logo. Podes alterá-lo depois em {cfg}.",
+  "text_1": "O menu e esta visita têm 11 idiomas. O menu durante o jogo tem 9. Move a barra para experimentar: o idioma muda logo. Podes alterá-lo depois em {cfg}.",
   "name_2": "Temas",
   "text_2": "Muda o logótipo, as cores e o gradiente do menu: escolhe um |.thm| na lista. Cria um no |Theme Creator| ou usa a galeria do site. Em {browser}, {restoretheme} repõe o tema de origem |sd2snes+| e {restoreclassic} o antigo tema verde-azulado (|classic.thm|).",
   "name_3": "Contorno do texto",

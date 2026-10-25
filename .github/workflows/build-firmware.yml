@@ -23,7 +23,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: firmware-${{ github.ref }}-${{ inputs.build || 'all' }}
+  group: firmware-${{ github.ref }}-${{ inputs.build || 'all' }}-${{ inputs.build == 'software' && github.sha || 'latest' }}
   cancel-in-progress: true
 
 jobs:
@@ -134,15 +134,38 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
-  stm32:
-    if: inputs.build == 'software'
-    name: Check STM32 without LTO (${{ matrix.runner }})
+  mini-mk2:
+    if: inputs.build == 'software' && !inputs.compare_toolchains
+    name: Build MkII firmware bootstrap
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/prepare-build-image
+        with:
+          target: mk2
+      - name: Compile only the mini FPGA image
+        run: |
+          docker run --rm --user 0:0 --mac-address 08:00:27:68:c9:35 \
+            --volume "$GITHUB_WORKSPACE:/work" --workdir /work --entrypoint /bin/bash \
+            sd2snes-ci:mk2 -c 'make host-tools && make -C verilog/sd2snes_mini mk2 HOST=LINUX XILINX_ENV='
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fpga-mk2-mini
+          path: verilog/sd2snes_mini/fpga_mini.bit
+          if-no-files-found: error
+          retention-days: 14
+
+  mcu:
+    needs: mini-mk2
+    if: ${{ always() && inputs.build == 'software' && (inputs.compare_toolchains || needs.mini-mk2.result == 'success') }}
+    name: Check ${{ matrix.board }} firmware (${{ matrix.runner }})
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        runner: ${{ fromJSON(inputs.compare_toolchains && '["ubuntu-22.04","ubuntu-24.04"]' || '["ubuntu-24.04"]') }}
+        include: ${{ fromJSON(inputs.compare_toolchains && '[{"board":"mk3-stm32","runner":"ubuntu-22.04"},{"board":"mk3-stm32","runner":"ubuntu-24.04"}]' || '[{"board":"mk2","runner":"ubuntu-24.04"},{"board":"mk3","runner":"ubuntu-24.04"},{"board":"mk3-stm32","runner":"ubuntu-24.04"}]') }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -164,6 +187,12 @@ jobs:
           github-token: ${{ github.token }}
           path: .
 
+      - uses: actions/download-artifact@v4
+        if: ${{ !inputs.compare_toolchains }}
+        with:
+          name: fpga-mk2-mini
+          path: verilog/sd2snes_mini/
+
       - name: Install ARM build tools on hosted runner
         if: inputs.compare_toolchains
         run: |
@@ -180,23 +209,28 @@ jobs:
         with:
           target: software
 
-      - name: Compile STM32 without LTO using cached release toolchain
+      - name: Compile firmware using cached release toolchain
         if: ${{ !inputs.compare_toolchains }}
+        env:
+          BOARD: ${{ matrix.board }}
         run: |
           docker run --rm --user 0:0 --volume "$GITHUB_WORKSPACE:/work" --workdir /work \
-            sd2snes-ci:software /bin/bash .github/scripts/check-stm32.sh
+            sd2snes-ci:software /bin/bash .github/scripts/check-mcu.sh "$BOARD"
 
-      - name: Upload STM32 binaries and size reports
+      - name: Upload MCU binaries and size reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: stm32-${{ matrix.runner }}
+          name: mcu-${{ matrix.board }}-${{ matrix.runner }}
           path: |
             stm32-build.log
             stm32-toolchain.log
-            src/obj-mk3-stm32/*.map
-            src/obj-mk3-stm32/*.elf
-            src/obj-mk3-stm32/firmware.stm
+            mk2-build.log
+            mk3-build.log
+            src/obj-${{ matrix.board }}/*.map
+            src/obj-${{ matrix.board }}/*.elf
+            src/obj-${{ matrix.board }}/firmware.*
+            src/obj-${{ matrix.board }}/*.bin
           if-no-files-found: error
           retention-days: 14
 

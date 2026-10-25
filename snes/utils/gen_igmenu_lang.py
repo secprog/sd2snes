@@ -111,7 +111,7 @@ STATES_LABEL_MAX = {"text_igm_st_slot": 8, "text_igm_st_hint_save": 12,
                     "text_igm_st_hint_load": 12, "text_igm_st_unavail": 50}
 
 # Words per table row. MUST be a power of two and MUST match the number of `asl`
-# in the nine row-index sites of snes/igmenu.a65 (search IGM_LANG_SHIFT there).
+# in every row-index site of igmenu.a65 and its trainer/editor/help/options includes.
 # See the stride note in main() for why this is fixed rather than derived.
 IGM_LANG_STRIDE = 16
 IGM_LANG_SHIFT = 4   # log2(IGM_LANG_STRIDE)
@@ -418,7 +418,7 @@ def main():
     # --- row stride ---------------------------------------------------------
     # The tables are indexed as `line*STRIDE + lang`, and igmenu.a65 computes that
     # offset in 65816. A stride that is a power of two makes the row index a plain
-    # shift (`asl : asl : asl`), so the nine index sites in igmenu.a65 never have to
+    # shift, so the reader sites never have to
     # change when a language is added -- previously each one open-coded `*5` as
     # `asl : asl : adc idx`, which the assembler happily accepted after a 6th
     # language landed and shipped a silently mis-indexed binary.
@@ -429,8 +429,8 @@ def main():
     if nlang > IGM_LANG_STRIDE:
         sys.exit(f"gen_igmenu_lang.py: {nlang} languages exceed IGM_LANG_STRIDE="
                  f"{IGM_LANG_STRIDE}.\nRaise IGM_LANG_STRIDE to the next power of two "
-                 f"AND update the {IGM_LANG_SHIFT} `asl` in each of the nine row-index "
-                 f"sites in snes/igmenu.a65 (grep IGM_LANG_SHIFT).")
+                 f"AND update every reader in igmenu.a65 and its includes, "
+                 f"including the compile-time stride guard.")
     padded_order = lang_order + ["en"] * (IGM_LANG_STRIDE - nlang)
 
     string_pool = {}   # identical translated strings share storage across tables

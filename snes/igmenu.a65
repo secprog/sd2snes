@@ -47,6 +47,9 @@ igmenu_header:
 #include "igmenu_lang.i65"         ; GENERATED: HELP tab i18n string tables + IGM_HELP_NLINES/
                                    ; IGM_LANG_COUNT (bank $C8 data, jumped over -- included
                                    ; BEFORE help_enter so its #defines are in scope)
+#if IGM_LANG_STRIDE != 16 || IGM_LANG_SHIFT != 4
+#error Update every in-game language row index before changing the table stride
+#endif
 
 ; --- shell scratch vars (PSRAM $F4, ABOVE the overlay's ovl_* block $F48100-$F48127 and
 ;     BELOW the snapshot scratch $F48130-$F48144; the $F48128-$F4812F gap). Zeroed by

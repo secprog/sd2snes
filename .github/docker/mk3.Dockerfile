@@ -4,7 +4,7 @@ FROM ghcr.io/nikleberg/quartus:25.1-cycloneiv@sha256:9e8453cc969caef8a484f2ddf35
 FROM ghcr.io/nikleberg/quartus:25.1@sha256:75f1830713e99d911c977252cf1925a120de0076cbd88a24c1c43a3c2990c9b5
 USER root
 COPY --from=devices /opt/quartus_lite/quartus/common/devinfo/cycloneive /opt/quartus_lite/quartus/common/devinfo/cycloneive
-RUN apt-get update && apt-get install -y --no-install-recommends gcc make gawk \
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential gawk \
     && rm -rf /var/lib/apt/lists/*
 ENTRYPOINT []
 WORKDIR /work

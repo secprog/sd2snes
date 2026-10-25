@@ -8,7 +8,7 @@ RUN bash /tmp/trim-ise.sh
 FROM ubuntu:20.04@sha256:8feb4d8ca5354def3d8fce243717141ce31e2c428701f6682bd2fafe15388214
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc make gawk util-linux openjdk-11-jre-headless \
+    build-essential gawk util-linux openjdk-11-jre-headless \
     libncurses5 libtinfo5 lib32stdc++6 lib32z1 \
     libsm6 libxi6 libxrender1 libxrandr2 libxtst6 libxext6 \
     libfreetype6 libfontconfig1 libglib2.0-0 libusb-1.0-0 \

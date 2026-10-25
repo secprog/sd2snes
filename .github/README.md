@@ -76,6 +76,8 @@ project, so a source or timing failure does not discard the toolchain setup.
 The small, checksum-verified SNES assembler source archive has a separate cache,
 saved before preparing GCC, so toolchain updates can reuse it even when its
 upstream download server is unavailable.
+The initial download also accepts an Internet Archive snapshot of the same
+upstream release, subject to the identical pinned SHA-256 check.
 
 Keys include the runner OS/architecture and a hash of the Dockerfile and ISE
 trimming or software toolchain preparation script. Source changes reuse the cached tools; changing toolchain

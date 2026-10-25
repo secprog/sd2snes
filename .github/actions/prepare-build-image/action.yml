@@ -48,10 +48,13 @@ runs:
         archive="$RUNNER_TEMP/sd2snes-sources/snescom-1.8.1.1.tar.xz"
         mkdir -p "$(dirname "$archive")"
         if [[ ! -f "$archive" ]]; then
-          for protocol in https http; do
-            # The fixed SHA-256 authenticates the archive on either transport.
+          for url in \
+            https://bisqwit.iki.fi/src/arch/snescom-1.8.1.1.tar.xz \
+            http://bisqwit.iki.fi/src/arch/snescom-1.8.1.1.tar.xz \
+            https://web.archive.org/web/20180814103935id_/https://bisqwit.iki.fi/src/arch/snescom-1.8.1.1.tar.xz; do
+            # The fixed SHA-256 also verifies the archived upstream copy.
             if curl -4 --http1.1 --fail --location --connect-timeout 20 --max-time 180 --retry 3 \
-              "$protocol://bisqwit.iki.fi/src/arch/snescom-1.8.1.1.tar.xz" -o "$archive"; then
+              "$url" -o "$archive"; then
               break
             fi
           done

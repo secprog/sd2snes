@@ -1191,18 +1191,19 @@ for _i, cols in enumerate(_wrapped):
 # number shows up as an overflow at the link, never as a silent error.
 TABLE_BANK = "$c4"
 CJK_SHEET_BANK = {"ja": "$ca", "zh": "$c7"}
-_PICS = 8 * (7168 + 256)                      # a bank of 8 demo pictures (gen_onb_demo.py PER_BANK)
+# Fixed non-demo occupancy. Demo bytes (including their index) come from the
+# lossless packer's exact bank layout, not a fixed pictures-per-bank estimate.
 STR_OTHER = {
     "$c1": 64,                                # onb_strtab_nlang and the CJK sheet pointers
-    "$c0": 11500,                             # the engine's code, palette, spc700 (~11.2 KB) + room to grow
-    "$cb": 7 * (7168 + 256),                  # the last 7 pictures
-    "$c5": _PICS, "$c6": _PICS,
-    "$c3": _PICS + 16 * 64,                   # + onb_demo_map (16 bytes a card)
-    "$c8": _PICS + 1800,                      # + onb_welcome.a65's code
-    "$c9": _PICS + 1900,                      # + onb_cjk.a65's code
-    "$ca": _PICS,                             # + the Japanese sheet (below)
-    "$c7": _PICS,                             # + the Chinese sheet (below)
-    "$c2": _PICS + 474 + 4096,                # + the picture index table and the tour's font copy
+    "$c0": 11756,                             # engine/palette/SPC, plus 256 B for chunk DMA lookup
+    "$cb": 0,
+    "$c5": 0, "$c6": 0,
+    "$c3": 16 * 64,                           # onb_demo_map (16 bytes a card)
+    "$c8": 1800,                              # onb_welcome.a65's code
+    "$c9": 1900,                              # onb_cjk.a65's code
+    "$ca": 0,                                 # Japanese glyph sheet charged below
+    "$c7": 0,                                 # Chinese glyph sheet charged below
+    "$c2": 4096,                              # tour's font copy; demo index is in layout metadata
 }
 STR_BANKS = ["$c1", "$c0", "$cb", "$c5", "$c6", "$c3", "$c8", "$c9", "$ca", "$c7", "$c2"]
 STR_MARGIN = 64
@@ -1281,6 +1282,17 @@ def main():
     out_dir = os.path.dirname(out_path)
     out_t = os.path.join(out_dir, "onb_const_lang_t.a65")
 
+    layout_path = _ONB_DIR / "onb_demo_layout.json"
+    if not layout_path.exists():
+        sys.exit("gen_onb_lang: missing packed demo layout; run utils/pack_onb_demo.py first")
+    layout = json.loads(layout_path.read_text(encoding="utf-8"))
+    expected_banks = {"$%02x" % bank for bank in range(0xc2, 0xcc)}
+    demo_bytes = layout.get("bank_bytes", {})
+    if (layout.get("format_version") != 1 or layout.get("chunk_size") != 1024
+            or layout.get("chunks_per_picture") != 7 or set(demo_bytes) != expected_banks
+            or any(type(n) is not int or not 0 <= n <= 59392 for n in demo_bytes.values())):
+        sys.exit("gen_onb_lang: invalid packed demo layout metadata")
+
     common_map, lang_maps, fonts, common = cjk_maps()
     langnames = {l: decode_args(_EN[LANG_NAME_LABELS[l]]) for l in CJK_LANGS}
 
@@ -1331,7 +1343,7 @@ def main():
 
     # the CJK languages' own names, for the language list (in $C0, see LANGNAME_BANK)
     use(None)
-    room = {b: 65536 - STR_OTHER[b] - STR_MARGIN for b in STR_BANKS}
+    room = {b: 65536 - STR_OTHER[b] - demo_bytes.get(b, 0) - STR_MARGIN for b in STR_BANKS}
     for l in CJK_LANGS:
         enc = encode_string(langnames[l])
         F[LANGNAME_BANK].append("onb_langname_%d  .byt %s" % (LANGS.index(l), enc))
@@ -1340,7 +1352,7 @@ def main():
         room[CJK_SHEET_BANK[l]] -= sheets[l]
     if TABLE_BANK in room:
         room[TABLE_BANK] -= table_size
-    if 65536 - _PICS - table_size < STR_MARGIN:
+    if 65536 - demo_bytes[TABLE_BANK] - table_size < STR_MARGIN:
         sys.exit("gen_onb_lang: the tables (%d B) do not fit in %s" % (table_size, TABLE_BANK))
 
     # Encode every complete runtime string before choosing its storage. Sharing

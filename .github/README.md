@@ -12,6 +12,9 @@ European Portuguese is a separate language choice, `Português (Portugal)`;
 existing language selections retain their saved IDs. Identical strings and
 complete string suffixes share ROM storage so the additional locale fits the
 existing menu banks.
+The build packs repeated 1 KB onboarding picture blocks once and verifies all
+linked pictures and palette/OAM records against the original bytes. This leaves
+room for the additional tour language without changing the pictures or ROM size.
 
 For software checks, manually select `build: software` and supply the
 run ID containing a successful `fpga-mk3` artifact. This mode checks that the

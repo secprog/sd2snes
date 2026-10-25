@@ -77,6 +77,7 @@
 #define ONB_DEMO_BYTES     7168    ; one picture: the top 14 rows of a name table (gen_onb_demo.py);
                                    ; rows 14..15 of both slots stay blank (onb_setup_gfx)
 #define ONB_DEMO_CHUNK     1024    ; per NMI: on top of the 3.5 KB of tilemaps
+                                   ; packed demo lists have seven long pointers, one per chunk
 ; the demo pictures: OBJ, name base $2000 (free: the BG1 font ends there), two tables
 #define ONB_OBSEL          $61     ; 16/32 sizes, name base $2000
 ; footer
@@ -974,7 +975,9 @@ onb_bh_out:
 
 ; onb_build_oam -- hide every sprite, then show the card's demo picture for the
 ;   focused answer: uploaded whole into slot 0 right here (forced blank). Later
-;   pictures stream through the NMI (onb_demo_step). .as/.xl in.
+;   pictures stream through the NMI (onb_demo_step). .as/.xl in, DB=0.
+;   Called only by onb_build_split with onb_screen_static=1: the NMI skips every
+;   VRAM/DMA path while these seven forced-blank transfers own channel 7.
 onb_build_oam:
   php
   sep #$20 : .as
@@ -1011,10 +1014,23 @@ onb_build_oam:
   ldx #ONB_DEMO_VRAM0 : stx $2116
   lda #$01 : sta $4370
   lda #$18 : sta $4371
-  ldx onb_demo_src : stx $4372   ; DB = 0: low WRAM mirror
-  lda @onb_demo_src+2 : sta $4374
-  ldx #ONB_DEMO_BYTES : stx $4375
+  rep #$20 : .al
+  lda #$0000
+  sta @onb_demo_off
+onb_bo_chunks:
+  .al : .xl
+  sep #$20 : .as
+  jsr onb_demo_chunk_source
+  ldx #ONB_DEMO_CHUNK : stx $4375
   lda #$80 : sta $420b
+  rep #$20 : .al
+  lda @onb_demo_off
+  clc
+  adc #ONB_DEMO_CHUNK
+  sta @onb_demo_off
+  cmp #ONB_DEMO_BYTES
+  bcc onb_bo_chunks
+  sep #$20 : .as
   lda #$00
   sta @onb_demo_vis
   jsr onb_demo_show       ; palette + OAM for slot 0
@@ -1050,7 +1066,9 @@ onb_demo_want_sel:
   rts
 
 ; onb_demo_point: onb_demo_src / onb_demo_pal <- onb_demo_tbl[onb_demo_want]
-;   (6 bytes per picture). .as/.xl in.
+;   (6 bytes per picture). The first long pointer addresses seven long chunk
+;   pointers, not contiguous tile bytes. The palette/OAM pointer is unchanged.
+;   Each list and each 1024-byte chunk stays within one bank. .as/.xl in.
 onb_demo_point:
   .as : .xl
   lda @onb_demo_want
@@ -1071,6 +1089,42 @@ onb_demo_point:
   sta @onb_demo_src+2
   lda @onb_demo_tbl+5, x
   sta @onb_demo_pal+2
+  rts
+
+; onb_demo_chunk_source: DMA7 source <- the pointer at
+;   onb_demo_src + 3*(onb_demo_off/1024). onb_demo_off is 0,1024,...,6144.
+;   Entry/exit .as/.xl. A/X/P clobbered, Y/DB/DP kept. No WRAM scratch is borrowed:
+;   the NMI can interrupt a main-thread renderer with its own direct page in use.
+;   The temporary DB selects the list's bank; explicit bank-0 DMA register stores
+;   keep it independent of both that bank and the caller's DB/DP.
+onb_demo_chunk_source:
+  .as : .xl
+  rep #$20 : .al
+  lda @onb_demo_off
+  xba
+  and #$00ff               ; bytes/256
+  lsr
+  lsr                      ; chunk index (bytes/1024)
+  pha
+  asl
+  clc
+  adc $1,s                 ; three bytes per long pointer
+  clc
+  adc @onb_demo_src
+  tax
+  pla                      ; discard the saved chunk index, still 16-bit
+  sep #$20 : .as
+  phb
+  lda @onb_demo_src+2
+  pha
+  plb
+  rep #$20 : .al
+  lda !$0,x
+  sta @$004372
+  sep #$20 : .as
+  lda !$2,x
+  sta @$004374
+  plb
   rts
 
 ; onb_demo_show: make slot onb_demo_vis the visible picture -- its 4 palettes (OBJ
@@ -1192,15 +1246,8 @@ onb_ds_load:
   adc #ONB_DEMO_SLOT_WORDS  ; slot 0 on screen -> load slot 1
   tax
 + stx $2116
-  rep #$20 : .al
-  lda @onb_demo_src
-  clc
-  adc @onb_demo_off
-  sta $4372
-  lda #ONB_DEMO_CHUNK
-  sta $4375
-  sep #$20 : .as
-  lda @onb_demo_src+2 : sta $4374
+  jsr onb_demo_chunk_source
+  ldx #ONB_DEMO_CHUNK : stx $4375
   lda #$01 : sta $4370
   lda #$18 : sta $4371
   lda #$80 : sta $420b

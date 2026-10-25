@@ -41,9 +41,9 @@ MENU_SIZE = 262144
 # include "onboarding/onb_memmap.i65".
 ONB_O65 = onboarding/onb_header.ips onboarding/onb_reset.o65 onboarding/onboarding_main.o65 onboarding/onb_ui.o65 \
           onboarding/onboarding_const.o65 onboarding/onb_const_lang.o65 onboarding/onb_data.o65 \
-          onboarding/onb_demo_a.o65 onboarding/onb_demo_b.o65 onboarding/onb_demo_c.o65 onboarding/onb_demo_d.o65 \
-          onboarding/onb_demo_e.o65 onboarding/onb_demo_f.o65 onboarding/onb_demo_g.o65 onboarding/onb_demo_h.o65 \
-          onboarding/onb_demo_i.o65 onboarding/onb_demo_j.o65 onboarding/onb_spc.o65 onboarding/onb_welcome.o65 \
+          onboarding/packed_demo_a.o65 onboarding/packed_demo_b.o65 onboarding/packed_demo_c.o65 onboarding/packed_demo_d.o65 \
+          onboarding/packed_demo_e.o65 onboarding/packed_demo_f.o65 onboarding/packed_demo_g.o65 onboarding/packed_demo_h.o65 \
+          onboarding/packed_demo_i.o65 onboarding/packed_demo_j.o65 onboarding/onb_spc.o65 onboarding/onb_welcome.o65 \
           onboarding/onb_font.o65 palette.o65 spc700.o65 onboarding/onb_const_lang_b.o65 onboarding/onb_const_lang_t.o65 \
           onboarding/onb_cjk.o65 onboarding/onb_cjk_sheets.o65 onboarding/onb_cjk_sheets_zh.o65 \
           onboarding/onb_demomap.o65 onboarding/onb_str_c2.o65 onboarding/onb_str_c3.o65 onboarding/onb_str_c5.o65 onboarding/onb_str_c6.o65 onboarding/onb_str_c7.o65 onboarding/onb_str_c8.o65 onboarding/onb_str_c9.o65 onboarding/onb_str_ca.o65 onboarding/onb_str_cb.o65
@@ -57,6 +57,8 @@ ONB_OUT = onboarding.bin
 # plays: the image must stop below them. NB: no inline comment on the next line --
 # make would fold it into the value and break the Python pad expr.
 ONB_SIZE = 786432
+ONB_DEMO_RAW = $(addprefix onboarding/onb_demo_,$(addsuffix .a65,a b c d e f g h i j))
+ONB_DEMO_PACKED = $(addprefix onboarding/packed_demo_,$(addsuffix .a65,a b c d e f g h i j))
 
 LOG = $(OBJS:=.log)
 MAP = $(IPS:.ips=.map) $(O65:.o65=.map)
@@ -84,7 +86,12 @@ all: $(OUT) $(IGMENU) $(ONB_OUT) $(MAP) lang_ja.fnt lang_zh.fnt
 onboarding/onb_font.a65: font.a65 utils/fontedit.py
 	python3 utils/fontedit.py tourfont $< $@
 
-onboarding/onb_const_lang.a65 onboarding/onb_const_lang_b.a65 onboarding/onb_const_lang_t.a65 onboarding/onb_str_c2.a65 onboarding/onb_str_c3.a65 onboarding/onb_str_c5.a65 onboarding/onb_str_c6.a65 onboarding/onb_str_c7.a65 onboarding/onb_str_c8.a65 onboarding/onb_str_c9.a65 onboarding/onb_str_ca.a65 onboarding/onb_str_cb.a65 onboarding/onb_cjk_sheets.a65 onboarding/onb_cjk_sheets_zh.a65 &: utils/gen_onb_lang.py utils/build_const.py const.a65 utils/lang_ptbr.py utils/lang_es.py utils/lang_de.py utils/lang_fr.py utils/lang_it.py utils/lang_ru.py utils/lang_nl.py utils/lang_ja.py utils/lang_zh.py utils/lang_ptpt.py utils/onb_lang_ja.json utils/onb_lang_zh.json utils/onb_lang_ptpt.json fonts/misaki_gothic_2nd.hex fonts/fusion8_zh_hans.hex
+# Keep committed quantized demo bytes as inputs; this lossless packer needs
+# only Python's standard library and verifies all pictures before writing.
+$(ONB_DEMO_PACKED) onboarding/onb_demo_layout.json &: $(ONB_DEMO_RAW) utils/pack_onb_demo.py
+	python3 utils/pack_onb_demo.py
+
+onboarding/onb_const_lang.a65 onboarding/onb_const_lang_b.a65 onboarding/onb_const_lang_t.a65 onboarding/onb_str_c2.a65 onboarding/onb_str_c3.a65 onboarding/onb_str_c5.a65 onboarding/onb_str_c6.a65 onboarding/onb_str_c7.a65 onboarding/onb_str_c8.a65 onboarding/onb_str_c9.a65 onboarding/onb_str_ca.a65 onboarding/onb_str_cb.a65 onboarding/onb_cjk_sheets.a65 onboarding/onb_cjk_sheets_zh.a65 &: utils/gen_onb_lang.py utils/build_const.py onboarding/onb_demo_layout.json const.a65 utils/lang_ptbr.py utils/lang_es.py utils/lang_de.py utils/lang_fr.py utils/lang_it.py utils/lang_ru.py utils/lang_nl.py utils/lang_ja.py utils/lang_zh.py utils/lang_ptpt.py utils/onb_lang_ja.json utils/onb_lang_zh.json utils/onb_lang_ptpt.json fonts/misaki_gothic_2nd.hex fonts/fusion8_zh_hans.hex
 	python3 utils/gen_onb_lang.py -o onboarding/onb_const_lang.a65
 
 # Same loud guard as the menu link (the `| tee` masks sneslink's exit code).
@@ -176,6 +183,7 @@ link.log: $(OBJS)
 clean:
 	rm -f -- *~ *.ips *.o65 const_lang.a65 const_lang_str.a65 const_lang_tab.a65 const_lang_cjk.a65 const_lang_fm.a65 lang_*.bin lang_*.fnt igmenu_lang.i65 $(OUT) *.o65.log *.ips.log $(IGMENU) igmenu_raw.smc igmenu.link.log
 	rm -f -- onboarding/*.o65 onboarding/*.ips onboarding/*.o65.log onboarding/*.ips.log onboarding/onb_const_lang.a65 onboarding/onb_const_lang_b.a65 onboarding/onb_const_lang_t.a65 onboarding/onb_str_*.a65 onboarding/onb_cjk_sheets.a65 onboarding/onb_cjk_sheets_zh.a65 onboarding/onb_font.a65 $(ONB_OUT) onb_link.log
+	rm -f -- $(ONB_DEMO_PACKED) onboarding/onb_demo_layout.json
 
 -include $(info $(DEPDIR)) $(shell mkdir $(DEPDIR) 2>/dev/null) $(wildcard $(DEPDIR)/*)
 

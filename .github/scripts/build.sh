@@ -19,6 +19,7 @@ case "${1:-}" in
     menu_text_status=0
     python3 .github/scripts/check-menu-languages.py || menu_text_status=$?
     make -C snes all
+    python3 .github/scripts/check-onboarding-demos.py
     exit "$menu_text_status"
     ;;
   *)

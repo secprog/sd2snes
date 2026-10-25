@@ -295,7 +295,7 @@ static void gi_field(const char *key, char *field, int size) {
 static const char *gi_desc_lang_key(void) {
   static const char *const keys[] = {
     NULL, "description_pt", "description_es", "description_de", "description_fr", "description_it",
-    "description_ru", "description_nl", "description_ja", "description_zh",
+    "description_ru", "description_nl", "description_ja", "description_zh", "description_pt_pt",
   };
   return (CFG.language < sizeof(keys) / sizeof(keys[0])) ? keys[CFG.language] : NULL;
 }

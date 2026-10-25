@@ -1,7 +1,9 @@
-FROM ubuntu:22.04@sha256:0a9887931b0e38af2e3487ed39e29436b0535c4f3f52e57745baaf79d1898956
+FROM ubuntu:24.04@sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f579aaff33ac
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential gcc-arm-none-eabi libnewlib-arm-none-eabi \
+    build-essential gcc-arm-none-eabi=15:13.2.rel1-2 \
+    binutils-arm-none-eabi=2.42-1ubuntu1+23 \
+    libnewlib-arm-none-eabi=4.4.0.20231231-2 \
     libboost-dev gawk python3 zip curl ca-certificates xz-utils \
     && rm -rf /var/lib/apt/lists/*
 RUN curl -4 --http1.1 --fail --location --connect-timeout 20 --max-time 180 --retry 3 \

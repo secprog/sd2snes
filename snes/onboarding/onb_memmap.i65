@@ -111,7 +111,7 @@
                                                cards with it (+ONB_FD_SINCE): the gate shows the tour
                                                again and only those cards are walked */
 
-#define ONB_NLANG                   10      /* languages; == the menu's language clamp */
+#define ONB_NLANG                   11      /* stable CFG language IDs 0..10 */
 
 /* ===========================================================================
    CJK (Japanese 8, Chinese 9): the tour's 256-character font has no ideographs. A CJK

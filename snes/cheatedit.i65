@@ -45,7 +45,7 @@ cel_ok:
 ce_copy:
 	php
 	rep #$30 : .al : .xl
-	asl : asl : asl                            // line*IGM_LANG_STRIDE
+	asl : asl : asl : asl                            // line*IGM_LANG_STRIDE
 	clc : adc @ce_lang
 	asl
 	tax
@@ -69,7 +69,7 @@ cec_done:
 ce_strlen:
 	php
 	rep #$30 : .al : .xl
-	asl : asl : asl
+	asl : asl : asl : asl
 	clc : adc @ce_lang
 	asl
 	tax

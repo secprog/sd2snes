@@ -456,7 +456,10 @@ wel_overlay:
   bne -
   ; the block of onb_cur_lang (none past the clip's languages)
   lda @onb_cur_lang
-  cmp @WEL_BASE+11
+  cmp #10                    ; both Portuguese variants say "Bem-vindo"
+  bne +
+  lda #1
++ cmp @WEL_BASE+11
   bcc +
   rts
 + rep #$20 : .al

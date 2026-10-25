@@ -929,13 +929,24 @@ ovl_fnn_term:
 ; ---- resolve a pool string for CFG.language without touching WRAM (see above).
 ;      In: A(8) = ^label, Y(16) = !label. Out: DB = the bank of the string, Y = its offset.
 ;      A dispatch table's entries are one word per language, so the column is the label
-;      plus 2*lang -- added with iny pairs (at most 7), which needs no scratch memory. ----
+;      plus 2*lang -- added with iny pairs, which needs no scratch memory. ----
 ovl_resolve_str:
   cmp #^strtab_lo
   bne ovl_rs_plain
   lda @CFG_LANGUAGE
-  cmp @strtab_nlang_latin   ; a CJK column's pool is in WRAM, the game's in game: English
-  bcc ovl_rs_lang
+  cmp @strtab_nlang_latin
+  bcs ovl_rs_english
+  rep #$20 : .al
+  and #$00ff
+  tax
+  sep #$20 : .as
+  lda @strpool_bank, x
+  cmp #$7f                 ; the game's WRAM cannot supply a CJK pool in game
+  beq ovl_rs_english
+  txa                      ; safe resident column, including Portuguese at ID 10
+  bra ovl_rs_lang
+ovl_rs_english:
+  .as : .xl
   lda #$00                 ; past the last column the build emitted -> English
 ovl_rs_lang:
   pha                      ; keep the column: it also picks the pool bank below

@@ -14,6 +14,7 @@ artifact's Verilog sources match the current checkout and compiles STM32 on a
 GitHub-hosted runner without LTO. It does not start FPGA builds. Enable
 `compare_toolchains` to compare Ubuntu 22.04 GCC 10 and Ubuntu 24.04 GCC 13;
 compiler versions, full command lines, maps and binaries are uploaded.
+The normal software check uses the same cached container as release packaging.
 
 The MkII and MkIII jobs run in parallel and build the FPGA cores listed in
 `MK2CORES` and `MK3CORES` in the root Makefile, including each board's mini
@@ -33,9 +34,12 @@ missing; ordinary local `make all` still builds the FPGA images.
   [upstream ISE VM runtime configuration](https://github.com/vmunoz82/ise14).
 - MkIII: Quartus Prime Lite 25.1 plus the matching Cyclone IV E device data from
   [NikLeberg/container_builder](https://github.com/NikLeberg/container_builder/tree/main/quartus).
-- Software: Ubuntu 22.04's ARM GCC/newlib packages and the
+- Software: Ubuntu 24.04 with pinned ARM GCC 13.2, binutils 2.42, newlib 4.4, and the
   [SNES assembler/linker 1.8.1.1](https://bisqwit.iki.fi/source/snescom.html).
   The assembler archive is checked against its SHA-256 before compilation.
+  GCC 10/newlib 3.3 exceeded STM32 application flash by 508 bytes in the hosted
+  comparison; GCC 13/newlib 4.4 fits without STM32 LTO. The linker assertion also
+  checks the initialized data stored after the code and constants in flash.
 
 Vendor and Ubuntu base images are pinned by digest in `.github/docker/`.
 FPGA timing checks remain enabled. Failed builds upload their compiler and

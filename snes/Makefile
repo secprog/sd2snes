@@ -6,7 +6,7 @@ IPS = header.ips
 # dispatch tables). The tables sit apart from the pool because $C2 is the scarce
 # bank and $C1 has tens of KB free. A fourth file, const_lang_cjk ($C1), is the glyph
 # sheet of the CJK cache (cjk.o65): the ideographs any translation uses, drawn from
-# fonts/misaki_gothic_2nd.hex. The CJK languages (ja, zh: LAST on the command line) do not
+# fonts/misaki_gothic_2nd.hex. The CJK languages (ja, zh: saved IDs 8 and 9) do not
 # go into the image: each column, with its glyphs, is a lang_<code>.bin that ships in
 # /sd2snes/lang/ and that the menu loads into WRAM when the language is selected.
 O65 = reset.o65 main.o65 font.o65 palette.o65 data.o65 const_lang.o65 const_lang_str.o65 const_lang_tab.o65 const_lang_cjk.o65 cjk.o65 logo.o65 dma.o65 filesel.o65 cover.o65 gameinfo.o65 sfx.o65 pad.o65 time.o65 sysinfo.o65 sysinfo_render.o65 memtest.o65 pcmplay.o65 spcview.o65 nsfplay.o65 msufolder.o65 diricon.o65 gicrcres.o65 fmres.o65 spc700.o65 spcplay.o65 menu.o65 menudata.o65 contextdata.o65 fileman.o65 const_lang_fm.o65 gameopt.o65 saves.o65 savesgate.o65 gicrc.o65 kvdata.o65 ui.o65 nmihook.o65 hookxlate.o65 mouse.o65 mouselegend.o65 common.o65 savestate.o65 savestate_cx4.o65 cheatoverlay.o65 manhost.o65 near.o65 patch.o65 stdlg.o65 ghlaunch.o65 expwarn.o65 cheatmenu.o65 cheatedit.o65 iris.o65 bootgate.o65 bootintro.o65 gimusic.o65 gimenu.o65 lock.o65 onboarding/onboarding_gate.o65 # gfx.o65 # vars.o65
@@ -84,7 +84,7 @@ all: $(OUT) $(IGMENU) $(ONB_OUT) $(MAP) lang_ja.fnt lang_zh.fnt
 onboarding/onb_font.a65: font.a65 utils/fontedit.py
 	python3 utils/fontedit.py tourfont $< $@
 
-onboarding/onb_const_lang.a65 onboarding/onb_const_lang_b.a65 onboarding/onb_const_lang_t.a65 onboarding/onb_str_c2.a65 onboarding/onb_str_c3.a65 onboarding/onb_str_c5.a65 onboarding/onb_str_c6.a65 onboarding/onb_str_c7.a65 onboarding/onb_str_c8.a65 onboarding/onb_str_c9.a65 onboarding/onb_str_ca.a65 onboarding/onb_str_cb.a65 onboarding/onb_cjk_sheets.a65 onboarding/onb_cjk_sheets_zh.a65 &: utils/gen_onb_lang.py utils/build_const.py const.a65 utils/lang_ptbr.py utils/lang_es.py utils/lang_de.py utils/lang_fr.py utils/lang_it.py utils/lang_ru.py utils/lang_nl.py utils/lang_ja.py utils/lang_zh.py utils/onb_lang_ja.json utils/onb_lang_zh.json fonts/misaki_gothic_2nd.hex fonts/fusion8_zh_hans.hex
+onboarding/onb_const_lang.a65 onboarding/onb_const_lang_b.a65 onboarding/onb_const_lang_t.a65 onboarding/onb_str_c2.a65 onboarding/onb_str_c3.a65 onboarding/onb_str_c5.a65 onboarding/onb_str_c6.a65 onboarding/onb_str_c7.a65 onboarding/onb_str_c8.a65 onboarding/onb_str_c9.a65 onboarding/onb_str_ca.a65 onboarding/onb_str_cb.a65 onboarding/onb_cjk_sheets.a65 onboarding/onb_cjk_sheets_zh.a65 &: utils/gen_onb_lang.py utils/build_const.py const.a65 utils/lang_ptbr.py utils/lang_es.py utils/lang_de.py utils/lang_fr.py utils/lang_it.py utils/lang_ru.py utils/lang_nl.py utils/lang_ja.py utils/lang_zh.py utils/lang_ptpt.py utils/onb_lang_ja.json utils/onb_lang_zh.json utils/onb_lang_ptpt.json fonts/misaki_gothic_2nd.hex fonts/fusion8_zh_hans.hex
 	python3 utils/gen_onb_lang.py -o onboarding/onb_const_lang.a65
 
 # Same loud guard as the menu link (the `| tee` masks sneslink's exit code).
@@ -98,8 +98,8 @@ $(ONB_OUT): $(ONB_O65)
 # three files: const_lang.a65 (bank $C0: neutral data), const_lang_str.a65 (bank $C2:
 # the localized string pool) and const_lang_tab.a65 (bank $C1: the dispatch tables
 # resolve_str walks) -> m3nu.bin spans 3 banks.
-const_lang.a65 const_lang_str.a65 const_lang_tab.a65 const_lang_cjk.a65 const_lang_fm.a65 lang_ja.bin lang_zh.bin &: const.a65 utils/build_const.py fonts/misaki_gothic_2nd.hex fonts/fusion8_zh_hans.hex utils/lang_ptbr.py utils/lang_es.py utils/lang_de.py utils/lang_fr.py utils/lang_it.py utils/lang_ru.py utils/lang_nl.py utils/lang_ja.py utils/lang_zh.py
-	python3 utils/build_const.py const.a65 utils/lang_ptbr.py utils/lang_es.py utils/lang_de.py utils/lang_fr.py utils/lang_it.py utils/lang_ru.py utils/lang_nl.py utils/lang_ja.py utils/lang_zh.py -o const_lang.a65
+const_lang.a65 const_lang_str.a65 const_lang_tab.a65 const_lang_cjk.a65 const_lang_fm.a65 lang_ja.bin lang_zh.bin &: const.a65 utils/build_const.py fonts/misaki_gothic_2nd.hex fonts/fusion8_zh_hans.hex utils/lang_ptbr.py utils/lang_es.py utils/lang_de.py utils/lang_fr.py utils/lang_it.py utils/lang_ru.py utils/lang_nl.py utils/lang_ja.py utils/lang_zh.py utils/lang_ptpt.py
+	python3 utils/build_const.py const.a65 utils/lang_ptbr.py utils/lang_es.py utils/lang_de.py utils/lang_fr.py utils/lang_it.py utils/lang_ru.py utils/lang_nl.py utils/lang_ja.py utils/lang_zh.py utils/lang_ptpt.py -o const_lang.a65
 
 # The firmware's CJK fonts (src/gameinfo.c draws a game's Japanese/Chinese title and
 # description with them): /sd2snes/lang/<code>.fnt.
@@ -113,8 +113,8 @@ lang_zh.fnt: fonts/fusion8_zh_hans.hex utils/gen_cjk_font.py
 # utils/gen_igmenu_lang.py. Included by igmenu.a65 -> linked into igmenu.bin (bank $C2),
 # SEPARATE from m3nu.bin (which can't reach it). Explicit prereq of igmenu.o65 so it
 # exists before cpp scans igmenu.a65's #include for dependencies.
-igmenu_lang.i65: const.a65 utils/gen_igmenu_lang.py utils/build_const.py utils/lang_ptbr.py utils/lang_es.py utils/lang_de.py utils/lang_fr.py utils/lang_it.py utils/lang_ru.py utils/lang_nl.py
-	python3 utils/gen_igmenu_lang.py const.a65 utils/lang_ptbr.py utils/lang_es.py utils/lang_de.py utils/lang_fr.py utils/lang_it.py utils/lang_ru.py utils/lang_nl.py -o igmenu_lang.i65
+igmenu_lang.i65: const.a65 utils/gen_igmenu_lang.py utils/build_const.py utils/lang_ptbr.py utils/lang_es.py utils/lang_de.py utils/lang_fr.py utils/lang_it.py utils/lang_ru.py utils/lang_nl.py utils/lang_ptpt.py
+	python3 utils/gen_igmenu_lang.py const.a65 utils/lang_ptbr.py utils/lang_es.py utils/lang_de.py utils/lang_fr.py utils/lang_it.py utils/lang_ru.py utils/lang_nl.py utils/lang_ptpt.py -o igmenu_lang.i65
 
 igmenu.o65: igmenu_lang.i65
 

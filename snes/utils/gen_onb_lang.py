@@ -6,7 +6,7 @@ strtab independent of the menu's const_lang*.a65). Mirrors the menu's resolve_st
 dispatch idea: each localized label is a ROW of N long pointers (word + bank) living
 between `onb_strtab_lo` and `onb_strtab_hi`; onb_resolve_str (onb_ui.a65) recognizes a
 pointer in that range and swaps in the column of onb_cur_lang (the menu's language
-index, 10 columns). The tables live in a picture bank of their own (onb_const_lang_t.a65,
+index, 11 columns). The tables live in a picture bank of their own (onb_const_lang_t.a65,
 TABLE_BANK). Each string is placed on its own, first fit, in the banks with room
 (STR_BANKS / STR_OTHER), one object per bank (str_file). Accent/Cyrillic encoding is
 build_const.encode_string's; a character the font has no tile for aborts the build
@@ -23,13 +23,13 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import build_const as bc
 from build_const import encode_string, ENCODE
 
-# Column order == onb_cur_lang index == the menu's CFG_LANGUAGE. The CJK languages come
-# last (build_const.CJK_LANGS): their text is drawn from a glyph cache on BG2 (onb_cjk.a65).
-LANGS = ["en", "ptbr", "es", "de", "fr", "it", "ru", "nl", "ja", "zh"]
+# Column order is the persisted CFG_LANGUAGE ID. Append new locales so saved
+# Japanese (8) and Chinese (9) selections retain their meaning.
+LANGS = ["en", "ptbr", "es", "de", "fr", "it", "ru", "nl", "ja", "zh", "ptpt"]
 CJK_LANGS = ("ja", "zh")
 if os.environ.get("ONB_CJK_ONLY"):          # a translator's check of one CJK column alone
     CJK_LANGS = (os.environ["ONB_CJK_ONLY"],)
-    LANGS = LANGS[:8] + list(CJK_LANGS)
+    LANGS = [l for l in LANGS if l not in bc.CJK_LANGS or l in CJK_LANGS]
 
 from pathlib import Path
 from build_const import parse_base, load_dict, decode_args
@@ -39,17 +39,19 @@ _DICTS = {l: load_dict(_UTILS / ("lang_%s.py" % l)) for l in LANGS[1:]}
 # The tour's own words in a CJK language (onb_lang_<code>.json): "name_N" / "text_N" for card N,
 # and the STRINGS labels. A key it lacks falls back to English.
 _TOUR = {}
-for _l in CJK_LANGS:
+for _l in (*CJK_LANGS, "ptpt"):
     _p = _UTILS / ("onb_lang_%s.json" % _l)
     _TOUR[_l] = json.loads(_p.read_text(encoding="utf-8")) if _p.exists() else {}
 
 
 def _cjk_cols(key, vals):
-    """vals in the 8 non-CJK languages -> all LANGS, the CJK columns from the tour dicts."""
+    """Extend the eight original columns using separately translated tour files."""
     vals = tuple(vals)
     if len(vals) == len(LANGS):
         return vals
-    return vals + tuple(_TOUR[l].get(key, vals[0]) for l in CJK_LANGS)
+    if key not in _TOUR["ptpt"]:
+        sys.exit("gen_onb_lang: missing Portuguese (Portugal) translation for " + key)
+    return vals + tuple(_TOUR[l].get(key, vals[0]) for l in LANGS[8:])
 
 
 def menu_text(label):
@@ -284,14 +286,14 @@ NAMES = [
 # there (each piece is wrapped on its own), for a list of short lines under a sentence.
 TEXTS = [
   # 1 language
-  ('The menu and this tour in 10 languages, the in-game menu in 8. Move the bar to try one: the tour switches at once. You can change it later in |Configuration|.',
-   'O menu e este tour em 10 idiomas, o menu in-game em 8. Mova a barra para experimentar: o tour troca na hora. Dá para mudar depois em |Configurações|.',
-   'El menú y este tour en 10 idiomas, el menú del juego en 8. Mueve la barra para probar: el tour cambia al instante. Puedes cambiarlo luego en |Configuración|.',
-   'Das Menü und diese Tour in 10 Sprachen, das Ingame-Menü in 8. Bewege den Balken zum Testen: die Tour wechselt sofort. Später in den |Einstellungen| änderbar.',
-   'Le menu et cette visite en 10 langues, le menu en jeu en 8. Déplace la barre pour essayer : la visite change aussitôt. Modifiable ensuite dans |Configuration|.',
-   'Il menu e questo tour in 10 lingue, il menu in gioco in 8. Sposta la barra per provare: il tour cambia subito. Puoi cambiarla dopo in |Configurazione|.',
-   'Меню и этот тур на 10-ти языках, Меню в игре на 8-ми. Переместите курсор, чтобы попробовать: тур переключится мгновенно. Позже это можно изменить в разделе |Настройки|.',
-   'Het menu en deze rondleiding in 10 talen, het in-game menu in 8. Beweeg de balk om te proberen: de rondleiding wisselt meteen. Later te wijzigen in |Configuratie|.'),
+  ('The menu and this tour in 11 languages, the in-game menu in 9. Move the bar to try one: the tour switches at once. You can change it later in |Configuration|.',
+   'O menu e este tour em 11 idiomas, o menu in-game em 9. Mova a barra para experimentar: o tour troca na hora. Dá para mudar depois em |Configurações|.',
+   'El menú y este tour en 11 idiomas, el menú del juego en 9. Mueve la barra para probar: el tour cambia al instante. Puedes cambiarlo luego en |Configuración|.',
+   'Das Menü und diese Tour in 11 Sprachen, das Ingame-Menü in 9. Bewege den Balken zum Testen: die Tour wechselt sofort. Später in den |Einstellungen| änderbar.',
+   'Le menu et cette visite en 11 langues, le menu en jeu en 9. Déplace la barre pour essayer : la visite change aussitôt. Modifiable ensuite dans |Configuration|.',
+   'Il menu e questo tour in 11 lingue, il menu in gioco in 9. Sposta la barra per provare: il tour cambia subito. Puoi cambiarla dopo in |Configurazione|.',
+   'Меню и этот тур на 11-ти языках, Меню в игре на 9-ми. Переместите курсор, чтобы попробовать: тур переключится мгновенно. Позже это можно изменить в разделе |Настройки|.',
+   'Het menu en deze rondleiding in 11 talen, het in-game menu in 9. Beweeg de balk om te proberen: de rondleiding wisselt meteen. Later te wijzigen in |Configuratie|.'),
   # 2 themes: the |sd2snes+| theme, a |.thm| from the list, restoring it or the classic one
   ("Change the menu's logo, colours and gradient: pick a |.thm| in the list to apply it. Make your own in the |Theme Creator| or take one from the site's gallery. In {browser}, {restoretheme} brings back |sd2snes+|, the factory theme, and {restoreclassic} the old teal look (|classic.thm|).",
    'Troque o logo, as cores e o gradiente do menu: escolha um |.thm| na lista para aplicar. Crie o seu no |Theme Creator| ou pegue um na galeria do site. Em {browser}, {restoretheme} volta ao |sd2snes+|, o tema de fábrica, e {restoreclassic} ao visual verde-azulado antigo (|classic.thm|).',

@@ -113,8 +113,8 @@ STATES_LABEL_MAX = {"text_igm_st_slot": 8, "text_igm_st_hint_save": 12,
 # Words per table row. MUST be a power of two and MUST match the number of `asl`
 # in the nine row-index sites of snes/igmenu.a65 (search IGM_LANG_SHIFT there).
 # See the stride note in main() for why this is fixed rather than derived.
-IGM_LANG_STRIDE = 8
-IGM_LANG_SHIFT = 3   # log2(IGM_LANG_STRIDE)
+IGM_LANG_STRIDE = 16
+IGM_LANG_SHIFT = 4   # log2(IGM_LANG_STRIDE)
 
 # The SAVES tab (Phase 4) strings, IN INDEX ORDER. Lockstep with the IGM_SV_* indices in
 # snes/igmenu.a65 (SAME count + order) and with the EN base labels in const.a65.
@@ -386,7 +386,11 @@ def main():
     if problems:
         sys.exit("gen_igmenu_lang.py: i18n parity error(s):\n  " + "\n  ".join(problems))
 
-    lang_order = ["en"] + [name for name, _ in langs]   # EN first, then dict order
+    # CFG IDs 8/9 remain Japanese/Chinese. Their in-game display still falls
+    # back to English; Portugal is appended at ID 10, never inserted before them.
+    lang_order = ["en", "ptbr", "es", "de", "fr", "it", "ru", "nl", "en", "en", "ptpt"]
+    if set(name for name, _ in langs) != set(lang_order) - {"en"}:
+        sys.exit("gen_igmenu_lang.py: dictionaries must match the stable CFG language IDs")
     nlang = len(lang_order)
     dict_by_code = dict(langs)
 
@@ -429,6 +433,8 @@ def main():
                  f"sites in snes/igmenu.a65 (grep IGM_LANG_SHIFT).")
     padded_order = lang_order + ["en"] * (IGM_LANG_STRIDE - nlang)
 
+    string_pool = {}   # identical translated strings share storage across tables
+
     def emit_table(table_name, str_prefix, labels):
         """Emit `<table_name>[line*IGM_LANG_STRIDE + lang] -> 16-bit $C8 offset` plus the
         NUL-terminated font-encoded source strings (labels `<str_prefix><li>_<lang>`)."""
@@ -440,13 +446,14 @@ def main():
             "are dead padding (aliased to EN) that keeps the row index a pure shift.",
             f"{table_name}:",
         ]
-        for li in range(len(labels)):
-            row = " : ".join(f".word {str_prefix}{li}_{lang}" for lang in padded_order)
+        for li, label in enumerate(labels):
+            def string_label(lang):
+                args = args_for(label, lang)
+                if args not in string_pool:
+                    string_pool[args] = f"{str_prefix}{li}_{lang}"
+                return string_pool[args]
+            row = " : ".join(f".word {string_label(lang)}" for lang in padded_order)
             lines.append(f"  {row}")
-        lines.append("")
-        for li, lbl in enumerate(labels):
-            for lang in lang_order:
-                lines.append(f"{str_prefix}{li}_{lang} .byt {args_for(lbl, lang)}")
         lines.append("")
         return lines
 
@@ -483,6 +490,8 @@ def main():
     out += emit_table("igm_trainer_tbl", "igm_tr", TRAINER_LABELS)
     out += emit_table("igm_cheatedit_tbl", "igm_ce", CHEATEDIT_LABELS)
     out += emit_table("igm_gopt_tbl", "igm_go", GOPT_LABELS)
+    out.append("// Shared NUL-terminated strings (including English CJK fallbacks).")
+    out += [f"{label} .byt {args}" for args, label in string_pool.items()]
 
     out_path.write_text("\n".join(out) + "\n")
     print(f"generated {out_path}: HELP {len(HELP_LABELS)} + KEYS {len(KEYS_LABELS)} "

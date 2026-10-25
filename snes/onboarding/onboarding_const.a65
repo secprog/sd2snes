@@ -119,16 +119,17 @@ onb_bar_src
   .byt 1, $00, $e0
   .byt 0
 
-; the languages' native names, indexed by lang 0..9 (CFG_LANGUAGE order; 8 and 9, in CJK
+; the languages' native names, indexed by lang 0..10 (CFG_LANGUAGE order; 8 and 9, in CJK
 ; glyphs, are generated into onb_const_lang_b.a65)
 onb_langname_0  .byt "English", 0
-onb_langname_1  .byt "Portugu", 135, "s", 0
+onb_langname_1  .byt "Portugu", 135, "s (Brasil)", 0
 onb_langname_2  .byt "Espa", 154, "ol", 0
 onb_langname_3  .byt "Deutsch", 0
 onb_langname_4  .byt "Fran", 141, "ais", 0
 onb_langname_5  .byt "Italiano", 0
 onb_langname_6  .byt 80, 121, 99, 99, 207, 205, 206, 0
 onb_langname_7  .byt "Nederlands", 0
+onb_langname_10 .byt "Portugu", 135, "s (Portugal)", 0
 ; values per answer kind, indexed by ONB_OPT_* (INFO, ONOFF, COVERS, RESET, LANG, GI, MORE,
 ; EDGE, CCTIME);
 ; LANG steps the tour language instead, so its count is unused
@@ -143,6 +144,7 @@ onb_cc_label_tbl  .word onb_text_cc_3, onb_text_cc_4, onb_text_cc_5, onb_text_cc
 onb_langname_tbl  .word onb_langname_0, onb_langname_1, onb_langname_2, onb_langname_3
                   .word onb_langname_4, onb_langname_5, onb_langname_6, onb_langname_7
                   .word onb_langname_8, onb_langname_9   ; Japanese, Chinese (gen_onb_lang.py)
+                  .word onb_langname_10
 
 ; ===========================================================================
 ; onb_feat_table -- the ONB_NUM_CARDS cards in tour order (the base tour, "and more"

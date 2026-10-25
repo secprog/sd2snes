@@ -65,7 +65,7 @@
 //      16-bit A on entry and exit, no flags contract. Uses sst_lang. ----
 igc_idx:
 	.al : .xl
-	asl : asl : asl
+	asl : asl : asl : asl
 	clc : adc @sst_lang
 	asl
 	rts

@@ -30,6 +30,7 @@ kv_language:
 .word $0007, !text_lang_nl : .byt ^text_lang_nl
 .word $0008, !text_lang_ja : .byt ^text_lang_ja
 .word $0009, !text_lang_zh : .byt ^text_lang_zh
+.word $000a, !text_lang_ptpt : .byt ^text_lang_ptpt
 .word $ffff
 
 kv_bsx_timesource:

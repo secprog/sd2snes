@@ -376,10 +376,8 @@ def main():
             font_cache[name] = load_cjk_font(fonts_dir / name)
         return font_cache[name]
 
-    cjk_codes = [code for code, _ in langs if code in CJK_LANGS]
-    if [code for code, _ in langs][len(langs) - len(cjk_codes):] != cjk_codes:
-        sys.exit("build_const.py: the CJK languages (" + ", ".join(CJK_LANGS) + ") must be the "
-                 "LAST dicts on the command line (the in-game readers stop before them)")
+    # Dict order is the persisted CFG.language ID. New Latin locales may follow
+    # the CJK columns: in-game readers reject WRAM pools by bank, not by position.
     common = {}                                  # char -> font file
     for line in base.read_text().splitlines():
         m = LINE_RE.match(line)
@@ -613,7 +611,7 @@ def main():
     # Pool A = the const_lang_str object ($C2), pool B = appended to const_lang_tab
     # ($C1, which has tens of KB free). The biggest columns go to pool B. A string
     # shared by columns in different pools is stored once in EACH pool.
-    POOL_B_LANGS = ("ru", "nl")
+    POOL_B_LANGS = ("ru", "nl", "ptpt")
     pools = ({}, {})          # `.byt` args -> shared label, one dict per pool
     pool_orders = ([], [])    # preserve emission order
     pool_prefix = ("strpool_", "strpoolb_")
@@ -718,9 +716,9 @@ def main():
         if any(differs(d.get(l), l) for l in order):
             nlang = idx + 1
     use(None)
-    # The in-game readers (ovl_resolve_str) cannot reach a CJK pool: it is in WRAM, which
-    # in game belongs to the game. They clamp to the columns before the first CJK one.
-    nlatin = next((c for c in range(1, nlang) if col_code[c] in ext), nlang)
+    # In-game readers check strpool_bank for WRAM ($7F), allowing new Latin
+    # columns after the existing Japanese/Chinese IDs without renumbering saves.
+    nlatin = nlang
 
     lang_names = ", ".join(["EN"] + [code for code, _ in langs])
     tabout = [".link page $c1", "",
@@ -730,7 +728,7 @@ def main():
               "; with ^strtab_lo and the string it names with strpool_bank[lang].",
               "; cur_lang >= strtab_nlang -> EN."]
     tabout.append(f"strtab_nlang .byt {nlang}")
-    tabout.append(f"strtab_nlang_latin .byt {nlatin}   ; columns without a CJK pool (in-game clamp)")
+    tabout.append(f"strtab_nlang_latin .byt {nlatin}   ; in-game bound; reject $7F pool banks separately")
     tabout.append("; bank of each language's pool, indexed by the (clamped) language")
     tabout.append("strpool_bank .byt " + ", ".join(
         "$7f" if col_code[c] in ext else ("^strpoolb_lo" if col_pool[c] else "^strpool_lo")

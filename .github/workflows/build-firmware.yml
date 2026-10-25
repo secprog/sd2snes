@@ -142,7 +142,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: ${{ fromJSON(inputs.compare_toolchains && '["ubuntu-22.04","ubuntu-24.04"]' || '["ubuntu-22.04"]') }}
+        runner: ${{ fromJSON(inputs.compare_toolchains && '["ubuntu-22.04","ubuntu-24.04"]' || '["ubuntu-24.04"]') }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -165,13 +165,26 @@ jobs:
           path: .
 
       - name: Install ARM build tools on hosted runner
+        if: inputs.compare_toolchains
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends build-essential \
             gcc-arm-none-eabi libnewlib-arm-none-eabi gawk
 
-      - name: Compile STM32 without LTO
+      - name: Compile STM32 with comparison toolchain
+        if: inputs.compare_toolchains
         run: bash .github/scripts/check-stm32.sh
+
+      - uses: ./.github/actions/prepare-build-image
+        if: ${{ !inputs.compare_toolchains }}
+        with:
+          target: software
+
+      - name: Compile STM32 without LTO using cached release toolchain
+        if: ${{ !inputs.compare_toolchains }}
+        run: |
+          docker run --rm --user 0:0 --volume "$GITHUB_WORKSPACE:/work" --workdir /work \
+            sd2snes-ci:software /bin/bash .github/scripts/check-stm32.sh
 
       - name: Upload STM32 binaries and size reports
         if: always()

@@ -204,13 +204,19 @@ igo_res:
 	rep #$10 : .xl
 	lda @igo_sp+2
 	cmp @igo_hb
-	bne igr_out
+	beq igr_range
+igr_plain:
+	plb
+	plp
+	rts
+igr_range:
+	.as : .xl
 	rep #$20 : .al
 	lda @igo_sp
 	cmp @igo_slo
-	bcc igr_out
+	bcc igr_plain
 	cmp @igo_shi
-	bcs igr_out
+	bcs igr_plain
 	sep #$20 : .as
 	lda @igo_hb : pha : plb
 	rep #$20 : .al
@@ -224,7 +230,23 @@ igo_res:
 	rep #$20 : .al
 	and #$00ff
 	cmp @igo_w1
-	bcc igr_lang
+	bcc igr_check_pool
+	lda #$0000
+	bra igr_lang
+igr_check_pool:
+	.al : .xl
+	sta @igo_w1
+	clc : adc @igo_spb
+	tax
+	sep #$20 : .as
+	lda !0, x
+	cmp #$7f                                 // in-game WRAM cannot supply a CJK pool
+	rep #$20 : .al
+	beq igr_english
+	lda @igo_w1
+	bra igr_lang
+igr_english:
+	.al : .xl
 	lda #$0000
 igr_lang:
 	.al : .xl
@@ -371,7 +393,7 @@ igtc_d:
 igo_istr:
 	php
 	rep #$30 : .al : .xl
-	asl : asl : asl                          // index * IGM_LANG_STRIDE
+	asl : asl : asl : asl                          // index * IGM_LANG_STRIDE
 	clc : adc @sst_lang
 	asl
 	tax

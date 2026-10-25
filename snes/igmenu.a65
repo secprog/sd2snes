@@ -1086,7 +1086,7 @@ shd_lang_ok:
 sh_copy:
 	php
 	rep #$30 : .al : .xl
-	asl : asl : asl
+	asl : asl : asl : asl
 	clc : adc @sst_lang
 	asl
 	tax
@@ -1109,7 +1109,7 @@ sh_copy_d:
 sh_strlen:
 	php
 	rep #$30 : .al : .xl
-	asl : asl : asl
+	asl : asl : asl : asl
 	clc : adc @sst_lang
 	asl
 	tax
@@ -1135,7 +1135,7 @@ sh_sl_d:
 ch_copy:
 	php
 	rep #$30 : .al : .xl
-	asl : asl : asl                            ; index*8 (IGM_LANG_STRIDE, see he_copy)
+	asl : asl : asl : asl                            ; index*16 (IGM_LANG_STRIDE, see he_copy)
 	clc : adc @sst_lang                        ; + lang column
 	asl                                        ; *2 (word index)
 	tax
@@ -1159,7 +1159,7 @@ ch_copy_d:
 ch_strlen:
 	php
 	rep #$30 : .al : .xl
-	asl : asl : asl
+	asl : asl : asl : asl
 	clc : adc @sst_lang
 	asl
 	tax
@@ -1373,15 +1373,15 @@ ifn_done:
 	lda #$00
 	sta OVL_NONAME_A, y
 	; the ON/OFF token each row shows, into OVL_FLAG_BUF (cheatlist.i65 only reads it).
-	; Row stride is IGM_LANG_STRIDE words, so line L of this language is at L*16 + lang*2.
+	; Row stride is IGM_LANG_STRIDE words, so line L of this language is at L*32 + lang*2.
 	rep #$30 : .al : .xl
 	pla                                        ; lang*2
 	pha
-	clc : adc #(IGM_CH_FLAG_ON*16)
+	clc : adc #(IGM_CH_FLAG_ON*IGM_LANG_STRIDE*2)
 	ldy #OVL_FLAG_ON
 	jsr igm_fill_tok
 	pla                                        ; lang*2 (stack balanced again)
-	clc : adc #(IGM_CH_FLAG_OFF*16)
+	clc : adc #(IGM_CH_FLAG_OFF*IGM_LANG_STRIDE*2)
 	ldy #OVL_FLAG_OFF
 	jsr igm_fill_tok
 	plb
@@ -1628,7 +1628,7 @@ sst_draw_centered:
 sst_copy:
 	php
 	rep #$30 : .al : .xl
-	asl : asl : asl                            ; index*8 (IGM_LANG_STRIDE, see he_copy)
+	asl : asl : asl : asl                            ; index*16 (IGM_LANG_STRIDE, see he_copy)
 	clc : adc @sst_lang                        ; + lang column
 	asl                                        ; *2 (word index)
 	tax
@@ -1653,7 +1653,7 @@ sst_copy_d:
 sst_strlen:
 	php
 	rep #$30 : .al : .xl
-	asl : asl : asl                            ; index*8 (IGM_LANG_STRIDE, see he_copy)
+	asl : asl : asl : asl                            ; index*16 (IGM_LANG_STRIDE, see he_copy)
 	clc : adc @sst_lang
 	asl
 	tax
@@ -2005,7 +2005,7 @@ svs_draw_centered:
 svs_copy:
 	php
 	rep #$30 : .al : .xl
-	asl : asl : asl                            ; index*8 (IGM_LANG_STRIDE, see he_copy)
+	asl : asl : asl : asl                            ; index*16 (IGM_LANG_STRIDE, see he_copy)
 	clc : adc @sst_lang                         ; + lang column
 	asl                                        ; *2 (word index)
 	tax
@@ -2030,7 +2030,7 @@ svs_copy_d:
 svs_strlen:
 	php
 	rep #$30 : .al : .xl
-	asl : asl : asl                            ; index*8 (IGM_LANG_STRIDE, see he_copy)
+	asl : asl : asl : asl                            ; index*16 (IGM_LANG_STRIDE, see he_copy)
 	clc : adc @sst_lang
 	asl
 	tax
@@ -2642,7 +2642,7 @@ mn_draw_centered:
 mn_copy:
 	php
 	rep #$30 : .al : .xl
-	asl : asl : asl                            ; index*8 (IGM_LANG_STRIDE, see he_copy)
+	asl : asl : asl : asl                            ; index*16 (IGM_LANG_STRIDE, see he_copy)
 	clc : adc @sst_lang                         ; + lang column
 	asl                                        ; *2 (word index)
 	tax
@@ -2666,7 +2666,7 @@ mn_copy_d:
 mn_strlen:
 	php
 	rep #$30 : .al : .xl
-	asl : asl : asl                            ; index*8 (IGM_LANG_STRIDE, see he_copy)
+	asl : asl : asl : asl                            ; index*16 (IGM_LANG_STRIDE, see he_copy)
 	clc : adc @sst_lang
 	asl
 	tax
@@ -3005,7 +3005,7 @@ ig_tb_loop:
 	; --- source offset = igm_tab_tbl[(tab*IGM_LANG_STRIDE + lang)*2] ---
 	;     IGM_LANG_SHIFT asl == *IGM_LANG_STRIDE (see he_copy).
 	lda @ovl_rowoff
-	asl : asl : asl                           ; tab*8 (IGM_LANG_STRIDE)
+	asl : asl : asl : asl                           ; tab*16 (IGM_LANG_STRIDE)
 	clc : adc @igm_tab_lang                   ; + lang column
 	asl                                       ; *2 (word index)
 	tax
@@ -3983,7 +3983,7 @@ iwt_lang_ok:
 	sta @igm_tab_lang
 	lda @active_tab
 	and #$00ff
-	asl : asl : asl                               ; tab*8 (IGM_LANG_STRIDE, see he_copy)
+	asl : asl : asl : asl                               ; tab*16 (IGM_LANG_STRIDE, see he_copy)
 	clc : adc @igm_tab_lang                         ; + lang column
 	asl                                           ; *2 (word index)
 	tax

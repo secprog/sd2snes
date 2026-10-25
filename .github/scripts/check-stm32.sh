@@ -23,6 +23,9 @@ fi
 if [[ -f src/obj-mk3-stm32/sd2snes-intermediate.elf ]]; then
   arm-none-eabi-size -A src/obj-mk3-stm32/sd2snes-intermediate.elf
   arm-none-eabi-nm --print-size --size-sort src/obj-mk3-stm32/sd2snes-intermediate.elf | tail -40
+  flash_end=$(arm-none-eabi-nm src/obj-mk3-stm32/sd2snes-intermediate.elf | awk '$3 == "__data_load_end" { print $1 }')
+  flash_used=$((16#$flash_end - 0x0800c200))
+  echo "STM32 flash including initialized data: $flash_used / 212480 bytes ($((212480 - flash_used)) bytes free)"
 fi
 if [[ -f src/obj-mk3-stm32/sd2snes.map ]]; then
   sed -n '1,90p' src/obj-mk3-stm32/sd2snes.map

@@ -27,7 +27,7 @@ trl_ok:
 tr_copy:
 	php
 	rep #$30 : .al : .xl
-	asl : asl : asl                            // line*IGM_LANG_STRIDE (IGM_LANG_SHIFT asl)
+	asl : asl : asl : asl                      // line*IGM_LANG_STRIDE (IGM_LANG_SHIFT asl)
 	clc : adc @tr_lang
 	asl                                        // *2 -> word index
 	tax
@@ -51,7 +51,7 @@ trc_done:
 tr_strlen:
 	php
 	rep #$30 : .al : .xl
-	asl : asl : asl
+	asl : asl : asl : asl
 	clc : adc @tr_lang
 	asl
 	tax

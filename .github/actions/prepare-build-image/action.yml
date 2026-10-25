@@ -8,6 +8,7 @@ runs:
   using: composite
   steps:
     - name: Free hosted runner disk space
+      if: inputs.target != 'software'
       shell: bash
       run: |
         sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache \

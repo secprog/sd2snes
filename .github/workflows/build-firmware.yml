@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       build:
-        description: Full release or software checks using an existing MkIII FPGA artifact
+        description: Full release, software checks with existing MkIII FPGA images, or menus only
         type: choice
-        options: [all, software]
+        options: [all, software, menus]
         default: all
       fpga_run_id:
         description: Run containing fpga-mk3 (required for software checks)
@@ -28,7 +28,7 @@ concurrency:
 
 jobs:
   fpga:
-    if: inputs.build != 'software'
+    if: inputs.build != 'software' && inputs.build != 'menus'
     name: Build ${{ matrix.board }} FPGA images
     runs-on: ubuntu-22.04
     timeout-minutes: 360
@@ -92,6 +92,14 @@ jobs:
             verilog/*/output_files/*.summary
           if-no-files-found: ignore
           retention-days: 14
+
+  menu-pools:
+    if: inputs.build == 'menus'
+    name: Analyze resident language string pools
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - run: python3 snes/utils/analyze_i18n_pools.py --c1-bytes 75170 --c2-bytes 59575
 
   menus:
     name: Build SNES menus and onboarding

@@ -7,6 +7,7 @@ no installer URLs or repository secrets need to be configured.
 The independent **Build SNES menus and onboarding** job builds and checks both
 board menus, the in-game menu, onboarding, and language assets. Its `menus`
 artifact is available without waiting for either FPGA build.
+Select `build: menus` for a manual menu-only run.
 
 For software checks, manually select `build: software` and supply the
 run ID containing a successful `fpga-mk3` artifact. This mode checks that the

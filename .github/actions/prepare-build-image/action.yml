@@ -33,6 +33,39 @@ runs:
         fi
         df -h /
 
+    - name: Restore SNES assembler source
+      if: inputs.target == 'software' && steps.cache.outputs.cache-hit != 'true'
+      id: snes-source
+      uses: actions/cache/restore@v4
+      with:
+        path: ${{ runner.temp }}/sd2snes-sources/snescom-1.8.1.1.tar.xz
+        key: sd2snes-source-snescom-1.8.1.1-7caade189572d4463c281b48d1bc68b5f9f7070c40b02e220565a6b48b18ae2a
+
+    - name: Fetch and verify SNES assembler source
+      if: inputs.target == 'software' && steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        archive="$RUNNER_TEMP/sd2snes-sources/snescom-1.8.1.1.tar.xz"
+        mkdir -p "$(dirname "$archive")"
+        if [[ ! -f "$archive" ]]; then
+          for protocol in https http; do
+            # The fixed SHA-256 authenticates the archive on either transport.
+            if curl -4 --http1.1 --fail --location --connect-timeout 20 --max-time 180 --retry 3 \
+              "$protocol://bisqwit.iki.fi/src/arch/snescom-1.8.1.1.tar.xz" -o "$archive"; then
+              break
+            fi
+          done
+        fi
+        echo "7caade189572d4463c281b48d1bc68b5f9f7070c40b02e220565a6b48b18ae2a  $archive" | sha256sum --check
+        cp "$archive" .github/docker/snescom.tar.xz
+
+    - name: Save SNES assembler source
+      if: inputs.target == 'software' && steps.cache.outputs.cache-hit != 'true' && steps.snes-source.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: ${{ runner.temp }}/sd2snes-sources/snescom-1.8.1.1.tar.xz
+        key: ${{ steps.snes-source.outputs.cache-primary-key }}
+
     - name: Build toolchain image on cache miss
       if: steps.cache.outputs.cache-hit != 'true'
       shell: bash

@@ -15,9 +15,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgmp10 libmpfr6 libmpc3 libisl23 zlib1g libzstd1 \
     libboost-dev gawk python3 zip curl ca-certificates xz-utils \
     && rm -rf /var/lib/apt/lists/*
-RUN curl -4 --http1.1 --fail --location --connect-timeout 20 --max-time 180 --retry 3 \
-      https://bisqwit.iki.fi/src/arch/snescom-1.8.1.1.tar.xz -o /tmp/snescom.tar.xz \
-    && echo '7caade189572d4463c281b48d1bc68b5f9f7070c40b02e220565a6b48b18ae2a  /tmp/snescom.tar.xz' | sha256sum --check \
+COPY snescom.tar.xz /tmp/snescom.tar.xz
+RUN echo '7caade189572d4463c281b48d1bc68b5f9f7070c40b02e220565a6b48b18ae2a  /tmp/snescom.tar.xz' | sha256sum --check \
     && mkdir /tmp/snescom \
     && tar -xJf /tmp/snescom.tar.xz --strip-components=1 -C /tmp/snescom \
     && make -C /tmp/snescom -j2 \

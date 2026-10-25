@@ -73,6 +73,9 @@ archives: MkII, MkIII, and software. Each archive includes the toolchain and its
 system dependencies, so a cache hit loads the image and skips provisioning.
 Caches are saved immediately after image preparation, before compiling the
 project, so a source or timing failure does not discard the toolchain setup.
+The small, checksum-verified SNES assembler source archive has a separate cache,
+saved before preparing GCC, so toolchain updates can reuse it even when its
+upstream download server is unavailable.
 
 Keys include the runner OS/architecture and a hash of the Dockerfile and ISE
 trimming or software toolchain preparation script. Source changes reuse the cached tools; changing toolchain

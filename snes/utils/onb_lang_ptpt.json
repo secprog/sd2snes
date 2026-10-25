@@ -97,7 +97,7 @@
   "name_41": "Novidades da versão 2.18",
   "text_41": "Conhece as novidades da versão 2.18 nos ecrãs seguintes.",
   "name_42": "Xeno Crisis",
-  "text_42": "Já podes jogar Xeno Crisis, o cartucho de 2019 com RP2040. Guarda uma cópia da memória flash RP2040 do teu cartucho em |/sd2snes/xenocrisis_rp2040.bin|. Para ouvires música, precisas de um pacote |MSU-1| junto da ROM. Sem ele, ouves apenas os efeitos sonoros.",
+  "text_42": "Já podes jogar Xeno Crisis, o cartucho de 2019 com RP2040. Guarda uma cópia da memória flash RP2040 do teu cartucho na pasta |/sd2snes|, com o nome |xenocrisis_rp2040.bin|. Para ouvires música, precisas de um pacote |MSU-1| junto da ROM. Sem ele, ouves apenas os efeitos sonoros.",
   "name_43": "Rato SNES",
   "text_43": "Liga o rato a qualquer porta. Clica à esquerda [ML] para [A], à direita [MR] para [B], ou em ambos [MB] para [X]. Mantém o direito [MRH] para [Y]. Nos leitores, [MLH] passa à faixa seguinte e [MRH] à anterior. Encosta o ponteiro ao topo ou ao fundo para percorreres a lista.",
   "name_44": "Leitores de música",

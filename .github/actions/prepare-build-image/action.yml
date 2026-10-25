@@ -34,7 +34,7 @@ runs:
         df -h /
 
     - name: Restore SNES assembler source
-      if: inputs.target == 'software' && steps.cache.outputs.cache-hit != 'true'
+      if: inputs.target == 'software'
       id: snes-source
       uses: actions/cache/restore@v4
       with:
@@ -53,7 +53,7 @@ runs:
             http://bisqwit.iki.fi/src/arch/snescom-1.8.1.1.tar.xz \
             https://web.archive.org/web/20180814103935id_/https://bisqwit.iki.fi/src/arch/snescom-1.8.1.1.tar.xz; do
             # The fixed SHA-256 also verifies the archived upstream copy.
-            if curl -4 --http1.1 --fail --location --connect-timeout 20 --max-time 180 --retry 3 \
+            if curl -4 --http1.1 --fail --location --connect-timeout 10 --max-time 45 --retry 1 \
               "$url" -o "$archive"; then
               break
             fi

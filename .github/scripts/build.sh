@@ -15,8 +15,9 @@ case "${1:-}" in
     make all FPGA_PREBUILT=1
     ;;
   menus)
-    make -C snes all
+    make -C snes menu.bin m3nu.bin map
     python3 .github/scripts/check-menu-languages.py
+    make -C snes all
     ;;
   *)
     echo "Usage: $0 {mk2|mk3|firmware|menus}" >&2

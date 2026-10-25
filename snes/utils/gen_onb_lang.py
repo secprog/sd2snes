@@ -7,7 +7,8 @@ dispatch idea: each localized label is a ROW of N long pointers (word + bank) li
 between `onb_strtab_lo` and `onb_strtab_hi`; onb_resolve_str (onb_ui.a65) recognizes a
 pointer in that range and swaps in the column of onb_cur_lang (the menu's language
 index, 11 columns). The tables live in a picture bank of their own (onb_const_lang_t.a65,
-TABLE_BANK). Each string is placed on its own, first fit, in the banks with room
+TABLE_BANK). Strings share identical bytes and complete NUL-terminated suffixes;
+the remaining roots are placed first-fit decreasing in the banks with room
 (STR_BANKS / STR_OTHER), one object per bank (str_file). Accent/Cyrillic encoding is
 build_const.encode_string's; a character the font has no tile for aborts the build
 (_cells), and so does a string wider than the cells the engine prints it with (_budget).
@@ -1311,12 +1312,6 @@ def main():
     T = head + [".link page %s" % TABLE_BANK, "",
          "; ---- dispatch tables (one row of %d long pointers per label) ----" % nlang,
          "onb_strtab_lo:"]
-    for label in STRINGS:
-        T.append("%s:" % label)
-        for lang in LANGS:
-            T.append("  .word !%s_%s : .byt ^%s_%s" % (label, lang, label, lang))
-    T.append("onb_strtab_hi:")
-    T.append("")
     table_size = len(STRINGS) * nlang * 3
     S0 = S[CJK_LANGS[0]]
     S0.append("; the common glyphs (0..%d), in every language" % (len(common_map) - 1))
@@ -1348,7 +1343,8 @@ def main():
     if 65536 - _PICS - table_size < STR_MARGIN:
         sys.exit("gen_onb_lang: the tables (%d B) do not fit in %s" % (table_size, TABLE_BANK))
 
-    # every string, encoded, then placed first fit
+    # Encode every complete runtime string before choosing its storage. Sharing
+    # is byte-for-byte, including line separators, markup, glyph indices and NUL.
     items = []
     size = dict.fromkeys(LANGS, 0)
     for label, vals in STRINGS.items():
@@ -1379,8 +1375,41 @@ def main():
             n = len(bc.args_to_bytes(args))
             size[lang] += n
             items.append(("%s_%s" % (label, lang), args, n))
+    first_name = {}
+    for name, args, _ in items:
+        first_name.setdefault(args, name)
+    roots, suffixes = bc.pack_string_suffixes(first_name)
+    references = {name: (first_name[suffixes[args][0]], suffixes[args][1])
+                  for name, args, _ in items}
+    unique_data = {bc.args_to_bytes(args) for _, args, _ in items}
+    root_bytes = sum(len(bc.args_to_bytes(args)) for args in roots)
+    total_room = sum(room.values())
+    print("gen_onb_lang: string storage: raw %d B / %d entries, unique %d B / %d strings, "
+          "suffix roots %d B / %d strings; available %d B"
+          % (sum(size.values()), len(items), sum(map(len, unique_data)), len(unique_data),
+             root_bytes, len(roots), total_room), flush=True)
+    if root_bytes > total_room:
+        sys.exit("gen_onb_lang: packed strings require %d B, available %d B (short by %d B)"
+                 % (root_bytes, total_room, root_bytes - total_room))
+
+    # Preserve the existing three-byte pointer rows. Every root stays entirely
+    # inside one bank, so the address may add a suffix offset while its bank
+    # remains ^root. No assembler aliases or runtime format changes are needed.
+    for label in STRINGS:
+        T.append("%s:" % label)
+        for lang in LANGS:
+            root, offset = references["%s_%s" % (label, lang)]
+            address = "!" + root + ("+%d" % offset if offset else "")
+            T.append("  .word %s : .byt ^%s" % (address, root))
+    T.append("onb_strtab_hi:")
+    T.append("")
+
+    # pack_string_suffixes returns roots longest first. First-fit decreasing
+    # avoids filling every bank with short strings before a long paragraph.
     used = dict.fromkeys(STR_BANKS, 0)
-    for name, args, n in items:
+    for args in roots:
+        name = first_name[args]
+        n = len(bc.args_to_bytes(args))
         for b in STR_BANKS:
             if used[b] + n <= room[b]:
                 F[b].append("%s  .byt %s" % (name, args))

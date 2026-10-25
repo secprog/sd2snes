@@ -9,6 +9,46 @@ prefix=/opt/gcc-13.5
 sysroot="$prefix/arm-none-eabi"
 export PATH="$prefix/bin:$PATH"
 
+# Keep long hosted preparation steps observable, and stop a stuck configure.
+stage_pid=
+monitor_pid=
+on_exit() {
+  local status=$?
+  if [[ -n "$monitor_pid" ]]; then kill "$monitor_pid" 2>/dev/null || true; fi
+  if ((status != 0)); then
+    ps -eo pid,ppid,etime,time,pcpu,rss,args --sort=-pcpu | sed -n '1,20p'
+    while IFS= read -r log; do
+      echo "=== $log ==="
+      tail -100 "$log"
+    done < <(find /tmp/gcc-build /tmp/newlib-build -name config.log -printf '%T@ %p\n' 2>/dev/null \
+      | sort -nr | sed -n '1,3p' | cut -d' ' -f2-)
+  fi
+  if [[ -n "$stage_pid" ]]; then kill "$stage_pid" 2>/dev/null || true; fi
+  exit "$status"
+}
+trap on_exit EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+run_stage() {
+  local limit=$1
+  shift
+  timeout --kill-after=30s "$limit" "$@" &
+  stage_pid=$!
+  (
+    while kill -0 "$stage_pid" 2>/dev/null; do
+      sleep 60
+      echo '=== Hosted toolchain preparation activity ==='
+      ps -eo pid,ppid,etime,time,pcpu,rss,args --sort=-pcpu | sed -n '1,15p'
+    done
+  ) &
+  monitor_pid=$!
+  wait "$stage_pid"
+  kill "$monitor_pid" 2>/dev/null || true
+  wait "$monitor_pid" 2>/dev/null || true
+  monitor_pid=
+  stage_pid=
+}
+
 fetch_source() {
   local name=$1 url=$2 checksum=$3 algorithm=$4
   curl --fail --location --connect-timeout 20 --max-time 300 --retry 3 \
@@ -31,7 +71,7 @@ CFLAGS='-O2 -g0' CXXFLAGS='-O2 -g0' /tmp/binutils-source/configure \
   --target=arm-none-eabi --prefix="$prefix" --with-sysroot="$sysroot" \
   --disable-nls --disable-werror --disable-shared --enable-plugins \
   --disable-gdb --disable-sim --disable-gprofng
-make -j2
+run_stage 15m make -j2
 make install
 install -m644 /tmp/binutils-source/COPYING* "$prefix/share/licenses/binutils/"
 cd /
@@ -52,6 +92,15 @@ test -r "$sysroot/include/stdio.h"
 fetch_source gcc \
   "https://gcc.gnu.org/pub/gcc/releases/gcc-$gcc_version/gcc-$gcc_version.tar.xz" \
   709237ff8f10d46eb10cad53a71bdcacbd3d56f4559e9a5bb3323f743fdba78b7e505586135560b27e88320927a065ec4f5e45273d5504b542f67c7326eb683c sha512
+# Retain the upstream ARM option canonicalization, but build only libraries
+# used by this repository. Clear reuse rules referencing the omitted variants.
+cat >> /tmp/gcc-source/gcc/config/arm/t-multilib <<'MULTILIB'
+
+MULTILIB_REQUIRED = mthumb/march=armv6s-m/mfloat-abi=soft mthumb/march=armv7-m/mfloat-abi=soft mthumb/march=armv7e-m+fp/mfloat-abi=hard
+MULTILIB_REUSE =
+MULTILIB
+printf 'Multilib scope: default, Cortex-M0+ soft, Cortex-M3 soft, Cortex-M4 hard\n' \
+  >> "$prefix/share/source-version.txt"
 echo "=== Building GCC $gcc_version (compiler) ==="
 cd /tmp/gcc-build
 CFLAGS='-O2 -g0' CXXFLAGS='-O2 -g0' /tmp/gcc-source/configure \
@@ -62,9 +111,15 @@ CFLAGS='-O2 -g0' CXXFLAGS='-O2 -g0' /tmp/gcc-source/configure \
   --enable-multilib --with-multilib-list=rmprofile \
   --disable-bootstrap --disable-nls --disable-shared --disable-threads \
   --disable-libssp --disable-libquadmath --disable-libgomp --disable-libatomic
-make -j2 all-gcc
+run_stage 25m make -j2 all-gcc
 grep -Eq '^inhibit_libc[[:space:]]*=[[:space:]]*false$' gcc/Makefile
 make install-gcc
+arm-none-eabi-gcc -print-multi-lib
+test "$(arm-none-eabi-gcc -print-multi-lib | wc -l)" -eq 4
+test "$(arm-none-eabi-gcc -mthumb -mcpu=cortex-m0plus -print-multi-directory)" = thumb/v6-m/nofp
+test "$(arm-none-eabi-gcc -mcpu=cortex-m0plus -print-multi-directory)" = thumb/v6-m/nofp
+test "$(arm-none-eabi-gcc -mthumb -mcpu=cortex-m3 -print-multi-directory)" = thumb/v7-m/nofp
+test "$(arm-none-eabi-gcc -mthumb -mcpu=cortex-m4 -mfloat-abi=hard -print-multi-directory)" = thumb/v7e-m+fp/hard
 
 echo "=== Building newlib $newlib_version with GCC $gcc_version ==="
 cd /tmp/newlib-build
@@ -72,7 +127,7 @@ CFLAGS_FOR_TARGET='-g0 -O2 -ffunction-sections -fdata-sections' \
   /tmp/newlib-source/configure --target=arm-none-eabi --prefix="$prefix" \
   --enable-newlib-io-long-long --enable-newlib-register-fini \
   --disable-nls --disable-newlib-supplied-syscalls
-make -j2
+run_stage 15m make -j2
 make install
 test -r "$sysroot/include/newlib.h"
 test -r "$sysroot/include/_newlib_version.h"
@@ -80,7 +135,7 @@ install -m644 /tmp/newlib-source/COPYING* "$prefix/share/licenses/newlib/"
 
 echo "=== Building GCC $gcc_version runtime libraries against newlib $newlib_version ==="
 cd /tmp/gcc-build
-make -j2 all-target-libgcc
+run_stage 15m make -j2 all-target-libgcc
 make install-target-libgcc
 test "$(arm-none-eabi-gcc -dumpfullversion)" = "$gcc_version"
 arm-none-eabi-ld --version | sed -n '1p'

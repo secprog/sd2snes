@@ -12,11 +12,13 @@ export PATH="$prefix/bin:$PATH"
 # Keep long hosted preparation steps observable, and stop a stuck configure.
 stage_pid=
 monitor_pid=
+stage_log=/tmp/toolchain-stage.log
 on_exit() {
   local status=$?
   if [[ -n "$monitor_pid" ]]; then kill "$monitor_pid" 2>/dev/null || true; fi
   if ((status != 0)); then
     ps -eo pid,ppid,etime,time,pcpu,rss,args --sort=-pcpu | sed -n '1,20p'
+    if [[ -f "$stage_log" ]]; then tail -120 "$stage_log"; fi
     while IFS= read -r log; do
       echo "=== $log ==="
       tail -100 "$log"
@@ -32,13 +34,19 @@ trap 'exit 143' TERM
 run_stage() {
   local limit=$1
   shift
-  timeout --kill-after=30s "$limit" "$@" &
+  printf '=== Running:'
+  printf ' %q' "$@"
+  printf ' ===\n'
+  # Full make output would exceed BuildKit's 2 MiB step log limit, hiding
+  # subsequent activity. Keep it in the container and stream bounded samples.
+  timeout --kill-after=30s "$limit" "$@" > "$stage_log" 2>&1 &
   stage_pid=$!
   (
     while kill -0 "$stage_pid" 2>/dev/null; do
       sleep 60
       echo '=== Hosted toolchain preparation activity ==='
       ps -eo pid,ppid,etime,time,pcpu,rss,args --sort=-pcpu | sed -n '1,15p'
+      tail -5 "$stage_log"
     done
   ) &
   monitor_pid=$!
@@ -47,6 +55,7 @@ run_stage() {
   wait "$monitor_pid" 2>/dev/null || true
   monitor_pid=
   stage_pid=
+  tail -12 "$stage_log"
 }
 
 fetch_source() {
@@ -72,7 +81,7 @@ CFLAGS='-O2 -g0' CXXFLAGS='-O2 -g0' /tmp/binutils-source/configure \
   --disable-nls --disable-werror --disable-shared --enable-plugins \
   --disable-gdb --disable-sim --disable-gprofng
 run_stage 15m make -j2
-make install
+run_stage 5m make install
 install -m644 /tmp/binutils-source/COPYING* "$prefix/share/licenses/binutils/"
 cd /
 rm -rf /tmp/binutils-source /tmp/binutils-build /tmp/binutils.tar
@@ -113,7 +122,7 @@ CFLAGS='-O2 -g0' CXXFLAGS='-O2 -g0' /tmp/gcc-source/configure \
   --disable-libssp --disable-libquadmath --disable-libgomp --disable-libatomic
 run_stage 25m make -j2 all-gcc
 grep -Eq '^inhibit_libc[[:space:]]*=[[:space:]]*false$' gcc/Makefile
-make install-gcc
+run_stage 5m make install-gcc
 arm-none-eabi-gcc -print-multi-lib
 test "$(arm-none-eabi-gcc -print-multi-lib | wc -l)" -eq 4
 test "$(arm-none-eabi-gcc -mthumb -mcpu=cortex-m0plus -print-multi-directory)" = thumb/v6-m/nofp
@@ -128,7 +137,7 @@ CFLAGS_FOR_TARGET='-g0 -O2 -ffunction-sections -fdata-sections' \
   --enable-newlib-io-long-long --enable-newlib-register-fini \
   --disable-nls --disable-newlib-supplied-syscalls
 run_stage 15m make -j2
-make install
+run_stage 5m make install
 test -r "$sysroot/include/newlib.h"
 test -r "$sysroot/include/_newlib_version.h"
 install -m644 /tmp/newlib-source/COPYING* "$prefix/share/licenses/newlib/"
@@ -136,7 +145,7 @@ install -m644 /tmp/newlib-source/COPYING* "$prefix/share/licenses/newlib/"
 echo "=== Building GCC $gcc_version runtime libraries against newlib $newlib_version ==="
 cd /tmp/gcc-build
 run_stage 15m make -j2 all-target-libgcc
-make install-target-libgcc
+run_stage 5m make install-target-libgcc
 test "$(arm-none-eabi-gcc -dumpfullversion)" = "$gcc_version"
 arm-none-eabi-ld --version | sed -n '1p'
 

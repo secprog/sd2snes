@@ -48,6 +48,7 @@ def main():
     labels = set().union(*(dictionary.keys() for dictionary in translations.values()))
     checked = 0
     auxiliary = 0
+    failures = []
     for label in sorted(labels):
         if label.startswith("text_igm_"):
             continue  # separately linked in igmenu.bin, with its own width guards
@@ -68,8 +69,13 @@ def main():
                 target = address  # language-neutral string
             actual = read(target, len(expected))
             if actual != expected:
-                raise ValueError(f"{label} [{code}, ID {locale}]: wrong linked text at ${target:06X}")
+                difference = next(i for i, pair in enumerate(zip(actual, expected)) if pair[0] != pair[1])
+                failures.append(f"{label} [{code}, ID {locale}] at ${target:06X}, byte {difference}: "
+                                f"expected {expected[difference:difference + 45]!r}, "
+                                f"got {actual[difference:difference + 45]!r}")
             checked += 1
+    if failures:
+        raise ValueError(f"{len(failures)} linked text mismatches:\n" + "\n".join(failures[:12]))
     print(f"menu languages: {checked} linked strings verified across 9 Latin locales "
           f"({auxiliary} auxiliary strings); saved IDs 0..9 retained, pt-PT=10")
 

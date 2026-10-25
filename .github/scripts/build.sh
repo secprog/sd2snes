@@ -16,8 +16,10 @@ case "${1:-}" in
     ;;
   menus)
     make -C snes menu.bin m3nu.bin map
-    python3 .github/scripts/check-menu-languages.py
+    menu_text_status=0
+    python3 .github/scripts/check-menu-languages.py || menu_text_status=$?
     make -C snes all
+    exit "$menu_text_status"
     ;;
   *)
     echo "Usage: $0 {mk2|mk3|firmware|menus}" >&2

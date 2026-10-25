@@ -198,14 +198,14 @@ CFLAGS += -ffunction-sections -fdata-sections
 # between .bss and the stack.
 CFLAGS += -fstack-usage
 
-# Link-Time Optimization: MkII (128 KB flash) and MkIII STM32 (256 KB flash).
-# Both need the size reduction to keep the firmware and .data initializers inside
-# their application flash regions. MkIII LPC stays non-LTO. Under -flto the per-C
+# Link-Time Optimization: mk2 ONLY (LPC1754, 128 KB flash). LTO shrinks the build
+# ~2 KB so it fits; mk3/mk3-stm32 have room to spare and stay non-LTO (no LTO risk on
+# the configs that don't need it, incl. the untested stm32). Under -flto the per-C
 # assembler listing (-Wa,-adhlns) must be OFF: the compile emits GIMPLE (no asm) and
 # at link $< is an object, so the LTO codegen step would write the listing over a .o.
 # (-flto also needs `used` on the .fwhdr placeholder in main.c so it survives
 # whole-program GC; KEEP() in the linker script protects only against --gc-sections.)
-ifneq ($(filter y,$(CONFIG_MK2) $(CONFIG_MK3_STM32)),)
+ifeq ($(CONFIG_MK2),y)
   CFLAGS += -flto
 else
   CFLAGS += -Wa,-adhlns=$(OBJDIR)/$(<:.c=.lst)

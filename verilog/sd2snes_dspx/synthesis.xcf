@@ -1,4 +1,0 @@
-MODEL "upd77c25" max_fanout=32;
-BEGIN MODEL "upd77c25"
-NET "ss_frozen" iob=false;
-END;

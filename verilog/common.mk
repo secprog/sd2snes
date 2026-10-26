@@ -189,10 +189,11 @@ main.ncd: main_map.ncd
 	par_status=0; \
 	$(XILINX_ENV) $(XILINX_BIN)/par -w $(XILINX_PAR_OPTS) $^ $@ main.pcf || par_status=$$?; \
 	trce_status=0; \
-	$(XILINX_ENV) $(XILINX_BIN)/trce -v 10 -n 10 -u 10 $@ main.pcf -o main.twr || trce_status=$$?; \
+	$(XILINX_ENV) $(XILINX_BIN)/trce -v 10 -n 10 -u 10 -fastpaths $@ main.pcf -o main.twr || trce_status=$$?; \
 	if [ $$par_status -ne 0 ]; then rm -f "$@"; exit $$par_status; fi; \
 	if [ $$trce_status -ne 0 ]; then rm -f "$@"; exit $$trce_status; fi
-	@! grep -q 'Timing Score: [1-9][0-9]*' main.par || (echo "[mk2] sd2snes_$(CORE): Timing not met!"; \
+	@{ grep -Eq 'Timing Score: 0 \(Setup: 0, Hold: 0' main.par && \
+	   grep -Eq 'Timing errors: 0[[:space:]]+Score: 0' main.twr; } || (echo "[mk2] sd2snes_$(CORE): Missing or failing timing result!"; \
 		[ "$(IGNORE_TIMING)"a = 1a ] || (echo "Aborting. To ignore timing violations, run make [...] IGNORE_TIMING=1."; rm "$@"; exit 55))
 
 main.bit: main.ncd main.ut

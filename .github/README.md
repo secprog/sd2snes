@@ -106,6 +106,30 @@ use the same ISE project, constraints and seed 46. Only proof inputs and reports
 are uploaded; no diagnostic bitstreams enter a release. All verification and
 compilation in this workflow runs on GitHub-hosted runners.
 
+`Compare CX4 GPR bank timing` tests three 16-byte banks in place of the original
+48-byte GPR array. XST reports 384 flip-flops for the original array; this is a
+targeted RAM-inference experiment, not an assumed timing fix. The source generator
+checks the complete original `cx4.v` blob and accounts for every GPR access. CPU
+write priority, frozen MMIO restores, byte order, out-of-range reads/writes and
+the existing registered bus read are included in the extracted component proof.
+No other CPU logic or project/clock constraints change.
+
+The proof audits all 392 state bits (384 GPR bits and the 8-bit bus register),
+their positive clock edge and absence of initialization. It then cuts every DFF
+at Q/D, sharing the complete current state as symbolic inputs and comparing all
+next-state bits and CPU reads with combinational SAT. This establishes one-step
+equivalence for every common binary state and every binary input combination,
+including simultaneous CPU/MMIO writes and invalid byte addresses. Uninitialized
+storage is arbitrary, never forced to zero. Undefined out-of-range outputs must
+match strictly; there is no `ignore_gold_x`, reset assumption or bounded-trace
+shortcut. Data corruption and wrong write-priority mutations must both produce
+counterexamples. This is a component proof tied to the exact source changes,
+not a whole-CX4 equivalence or hardware qualification claim. Only after it passes
+do the original and candidate run native ISE with the same seed 1 and strict
+PAR/TRACE gates. All models and reports remain diagnostic artifacts; production
+RTL is unchanged. The RAM coding references are AMD UG627, pages 133 and 144–150;
+the proof uses Yosys 0.33's strict miter comparison and SAT failure checks.
+
 ## Toolchains
 
 - MkII: ISE 14.7 from

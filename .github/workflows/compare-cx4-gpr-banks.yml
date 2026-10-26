@@ -1,0 +1,172 @@
+name: Compare CX4 GPR bank timing
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cx4-gpr-banks-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  prove:
+    name: Prove every GPR transition and read; reject data and priority mutations
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Prepare pinned component and native diagnostic sources
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/prepare-cx4-gpr-experiment.py \
+            verilog/sd2snes_cx4/cx4.v "$RUNNER_TEMP/gpr-proof"
+
+      - name: Install formal tools on the GitHub runner
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends yosys
+          yosys -V | tee "$RUNNER_TEMP/gpr-proof/tool-version.txt"
+
+      - name: Prove the full transition relation and both read paths
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/gpr-proof"
+          sha256sum --check SHA256SUMS
+          for variant in gold gate bad-data bad-priority; do
+            mkdir "$variant"
+            cp "$variant.v" "$variant/model.v"
+            (
+              cd "$variant"
+              yosys -l preparation.log -p 'read_verilog -sv -formal model.v; hierarchy -check -top gpr_model; proc; memory; dffunmap; opt_clean; check -assert; write_json state.json'
+              model_name=gate
+              if [[ "$variant" == gold ]]; then model_name=gold; fi
+              python3 "$GITHUB_WORKSPACE/.github/scripts/cut-cx4-gpr-state.py" \
+                state.json transition.json "$model_name" | tee state-audit.log
+            )
+          done
+          for variant in gate bad-data bad-priority; do
+            cat > "$variant/prove.ys" <<'YOSYS'
+          read_json ../gold/transition.json
+          read_json transition.json
+          miter -equiv -make_assert -make_outputs -make_outcmp -flatten gold gate miter
+          hierarchy -check -top miter
+          opt_clean
+          check -assert
+          sat -verify -enable_undef -set-def-inputs -prove-asserts -show-inputs -show-outputs -dump_json counterexample.json -timeout 180
+          YOSYS
+            result=0
+            (cd "$variant" && yosys -l proof.log -s prove.ys) || result=$?
+            if [[ "$variant" == gate ]]; then
+              test "$result" -eq 0
+              grep -F 'SAT proof finished - no model found: SUCCESS!' "$variant/proof.log"
+            else
+              test "$result" -ne 0
+              grep -F 'SAT proof finished - model found: FAIL!' "$variant/proof.log"
+              test -s "$variant/counterexample.json"
+            fi
+          done
+          sha256sum --check SHA256SUMS
+          printf 'All 392 next-state bits and CPU reads match for every common state and input; both negative controls rejected.\n' \
+            | tee verified.txt >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload exact proof inputs, state audit and counterexamples
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cx4-gpr-bank-proof
+          path: ${{ runner.temp }}/gpr-proof/
+          if-no-files-found: error
+          retention-days: 14
+
+  compare:
+    name: CX4 ${{ matrix.source }} seed 1
+    needs: prove
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        source: [original, banked]
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: cx4-gpr-bank-proof
+          path: ${{ runner.temp }}/gpr-proof
+
+      - name: Select only the proved diagnostic source
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: |
+          set -euo pipefail
+          proof_dir="$RUNNER_TEMP/gpr-proof"
+          (cd "$proof_dir" && sha256sum --check SHA256SUMS)
+          test -s "$proof_dir/verified.txt"
+          cmp "$proof_dir/original-cx4.v" verilog/sd2snes_cx4/cx4.v
+          if [[ "$SOURCE" == banked ]]; then
+            cp "$proof_dir/candidate-cx4.v" verilog/sd2snes_cx4/cx4.v
+          fi
+          {
+            printf 'Diagnostic source: %s\nRunner checkout: %s\n' "$SOURCE" "$GITHUB_SHA"
+            printf 'Placement seed: 1; project, clocks and timing constraints unchanged.\n'
+            while IFS= read -r -d '' source_file; do
+              printf '%s %s\n' "$(git hash-object --no-filters "$source_file")" "$source_file"
+            done < <(git ls-files -z verilog/sd2snes_cx4/ verilog/common.mk verilog/xilinx_scripts/ .github/scripts/build.sh)
+          } | tee "$RUNNER_TEMP/cx4-source.txt"
+
+      - uses: ./.github/actions/prepare-build-image
+        with:
+          target: mk2
+
+      - name: Compile CX4 with strict native PAR and TRACE checks
+        env:
+          ISE_CTABLE: '1'
+        run: |
+          set -euo pipefail
+          docker image inspect sd2snes-ci:mk2 --format 'ISE image ID: {{.Id}}' \
+            | tee -a "$RUNNER_TEMP/cx4-source.txt"
+          container_name=sd2snes-cx4-gpr-banks
+          bash .github/scripts/report-activity.sh "$container_name" &
+          activity_pid=$!
+          trap 'kill "$activity_pid" 2>/dev/null || true; wait "$activity_pid" 2>/dev/null || true' EXIT
+          docker run --rm --name "$container_name" --user 0:0 \
+            --mac-address 08:00:27:68:c9:35 --env ISE_CTABLE \
+            --volume "$GITHUB_WORKSPACE:/work" --workdir /work \
+            --entrypoint /bin/bash sd2snes-ci:mk2 .github/scripts/build.sh mk2 cx4 \
+            2>&1 | tee "$RUNNER_TEMP/cx4-build.log"
+
+      - name: Record available intermediate checksums
+        if: always()
+        run: |
+          for result_file in main.ngc main.ngd main_map.ncd main.ncd; do
+            if [[ -f "verilog/sd2snes_cx4/$result_file" ]]; then
+              sha256sum "verilog/sd2snes_cx4/$result_file"
+            fi
+          done > "$RUNNER_TEMP/cx4-build-checksums.txt"
+
+      - name: Upload reports without publishing diagnostic bitstreams
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cx4-gpr-${{ matrix.source }}-seed-1
+          path: |
+            ${{ runner.temp }}/cx4-source.txt
+            ${{ runner.temp }}/cx4-build.log
+            ${{ runner.temp }}/cx4-build-checksums.txt
+            verilog/sd2snes_cx4/main.xst
+            verilog/sd2snes_cx4/main.prj
+            verilog/sd2snes_cx4/main.pcf
+            verilog/sd2snes_cx4/*.syr
+            verilog/sd2snes_cx4/*.par
+            verilog/sd2snes_cx4/*.mrp
+            verilog/sd2snes_cx4/*.psr
+            verilog/sd2snes_cx4/*.twr
+            verilog/sd2snes_cx4/*.bld
+            verilog/sd2snes_cx4/*.unroutes
+          if-no-files-found: error
+          retention-days: 14

@@ -30,6 +30,9 @@ Full runs produce three independent firmware jobs and ZIPs: `mk2`, `mk3`
 (LPC), and `mk3-stm32`. Each ZIP contains only its board's MCU firmware, menu,
 FPGA images and matching card modules. MkIII LPC and STM32 use the same `.bi3`
 images, compiled once and included in both packages. STM32 remains non-LTO.
+Manual full runs can select one board with `release_target`; `mk3-both` builds
+the two separate MkIII packages with one shared FPGA matrix. The default `all`
+builds all three packages. Board selections have independent concurrency groups.
 
 Every FPGA core has its own hosted-runner job, with up to 12 running at once.
 The matrix comes from `MK2CORES` and `MK3CORES` in the root Makefile, plus mini.

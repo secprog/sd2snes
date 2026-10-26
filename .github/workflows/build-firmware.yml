@@ -22,13 +22,18 @@ on:
       placement_seeds:
         description: For MkII fpga mode only, optional comma-separated placer seeds (1..100)
         type: string
+      release_target:
+        description: Packages to build in full release mode (MkIII variants share the FPGA build)
+        type: choice
+        options: [all, mk2, mk3, mk3-stm32, mk3-both]
+        default: all
 
 permissions:
   contents: read
   actions: read
 
 concurrency:
-  group: firmware-${{ github.ref }}-${{ inputs.build || 'all' }}-${{ inputs.build == 'fpga' && github.run_id || inputs.build == 'software' && github.sha || 'latest' }}
+  group: firmware-${{ github.ref }}-${{ inputs.build || 'all' }}-${{ inputs.release_target || 'all' }}-${{ inputs.build == 'fpga' && github.run_id || inputs.build == 'software' && github.sha || 'latest' }}
   cancel-in-progress: true
 
 jobs:
@@ -51,6 +56,7 @@ jobs:
     outputs:
       matrix: ${{ steps.cores.outputs.matrix }}
       boards: ${{ steps.cores.outputs.boards }}
+      packages: ${{ steps.cores.outputs.packages }}
     steps:
       - uses: actions/checkout@v6
       - name: Check build scripts and derive matrix from Makefile
@@ -58,6 +64,7 @@ jobs:
         env:
           FPGA_CORES: ${{ inputs.build == 'fpga' && inputs.fpga_cores || '' }}
           PLACEMENT_SEEDS: ${{ inputs.build == 'fpga' && inputs.placement_seeds || '' }}
+          RELEASE_TARGET: ${{ inputs.build == 'fpga' && 'all' || inputs.release_target || 'all' }}
         run: |
           bash -n .github/scripts/build.sh
           python3 .github/scripts/check-fpga-manifest.py matrix >> "$GITHUB_OUTPUT"
@@ -169,7 +176,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        board: [mk2, mk3]
+        board: ${{ fromJSON(needs.fpga-plan.outputs.boards) }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/download-artifact@v4
@@ -336,20 +343,13 @@ jobs:
 
   firmware:
     name: Build and package ${{ matrix.board }} firmware
-    needs: [fpga, menus]
+    needs: [fpga, menus, fpga-plan]
     if: ${{ !cancelled() && needs.menus.result == 'success' && inputs.build != 'software' && inputs.build != 'menus' && inputs.build != 'fpga' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - board: mk2
-            fpga: mk2
-          - board: mk3
-            fpga: mk3
-          - board: mk3-stm32
-            fpga: mk3
+      matrix: ${{ fromJSON(needs.fpga-plan.outputs.packages) }}
     steps:
       - uses: actions/checkout@v6
 

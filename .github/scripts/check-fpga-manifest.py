@@ -63,6 +63,16 @@ def main():
     if mode == "matrix":
         matrix = [{"board": board, "core": name, "extension": EXT[board]}
                   for board in EXT for name in cores(board)]
+        target = os.environ.get("RELEASE_TARGET", "all")
+        package_boards = {
+            "all": list(FIRMWARE), "mk2": ["mk2"], "mk3": ["mk3"],
+            "mk3-stm32": ["mk3-stm32"], "mk3-both": ["mk3", "mk3-stm32"],
+        }
+        if target not in package_boards:
+            raise RuntimeError(f"Unknown release target: {target}")
+        selected_fpga = {"mk2" if board == "mk2" else "mk3"
+                         for board in package_boards[target]}
+        matrix = [item for item in matrix if item["board"] in selected_fpga]
         selection = os.environ.get("FPGA_CORES", "").strip()
         if selection:
             requested = set(selection.split(","))
@@ -81,6 +91,9 @@ def main():
             raise RuntimeError("FPGA matrix exceeds GitHub's 256-job limit; select fewer cores or seeds")
         print("matrix=" + json.dumps({"include": matrix}, separators=(",", ":")))
         print("boards=" + json.dumps(sorted({item["board"] for item in matrix})))
+        packages = [{"board": board, "fpga": "mk2" if board == "mk2" else "mk3"}
+                    for board in package_boards[target]]
+        print("packages=" + json.dumps({"include": packages}, separators=(",", ":")))
         return
     board = sys.argv[2]
     fpga_board = "mk2" if board == "mk2" else "mk3"

@@ -1,0 +1,6 @@
+# Physical fanout guidance for the synchronous DSP save-state freeze control.
+# The original failing TRACE path has 328 loads on snes_dspx/ss_frozen.
+# UG625 MAX_FANOUT=REDUCE asks MAP to duplicate equivalent gates/registers;
+# it adds no pipeline stage and does not change a clock or path requirement.
+# common.mk appends the parent UCF, retaining SYSTEM_JITTER=0.48 ns and all pins/clocks.
+NET "snes_dspx/ss_frozen" MAX_FANOUT = REDUCE;

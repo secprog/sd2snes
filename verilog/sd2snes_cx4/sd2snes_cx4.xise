@@ -302,8 +302,8 @@
     <property xil_pn:name="Message Filter File" xil_pn:value="filter.filter" xil_pn:valueState="default"/>
     <property xil_pn:name="ModelSim Post-Map UUT Instance Name" xil_pn:value="uut" xil_pn:valueState="default"/>
     <property xil_pn:name="ModelSim Post-Par UUT Instance Name" xil_pn:value="uut" xil_pn:valueState="default"/>
-    <property xil_pn:name="Move First Flip-Flop Stage" xil_pn:value="true" xil_pn:valueState="default"/>
-    <property xil_pn:name="Move Last Flip-Flop Stage" xil_pn:value="true" xil_pn:valueState="default"/>
+    <property xil_pn:name="Move First Flip-Flop Stage" xil_pn:value="false" xil_pn:valueState="non-default"/>
+    <property xil_pn:name="Move Last Flip-Flop Stage" xil_pn:value="false" xil_pn:valueState="non-default"/>
     <property xil_pn:name="Multiplier Style" xil_pn:value="Auto" xil_pn:valueState="default"/>
     <property xil_pn:name="Mux Extraction" xil_pn:value="Yes" xil_pn:valueState="default"/>
     <property xil_pn:name="Mux Style" xil_pn:value="Auto" xil_pn:valueState="default"/>
@@ -316,7 +316,7 @@
     <property xil_pn:name="Number of Paths in Error/Verbose Report Post Trace" xil_pn:value="3" xil_pn:valueState="default"/>
     <property xil_pn:name="Number of Start/End Points" xil_pn:value="0" xil_pn:valueState="default"/>
     <property xil_pn:name="Number of Summary Paths" xil_pn:value="10" xil_pn:valueState="default"/>
-    <property xil_pn:name="Optimization Effort" xil_pn:value="Normal" xil_pn:valueState="non-default"/>
+    <property xil_pn:name="Optimization Effort" xil_pn:value="High" xil_pn:valueState="non-default"/>
     <property xil_pn:name="Optimization Goal" xil_pn:value="Area" xil_pn:valueState="non-default"/>
     <property xil_pn:name="Optimization Strategy (Cover Mode)" xil_pn:value="Balanced" xil_pn:valueState="non-default"/>
     <property xil_pn:name="Optimize Instantiated Primitives" xil_pn:value="true" xil_pn:valueState="non-default"/>
@@ -382,7 +382,7 @@
     <property xil_pn:name="Re-Use Last Bitstream File" xil_pn:value="false" xil_pn:valueState="default"/>
     <property xil_pn:name="Read Cores" xil_pn:value="true" xil_pn:valueState="default"/>
     <property xil_pn:name="Regenerate Core" xil_pn:value="Under Current Project Setting" xil_pn:valueState="default"/>
-    <property xil_pn:name="Register Balancing" xil_pn:value="Yes" xil_pn:valueState="non-default"/>
+    <property xil_pn:name="Register Balancing" xil_pn:value="No" xil_pn:valueState="default"/>
     <property xil_pn:name="Register Duplication" xil_pn:value="On" xil_pn:valueState="non-default"/>
     <property xil_pn:name="Register Duplication Xst" xil_pn:value="true" xil_pn:valueState="default"/>
     <property xil_pn:name="Release Set/Reset (Output Events)" xil_pn:value="Default (6)" xil_pn:valueState="default"/>

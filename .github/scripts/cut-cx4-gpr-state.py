@@ -50,7 +50,12 @@ for cell_name, cell in module["cells"].items():
         next_bits[qbit] = dbit
     registers.append(cell_name)
 if set(next_bits) != set(state):
-    raise SystemExit("The canonical relation omits or invents sequential state")
+    raise SystemExit(
+        f"The canonical relation omits or invents sequential state: "
+        f"{len(next_bits)} DFF bits versus {len(state)} observed bits; "
+        f"{len(set(next_bits) - set(state))} unobserved, "
+        f"{len(set(state) - set(next_bits))} not driven by a DFF"
+    )
 input_bits = {bit for port in module["ports"].values()
               if port["direction"] == "input" for bit in port["bits"]}
 if input_bits & set(state):

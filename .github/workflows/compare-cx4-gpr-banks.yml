@@ -41,7 +41,9 @@ jobs:
             cp "$variant.v" "$variant/model.v"
             (
               cd "$variant"
-              yosys -l preparation.log -p 'read_verilog -sv -formal model.v; hierarchy -check -top gpr_model; proc; memory; dffunmap; opt_clean; check -assert; write_json state.json'
+              # Preserve the exact 48-byte bound and the existing bus register.
+              # Default read-port widening pads this non-power-of-two memory.
+              yosys -l preparation.log -p 'read_verilog -sv -formal model.v; hierarchy -check -top gpr_model; proc; memory -nowiden -memx; dffunmap; opt_clean; check -assert; write_json state.json'
               model_name=gate
               if [[ "$variant" == gold ]]; then model_name=gold; fi
               python3 "$GITHUB_WORKSPACE/.github/scripts/cut-cx4-gpr-state.py" \

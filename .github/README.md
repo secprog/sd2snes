@@ -116,6 +116,9 @@ No other CPU logic or project/clock constraints change.
 
 The proof audits all 392 state bits (384 GPR bits and the 8-bit bus register),
 their positive clock edge and absence of initialization. It then cuts every DFF
+after memory lowering with explicit bounds/undefined-access modelling and no
+read-port widening (`memory -nowiden -memx`). This retains the 48-byte boundary
+and the bus output register instead of padding the model to 64 bytes. The cut is
 at Q/D, sharing the complete current state as symbolic inputs and comparing all
 next-state bits and CPU reads with combinational SAT. This establishes one-step
 equivalence for every common binary state and every binary input combination,

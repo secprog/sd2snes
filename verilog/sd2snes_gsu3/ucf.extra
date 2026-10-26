@@ -3,10 +3,9 @@
 # is the CLKFX output of a DCM whose measured period jitter is 0.75 ns peak to
 # peak (stamped in the DCM header).  SYSTEM_JITTER becomes a per-path
 # uncertainty of jitter/sqrt(2), so 0.48 ns buys a ~0.34 ns guard band without
-# touching the PERIOD itself.  0.48 is the LARGEST value the spc7110 design
-# closes on; if this variant fails to close timing at 0.48, lower the value
-# rather than dropping the line (an unreachable constraint makes place-and-route
-# give up early and the physical result gets dramatically worse).
+# touching the PERIOD itself. Keep this guard band when investigating timing
+# failures. Fix the implementation instead of reducing uncertainty to obtain a
+# passing score; any budget change requires separate clock-budget validation.
 SYSTEM_JITTER = 0.48 ns;
 
 # Half-rate FX3 core (GSU3_HALF in main.v): gsu_fx3 runs with a clock enable on every

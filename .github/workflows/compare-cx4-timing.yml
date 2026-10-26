@@ -1,0 +1,107 @@
+name: Compare CX4 RTL timing
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cx4-timing-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compare:
+    name: CX4 ${{ matrix.source }} seed ${{ matrix.seed }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        source: [current, sttng-reference]
+        seed: [1, 46]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Select and verify the CX4 source
+        env:
+          SOURCE: ${{ matrix.source }}
+          SEED: ${{ matrix.seed }}
+        run: |
+          set -euo pipefail
+          source_file=verilog/sd2snes_cx4/cx4.v
+          reference_commit=4c46d18a5b18778e5e3a1f082323e5aacf531447
+          expected_blob=$(git rev-parse "HEAD:$source_file")
+          if [[ "$SOURCE" == sttng-reference ]]; then
+            expected_blob=3e072bafd5410de0a7cbce3a02f4fe04d6ea2d76
+            curl --fail --location --silent --show-error --retry 3 \
+              "https://raw.githubusercontent.com/sttng/sd2snes-ludufre/$reference_commit/$source_file" \
+              --output "$RUNNER_TEMP/reference-cx4.v"
+            test "$(git hash-object --no-filters "$RUNNER_TEMP/reference-cx4.v")" = "$expected_blob"
+            cp "$RUNNER_TEMP/reference-cx4.v" "$source_file"
+          fi
+          test "$(git hash-object --no-filters "$source_file")" = "$expected_blob"
+          {
+            printf 'Source variant: %s\nPlacement seed: %s\n' "$SOURCE" "$SEED"
+            printf 'Runner checkout: %s\nCX4 source blob: %s\n' "$GITHUB_SHA" "$expected_blob"
+            printf 'Upstream reference commit: %s\n' "$reference_commit"
+            printf 'ISE project blob: %s\n' "$(git hash-object --no-filters verilog/sd2snes_cx4/sd2snes_cx4.xise)"
+            printf 'UCF blob: %s\n' "$(git hash-object --no-filters verilog/sd2snes_cx4/main.ucf)"
+          } | tee "$RUNNER_TEMP/cx4-source.txt"
+
+      - uses: ./.github/actions/prepare-build-image
+        with:
+          target: mk2
+
+      - name: Compile with the same strict timing checks
+        env:
+          ISE_CTABLE: ${{ matrix.seed }}
+        run: |
+          set -euo pipefail
+          container_name=sd2snes-cx4-comparison
+          bash .github/scripts/report-activity.sh "$container_name" &
+          activity_pid=$!
+          trap 'kill "$activity_pid" 2>/dev/null || true; wait "$activity_pid" 2>/dev/null || true' EXIT
+          docker run --rm --name "$container_name" --user 0:0 \
+            --mac-address 08:00:27:68:c9:35 --env ISE_CTABLE \
+            --volume "$GITHUB_WORKSPACE:/work" --workdir /work \
+            --entrypoint /bin/bash sd2snes-ci:mk2 .github/scripts/build.sh mk2 cx4 \
+            2>&1 | tee "$RUNNER_TEMP/cx4-build.log"
+
+      - name: Summarize the native timing and utilization results
+        if: always()
+        env:
+          SOURCE: ${{ matrix.source }}
+          SEED: ${{ matrix.seed }}
+        run: |
+          {
+            printf '### CX4 %s, seed %s\n\n' "$SOURCE" "$SEED"
+            if [[ -f "$RUNNER_TEMP/cx4-source.txt" ]]; then
+              cat "$RUNNER_TEMP/cx4-source.txt"
+            fi
+            if [[ -f verilog/sd2snes_cx4/main.par ]]; then
+              grep -E 'Timing Score:|SETUP|HOLD|signals.*routed' verilog/sd2snes_cx4/main.par || true
+            fi
+            if [[ -f verilog/sd2snes_cx4/main_map.mrp ]]; then
+              grep -E 'occupied Slices|input LUTs|RAMB16s' verilog/sd2snes_cx4/main_map.mrp || true
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload comparison reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cx4-timing-${{ matrix.source }}-seed-${{ matrix.seed }}
+          path: |
+            ${{ runner.temp }}/cx4-source.txt
+            ${{ runner.temp }}/cx4-build.log
+            verilog/sd2snes_cx4/*.syr
+            verilog/sd2snes_cx4/*.par
+            verilog/sd2snes_cx4/*.mrp
+            verilog/sd2snes_cx4/*.psr
+            verilog/sd2snes_cx4/*.twr
+            verilog/sd2snes_cx4/*.bld
+            verilog/sd2snes_cx4/*.unroutes
+          if-no-files-found: error
+          retention-days: 14

@@ -13,6 +13,7 @@ COMMON_IP = dac_buf msu_databuf snescmd_buf upd77c25_datram upd77c25_datrom upd7
 HEADER = config.vh
 
 # Limit only the synchronous freeze-control fanout during synthesis (UG625).
+# Keep this internal control in fabric; actual pin registers retain MAP IOB packing.
 # No clock/path requirement or RTL register boundary is changed by this XCF.
 XST_XCF = synthesis.xcf
 

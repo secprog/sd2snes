@@ -70,6 +70,15 @@ def main():
             if requested - known:
                 raise RuntimeError(f"Unknown FPGA targets: {sorted(requested - known)}")
             matrix = [item for item in matrix if f"{item['board']}:{item['core']}" in requested]
+        seeds = os.environ.get("PLACEMENT_SEEDS", "").strip()
+        if seeds:
+            values = seeds.split(",")
+            if (any(not re.fullmatch(r"[1-9][0-9]?|100", seed) for seed in values)
+                    or len(values) != len(set(values)) or any(item["board"] != "mk2" for item in matrix)):
+                raise RuntimeError("Placement seeds must be distinct values 1..100 for MkII targets only")
+            matrix = [dict(item, seed=seed) for item in matrix for seed in values]
+        if len(matrix) > 256:
+            raise RuntimeError("FPGA matrix exceeds GitHub's 256-job limit; select fewer cores or seeds")
         print("matrix=" + json.dumps({"include": matrix}, separators=(",", ":")))
         print("boards=" + json.dumps(sorted({item["board"] for item in matrix})))
         return

@@ -1,4 +1,5 @@
-// 3.579545 MHz average from CLK2 = 96 MHz. Successive enables are 26 or
+// Approximately 3.58 MHz from CLK2 = 96 MHz, retaining the existing fractional
+// increment. Successive enables are 26 or
 // 27 clocks apart; main.sdc qualifies internal TV80 paths by this enable.
 reg [24:0] sms_ce_acc = 25'd0;
 (* preserve *) reg sms_ce = 1'b0;

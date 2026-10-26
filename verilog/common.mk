@@ -180,12 +180,12 @@ main.ngd: main.ngc $(XIL_IP)
 
 main_map.ncd: main.ngd
 	$(call T,[mk2] fpga_$(CORE) - Map)
-	$(eval XILINX_MAP_OPTS := $(shell $(XILINX_ENV) $(XILINX_BIN)/xtclsh $(XILINX_SCRIPTS)/xgenmapcmd.tcl sd2snes_$(CORE).xise))
+	$(eval XILINX_MAP_OPTS := $(shell $(XILINX_ENV) $(XILINX_BIN)/xtclsh $(XILINX_SCRIPTS)/xgenmapcmd.tcl sd2snes_$(CORE).xise $(ISE_CTABLE)))
 	$(XILINX_ENV) $(XILINX_BIN)/map -p $(XILINX_PART) $(XILINX_MAP_OPTS) -o $@ $^ main.pcf
 
 main.ncd: main_map.ncd
 	$(call T,[mk2] fpga_$(CORE) - Place and Route)
-	$(eval XILINX_PAR_OPTS := $(shell $(XILINX_ENV) $(XILINX_BIN)/xtclsh $(XILINX_SCRIPTS)/xgenparcmd.tcl sd2snes_$(CORE).xise))
+	$(eval XILINX_PAR_OPTS := $(shell $(XILINX_ENV) $(XILINX_BIN)/xtclsh $(XILINX_SCRIPTS)/xgenparcmd.tcl sd2snes_$(CORE).xise $(ISE_CTABLE)))
 	par_status=0; \
 	$(XILINX_ENV) $(XILINX_BIN)/par -w $(XILINX_PAR_OPTS) $^ $@ main.pcf || par_status=$$?; \
 	if [ $$par_status -ne 0 ] || grep -q 'Timing Score: [1-9][0-9]*' main.par; then \

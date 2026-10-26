@@ -19,6 +19,9 @@ on:
       fpga_cores:
         description: For fpga mode only, optional comma-separated targets (e.g. mk2:sgb,mk2:gsu)
         type: string
+      placement_seeds:
+        description: For MkII fpga mode only, optional comma-separated placer seeds (1..100)
+        type: string
 
 permissions:
   contents: read
@@ -54,6 +57,7 @@ jobs:
         id: cores
         env:
           FPGA_CORES: ${{ inputs.build == 'fpga' && inputs.fpga_cores || '' }}
+          PLACEMENT_SEEDS: ${{ inputs.build == 'fpga' && inputs.placement_seeds || '' }}
         run: |
           bash -n .github/scripts/build.sh
           python3 .github/scripts/check-fpga-manifest.py matrix >> "$GITHUB_OUTPUT"
@@ -74,7 +78,7 @@ jobs:
           target: ${{ matrix.board }}
 
   fpga-core:
-    name: Build ${{ matrix.board }} core ${{ matrix.core }}
+    name: Build ${{ matrix.board }} core ${{ matrix.core }}${{ matrix.seed && format(' seed {0}', matrix.seed) || '' }}
     needs: [fpga-plan, prepare-fpga]
     runs-on: ubuntu-22.04
     timeout-minutes: 360
@@ -104,6 +108,7 @@ jobs:
         env:
           BOARD: ${{ matrix.board }}
           CORE: ${{ matrix.core }}
+          ISE_CTABLE: ${{ matrix.seed }}
         run: |
           set -o pipefail
           container_name="sd2snes-$BOARD"
@@ -115,7 +120,7 @@ jobs:
           bash .github/scripts/report-activity.sh "$container_name" &
           activity_pid=$!
           trap 'kill "$activity_pid" 2>/dev/null || true; wait "$activity_pid" 2>/dev/null || true' EXIT
-          docker run "${args[@]}" --entrypoint /bin/bash "sd2snes-ci:$BOARD" \
+          docker run "${args[@]}" --env ISE_CTABLE --entrypoint /bin/bash "sd2snes-ci:$BOARD" \
             .github/scripts/build.sh "$BOARD" "$CORE" 2>&1 | tee "$RUNNER_TEMP/fpga-build.log"
 
       - name: Collect FPGA image
@@ -130,7 +135,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: fpga-${{ matrix.board }}-core-${{ matrix.core }}
+          name: fpga-${{ matrix.board }}-core-${{ matrix.core }}${{ matrix.seed && format('-seed-{0}', matrix.seed) || '' }}
           path: ${{ runner.temp }}/fpga-artifact/
           if-no-files-found: error
           retention-days: 14
@@ -139,7 +144,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: fpga-reports-${{ matrix.board }}-${{ matrix.core }}
+          name: fpga-reports-${{ matrix.board }}-${{ matrix.core }}${{ matrix.seed && format('-seed-{0}', matrix.seed) || '' }}
           path: |
             ${{ runner.temp }}/fpga-build.log
             verilog/*/*.syr

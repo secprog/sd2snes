@@ -56,6 +56,9 @@ and failure; a failed core cannot cancel the other core jobs.
 For a focused retry, select `build: fpga` and set `fpga_cores` to targets such as
 `mk2:sgb,mk2:sgb_msu,mk2:gsu`. This builds only those cores without packaging or
 cancelling a full release run. Leave that field empty to check all FPGA cores.
+`placement_seeds` optionally tests several MkII map/PAR cost tables in parallel
+(for example `2,3,4`). Seed trials publish separate images and reports; normal
+release builds use the settings committed in each ISE project.
 Failed MkII timing checks also generate a detailed TRACE report before rejecting
 the image.
 SMS verifies its actual clock-enable RTL over the complete accumulator period.

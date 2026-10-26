@@ -957,9 +957,9 @@ always @(posedge CLK2) begin
   else if (sms_swap & sms_ready) sms_ready <= 1'b0;          // player consumed it
 end
 
-// SMS clock-enable = EXACT 3.579545MHz average via a fractional-N accumulator
+// SMS clock-enable is approximately 3.58MHz via the existing fractional-N accumulator
 // (was /27 = 3.556MHz = -0.67% game speed; /24 was 4.0MHz = ~67Hz frames).
-// K = round(2^25 * 3579545 / 96e6) = 1251194; carry-out = CE. CE spacing dithers
+// K = 1251194 (3.579694748MHz at CLK2=96MHz); carry-out = CE. CE spacing dithers
 // 26/27 CLK2 cycles (>=26), so the tv80 cen multicycle-slack analysis still holds.
 `include "sms_ce.vh"
 reg sms_rd_last = 1'b0;  // the last SMS slot went to the ROM fetch (arbiter fairness)

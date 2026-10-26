@@ -258,7 +258,7 @@ jobs:
         run: |
           docker run --rm --user 0:0 --mac-address 08:00:27:68:c9:35 \
             --volume "$GITHUB_WORKSPACE:/work" --workdir /work --entrypoint /bin/bash \
-            sd2snes-ci:mk2 -c 'make host-tools && make -C verilog/sd2snes_mini mk2 HOST=LINUX XILINX_ENV='
+            sd2snes-ci:mk2 -c 'make host-tools && make -C verilog/sd2snes_mini mk2 HOST=LINUX XILINX_ENV= IGNORE_TIMING=0'
       - uses: actions/upload-artifact@v4
         with:
           name: fpga-mk2-mini

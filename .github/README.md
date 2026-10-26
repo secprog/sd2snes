@@ -62,8 +62,12 @@ cancelling a full release run. Leave that field empty to check all FPGA cores.
 `placement_seeds` optionally tests several MkII map/PAR cost tables in parallel
 (for example `2,3,4`). Seed trials publish separate images and reports; normal
 release builds use the settings committed in each ISE project.
-Failed MkII timing checks also generate a detailed TRACE report before rejecting
-the image.
+Every MkII implementation generates a detailed TRACE report, including paths
+not covered by the existing constraints. Report generation and timing violations
+are build failures; CI explicitly sets `IGNORE_TIMING=0` on both FPGA targets.
+These reports describe the committed timing model, not hardware qualification.
+Legacy MkII cores with no explicit DCM jitter budget or I/O delays still require
+separate timing-budget review and hardware validation, even with Timing Score 0.
 SMS verifies its actual clock-enable RTL over the complete accumulator period.
 Only paths between TV80 registers reached through physical enable pins receive
 a conservative two-cycle setup exception (enables are at least 26 clocks apart),

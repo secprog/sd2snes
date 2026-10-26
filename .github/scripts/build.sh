@@ -11,7 +11,7 @@ case "${1:-}" in
       [[ "$2" =~ ^[a-z0-9_]+$ ]]
       target="verilog/sd2snes_$2/fpga_$2.bit"
     fi
-    make -j2 "$target" HOST=LINUX XILINX_ENV=
+    make -j2 "$target" HOST=LINUX XILINX_ENV= IGNORE_TIMING=0
     ;;
   mk3)
     target=fpga-mk3
@@ -19,7 +19,7 @@ case "${1:-}" in
       [[ "$2" =~ ^[a-z0-9_]+$ ]]
       target="verilog/sd2snes_$2/fpga_$2.bi3"
     fi
-    make -j2 "$target" HOST=LINUX INTEL_BIN=/opt/quartus_lite/quartus/bin
+    make -j2 "$target" HOST=LINUX INTEL_BIN=/opt/quartus_lite/quartus/bin IGNORE_TIMING=0
     ;;
   firmware)
     case "${2:-all}" in

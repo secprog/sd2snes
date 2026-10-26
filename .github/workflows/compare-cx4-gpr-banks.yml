@@ -2,6 +2,11 @@ name: Compare CX4 GPR bank timing
 
 on:
   workflow_dispatch:
+    inputs:
+      include_original:
+        description: Rebuild the original control alongside the candidate
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -95,7 +100,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        source: [original, banked]
+        source: ${{ fromJSON(inputs.include_original && '["original","banked"]' || '["banked"]') }}
     steps:
       - uses: actions/checkout@v6
 

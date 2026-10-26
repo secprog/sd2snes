@@ -31,8 +31,20 @@ BANK_DECLARATION = """// Three byte lanes of the same sixteen 24-bit GPR words.
 reg [7:0] gpr_bank0 [15:0];
 reg [7:0] gpr_bank1 [15:0];
 reg [7:0] gpr_bank2 [15:0];
-wire [4:0] gpr_bus_row = ADDR[5:0] / 6'd3;
-wire [1:0] gpr_bus_lane = ADDR[5:0] % 6'd3;
+// XST only accepts division/remainder by powers of two. Decode each byte
+// address explicitly instead; this adds no clocked state or read latency.
+reg [4:0] gpr_bus_row;
+reg [1:0] gpr_bus_lane;
+always @* begin
+  gpr_bus_row = 5'bxxxxx;
+  gpr_bus_lane = 2'bxx;
+  case(ADDR[5:0])
+""" + "".join(
+    f"    6'd{address}: {{gpr_bus_row, gpr_bus_lane}} = {{5'd{address // 3}, 2'd{address % 3}}};\n"
+    for address in range(64)
+) + """    default: begin gpr_bus_row = 5'bxxxxx; gpr_bus_lane = 2'bxx; end
+  endcase
+end
 wire [7:0] gpr_bus_data = (ADDR[5:0] < 6'd48)
     ? ((gpr_bus_lane == 2'd0) ? gpr_bank0[gpr_bus_row[3:0]]
      : (gpr_bus_lane == 2'd1) ? gpr_bank1[gpr_bus_row[3:0]]

@@ -79,12 +79,15 @@ RELEASE_BOARD=mk2`, `mk3` or `mk3-stm32` packages already-built files for a
 single board. These commands do not bypass FPGA timing or synthesis guards.
 
 `Compare CX4 RTL timing` is a manual diagnostic workflow. It compares the current
-CX4 RTL with the file from sttng's ST0011/ST0018/COL20 reference, pinned to commit
-`4c46d18a5b18778e5e3a1f082323e5aacf531447` and verified by its Git blob hash.
-Only `cx4.v` differs between the two variants; both use the same cached ISE,
-project, UCF and seeds (1 and 46), with strict timing checks. The artifacts contain
-source provenance, timing and utilization reports; they are separate from release
-artifacts and do not publish reference firmware images.
+`cx4.v` and `main.v` with both files from sttng's ST0011/ST0018/COL20 reference,
+pinned to commit `4c46d18a5b18778e5e3a1f082323e5aacf531447` and verified by their
+Git blob hashes. These two variants use the current ISE project and seeds 1 and
+46. A fifth job uses both reference RTL files and the reference ISE project, with
+its original seed 3. All five use the same cached ISE, unchanged UCF, current
+build scripts and strict timing checks. The artifacts contain the source and
+tool-image provenance, generated synthesis settings, intermediate-file checksums,
+timing and utilization reports. They are separate from release artifacts and do
+not publish reference firmware images.
 
 ## Toolchains
 

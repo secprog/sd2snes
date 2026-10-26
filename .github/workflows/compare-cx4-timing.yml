@@ -17,37 +17,65 @@ jobs:
     timeout-minutes: 120
     strategy:
       fail-fast: false
-      max-parallel: 4
+      max-parallel: 5
       matrix:
-        source: [current, sttng-reference]
-        seed: [1, 46]
+        include:
+          - source: current
+            seed: 1
+          - source: current
+            seed: 46
+          - source: sttng-rtl
+            seed: 1
+          - source: sttng-rtl
+            seed: 46
+          - source: sttng-project
+            seed: 3
     steps:
       - uses: actions/checkout@v6
 
-      - name: Select and verify the CX4 source
+      - name: Select and verify the CX4 sources and project
         env:
           SOURCE: ${{ matrix.source }}
           SEED: ${{ matrix.seed }}
         run: |
           set -euo pipefail
-          source_file=verilog/sd2snes_cx4/cx4.v
+          core_dir=verilog/sd2snes_cx4
           reference_commit=4c46d18a5b18778e5e3a1f082323e5aacf531447
-          expected_blob=$(git rev-parse "HEAD:$source_file")
-          if [[ "$SOURCE" == sttng-reference ]]; then
-            expected_blob=3e072bafd5410de0a7cbce3a02f4fe04d6ea2d76
+          current_project_blob=$(git rev-parse "HEAD:$core_dir/sd2snes_cx4.xise")
+          select_reference_file() {
+            local source_file="$core_dir/$1"
+            local expected_blob="$2"
+            local downloaded_file="$RUNNER_TEMP/reference-$1"
             curl --fail --location --silent --show-error --retry 3 \
               "https://raw.githubusercontent.com/sttng/sd2snes-ludufre/$reference_commit/$source_file" \
-              --output "$RUNNER_TEMP/reference-cx4.v"
-            test "$(git hash-object --no-filters "$RUNNER_TEMP/reference-cx4.v")" = "$expected_blob"
-            cp "$RUNNER_TEMP/reference-cx4.v" "$source_file"
+              --output "$downloaded_file"
+            test "$(git hash-object --no-filters "$downloaded_file")" = "$expected_blob"
+            cp "$downloaded_file" "$source_file"
+            test "$(git hash-object --no-filters "$source_file")" = "$expected_blob"
+          }
+          case "$SOURCE" in
+            current) ;;
+            sttng-rtl|sttng-project)
+              select_reference_file cx4.v 3e072bafd5410de0a7cbce3a02f4fe04d6ea2d76
+              select_reference_file main.v ff65e92e91fe2a04cd85010dd9cbc626bc7fbae4
+              if [[ "$SOURCE" == sttng-project ]]; then
+                select_reference_file sd2snes_cx4.xise 31e4748ea03956b931b978344992d45326c2673d
+              fi
+              ;;
+            *) exit 2 ;;
+          esac
+          test "$(git hash-object --no-filters "$core_dir/main.ucf")" = ba8e407f0419044aa91e4213b6b5502a083c077a
+          if [[ "$SOURCE" != sttng-project ]]; then
+            test "$(git hash-object --no-filters "$core_dir/sd2snes_cx4.xise")" = "$current_project_blob"
           fi
-          test "$(git hash-object --no-filters "$source_file")" = "$expected_blob"
           {
             printf 'Source variant: %s\nPlacement seed: %s\n' "$SOURCE" "$SEED"
-            printf 'Runner checkout: %s\nCX4 source blob: %s\n' "$GITHUB_SHA" "$expected_blob"
+            printf 'Runner checkout: %s\n' "$GITHUB_SHA"
             printf 'Upstream reference commit: %s\n' "$reference_commit"
-            printf 'ISE project blob: %s\n' "$(git hash-object --no-filters verilog/sd2snes_cx4/sd2snes_cx4.xise)"
-            printf 'UCF blob: %s\n' "$(git hash-object --no-filters verilog/sd2snes_cx4/main.ucf)"
+            printf 'Build scripts: current checkout; reference files are diagnostic inputs only.\n'
+            while IFS= read -r -d '' source_file; do
+              printf '%s %s\n' "$(git hash-object --no-filters "$source_file")" "$source_file"
+            done < <(git ls-files -z "$core_dir/" verilog/common.mk verilog/xilinx_scripts/ .github/scripts/build.sh)
           } | tee "$RUNNER_TEMP/cx4-source.txt"
 
       - uses: ./.github/actions/prepare-build-image
@@ -59,6 +87,8 @@ jobs:
           ISE_CTABLE: ${{ matrix.seed }}
         run: |
           set -euo pipefail
+          docker image inspect sd2snes-ci:mk2 --format 'ISE image ID: {{.Id}}' \
+            | tee -a "$RUNNER_TEMP/cx4-source.txt"
           container_name=sd2snes-cx4-comparison
           bash .github/scripts/report-activity.sh "$container_name" &
           activity_pid=$!
@@ -87,6 +117,11 @@ jobs:
               grep -E 'occupied Slices|input LUTs|RAMB16s' verilog/sd2snes_cx4/main_map.mrp || true
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+          for result_file in main.ngc main.ngd main_map.ncd main.ncd; do
+            if [[ -f "verilog/sd2snes_cx4/$result_file" ]]; then
+              sha256sum "verilog/sd2snes_cx4/$result_file"
+            fi
+          done > "$RUNNER_TEMP/cx4-build-checksums.txt"
 
       - name: Upload comparison reports
         if: always()
@@ -96,6 +131,10 @@ jobs:
           path: |
             ${{ runner.temp }}/cx4-source.txt
             ${{ runner.temp }}/cx4-build.log
+            ${{ runner.temp }}/cx4-build-checksums.txt
+            verilog/sd2snes_cx4/main.xst
+            verilog/sd2snes_cx4/main.prj
+            verilog/sd2snes_cx4/main.pcf
             verilog/sd2snes_cx4/*.syr
             verilog/sd2snes_cx4/*.par
             verilog/sd2snes_cx4/*.mrp

@@ -7,10 +7,6 @@ COMMON_IP = cx4_datram cx4_datrom cx4_mul cx4_pgmrom dac_buf msu_databuf snescmd
 
 HEADER = config.vh
 
-# Guide duplication of high-fanout CX4 controls during synthesis (UG627, pp. 347-349).
-# Keep RTL, clock requirements and actual pin-register packing unchanged.
-XST_XCF = synthesis.xcf
-
 XIL_IP =
 XIL_IPCORE_DIR = ip/mk2
 

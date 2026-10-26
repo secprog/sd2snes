@@ -95,7 +95,10 @@ the production RTL unchanged. Before either FPGA job can run, Yosys must prove
 every equivalence cell for the complete module with undefined-state modelling
 (`equiv_simple`, `equiv_induct`, `equiv_status -assert`). Before induction, every
 register bit, clock edge and initial value must match. Uninitialized bits remain
-arbitrary; they are never replaced with zeros. This state audit and the restriction
+arbitrary; they are never replaced with zeros. The proof job uses Ubuntu 24.04's
+Yosys with lossless JSON initializers, and rejects numeric initializer encodings.
+Clock enables and synchronous resets are normalized into input muxes before the
+audit; register clocks and boundaries must still match. This state audit and the restriction
 to a clocked programming block provide the initial relation required by the
 induction check; all combinational outputs remain unchanged. The same checker must
 reject a deliberately incorrect write-data mutation. The original and candidate then

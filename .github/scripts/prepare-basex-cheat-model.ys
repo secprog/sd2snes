@@ -3,6 +3,7 @@ read_verilog -sv -formal gold.v
 hierarchy -check -top cheat
 proc
 memory
+dffunmap
 opt_clean
 write_json gold-state.json
 design -stash gold
@@ -11,6 +12,7 @@ read_verilog -sv -formal candidate.v
 hierarchy -check -top cheat
 proc
 memory
+dffunmap
 opt_clean
 write_json gate-state.json
 design -stash gate

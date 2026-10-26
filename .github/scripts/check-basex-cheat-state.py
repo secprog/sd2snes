@@ -23,7 +23,9 @@ def state_inventory(path):
                 names[bit].append((name, index))
         init = net.get("attributes", {}).get("init")
         if init is not None:
-            if len(init) != len(net["bits"]):
+            # Modern write_json preserves x/z as binary strings. Yosys 0.9 emits
+            # short constants as integers and cannot support this lossless audit.
+            if not isinstance(init, str) or len(init) != len(net["bits"]) or not set(init) <= set("01xz"):
                 raise ValueError(f"Ambiguous initial state on {name}")
             for bit, value in zip(net["bits"], reversed(init)):
                 initial[bit].add(value)

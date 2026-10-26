@@ -4,7 +4,6 @@
    <spirit:library>project</spirit:library>
    <spirit:name>coregen</spirit:name>
    <spirit:version>1.0</spirit:version>
-   <spirit:componentInstances/>
    <spirit:vendorExtensions>
       <xilinx:instanceProperties>
          <xilinx:projectOptions>

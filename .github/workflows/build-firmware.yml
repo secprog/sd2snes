@@ -137,6 +137,7 @@ jobs:
             verilog/*/*.bld
             verilog/*/*.bgn
             verilog/*/*.twr
+            verilog/*/*.unroutes
             verilog/*/output_files/*.rpt
             verilog/*/output_files/*.summary
           if-no-files-found: ignore

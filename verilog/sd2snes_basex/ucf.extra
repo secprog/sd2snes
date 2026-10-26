@@ -1,0 +1,5 @@
+# Narrow physical fanout guidance for the original failing cheat-data CE net.
+# TRACE reports 19 loads and 1.888 ns routing on this final enable stage.
+# This is a MAP optimization request (UG625), not a timing exception.
+# All parent pin/clock/path requirements are appended unchanged by common.mk.
+NET "snes_cheat/cheat_addr_1_and0000" MAX_FANOUT = REDUCE;

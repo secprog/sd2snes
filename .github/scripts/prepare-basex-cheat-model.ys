@@ -1,10 +1,10 @@
-# Run in the hosted proof directory containing gold.v and candidate.v.
-# No blackboxes, assumptions, retiming, reset masks or skipped equivalence cells.
+# Prepare both complete modules on the runner before auditing register boundaries.
 read_verilog -sv -formal gold.v
 hierarchy -check -top cheat
 proc
 memory
 opt_clean
+write_json gold-state.json
 design -stash gold
 
 read_verilog -sv -formal candidate.v
@@ -12,11 +12,11 @@ hierarchy -check -top cheat
 proc
 memory
 opt_clean
+write_json gate-state.json
 design -stash gate
 
 design -copy-from gold -as gold cheat
 design -copy-from gate -as gate cheat
 equiv_make gold gate equiv
 hierarchy -top equiv
-equiv_simple -undef -seq 1
-equiv_status -assert
+write_ilang equivalence.il

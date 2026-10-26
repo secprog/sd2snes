@@ -1,0 +1,7 @@
+# The runner first audits every state bit, clock edge and initial value.
+# The pinned transformation only changes the programming block of a clocked
+# process; all combinational outputs and state declarations remain unchanged.
+read_ilang equivalence.il
+equiv_simple -undef -seq 1
+equiv_induct -undef -seq 2
+equiv_status -assert

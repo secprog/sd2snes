@@ -36,15 +36,29 @@ jobs:
           set -euo pipefail
           cd "$RUNNER_TEMP/cheat-proof"
           sha256sum --check SHA256SUMS
-          cp gate.v candidate.v
-          yosys -l equivalence.log -s "$GITHUB_WORKSPACE/.github/scripts/prove-basex-cheat-experiment.ys"
-          grep -F 'Equivalence successfully proven!' equivalence.log
-          cp mutant.v candidate.v
+          mkdir positive negative
+          cp gold.v positive/gold.v
+          cp gold.v negative/gold.v
+          cp gate.v positive/candidate.v
+          cp mutant.v negative/candidate.v
+          for variant in positive negative; do
+            (
+              cd "$variant"
+              yosys -l preparation.log -s "$GITHUB_WORKSPACE/.github/scripts/prepare-basex-cheat-model.ys"
+              python3 "$GITHUB_WORKSPACE/.github/scripts/check-basex-cheat-state.py" \
+                gold-state.json gate-state.json | tee state-audit.log
+            )
+          done
+          (
+            cd positive
+            yosys -l equivalence.log -s "$GITHUB_WORKSPACE/.github/scripts/prove-basex-cheat-model.ys"
+            grep -F 'Equivalence successfully proven!' equivalence.log
+          )
           negative_status=0
-          yosys -l negative-control.log -s "$GITHUB_WORKSPACE/.github/scripts/prove-basex-cheat-experiment.ys" \
+          (cd negative && yosys -l negative-control.log -s "$GITHUB_WORKSPACE/.github/scripts/prove-basex-cheat-model.ys") \
             || negative_status=$?
           test "$negative_status" -ne 0
-          grep -Ei 'unproven.*equiv.*cells' negative-control.log
+          grep -Ei 'unproven.*equiv.*cells' negative/negative-control.log
           sha256sum --check SHA256SUMS
           printf 'Candidate equivalence passed; deliberately incorrect data write was rejected.\n' \
             | tee "$RUNNER_TEMP/cheat-proof/verified.txt" >> "$GITHUB_STEP_SUMMARY"

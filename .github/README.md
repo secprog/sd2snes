@@ -58,6 +58,10 @@ For a focused retry, select `build: fpga` and set `fpga_cores` to targets such a
 cancelling a full release run. Leave that field empty to check all FPGA cores.
 Failed MkII timing checks also generate a detailed TRACE report before rejecting
 the image.
+SMS verifies its actual clock-enable RTL over the complete accumulator period.
+Only paths between TV80 registers reached through physical enable pins receive
+a conservative two-cycle setup exception (enables are at least 26 clocks apart),
+with the corresponding hold correction. Other paths keep their normal timing.
 
 The default `make all` still creates a combined release. `make release
 RELEASE_BOARD=mk2`, `mk3` or `mk3-stm32` packages already-built files for a

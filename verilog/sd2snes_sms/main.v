@@ -961,10 +961,7 @@ end
 // (was /27 = 3.556MHz = -0.67% game speed; /24 was 4.0MHz = ~67Hz frames).
 // K = round(2^25 * 3579545 / 96e6) = 1251194; carry-out = CE. CE spacing dithers
 // 26/27 CLK2 cycles (>=26), so the tv80 cen multicycle-slack analysis still holds.
-reg [24:0] sms_ce_acc = 25'd0; reg sms_ce = 1'b0;
-always @(posedge CLK2) begin
-  {sms_ce, sms_ce_acc} <= {1'b0, sms_ce_acc} + 26'd1251194;
-end
+`include "sms_ce.vh"
 reg sms_rd_last = 1'b0;  // the last SMS slot went to the ROM fetch (arbiter fairness)
 reg sms_wr_busy = 1'b0;   // double-issue guard: block re-latch until BUF_WRQ drops
 

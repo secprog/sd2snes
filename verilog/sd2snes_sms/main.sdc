@@ -125,6 +125,23 @@ set_clock_uncertainty -fall_from [get_clocks {CLKIN}] -fall_to [get_clocks {CLKI
 # Set Multicycle Path
 #**************************************************************
 
+# TV80's state, register file and bus wrapper update only on sms_ce (or
+# ClkEn = sms_ce && !BusAck). sms_ce.vh spaces enables at least 26 CLK2 edges
+# apart, verified over its complete accumulator period by tb_sms_ce.v.
+# Use only two cycles, and only between CPU registers whose physical ena
+# pins are driven by sms_ce. The enable generator, CPU inputs/outputs and
+# all fast bridge/audio/VDP logic retain single-cycle constraints.
+# See Intel Timing Analyzer Cookbook, "Clock Enable Multicycle Constraints".
+set sms_ce_q [get_pins {sms_ce|q}]
+set sms_cpu_ena [get_pins -hierarchical {sms_core:sms_inst|sms:u_sms|tv80s_ce:cpu|*|ena}]
+set sms_cpu_enabled [get_fanouts $sms_ce_q -through $sms_cpu_ena]
+if {[get_collection_size $sms_ce_q] == 0 || [get_collection_size $sms_cpu_enabled] == 0} {
+    error "SMS TV80 clock-enable collection is empty; check the physical enable pins"
+}
+post_message -type info "SMS TV80: [get_collection_size $sms_cpu_enabled] CE-qualified CPU registers, internal setup=2 / hold=1"
+set_multicycle_path 2 -setup -end -from $sms_cpu_enabled -to $sms_cpu_enabled
+set_multicycle_path 1 -hold -end -from $sms_cpu_enabled -to $sms_cpu_enabled
+
 
 
 #**************************************************************

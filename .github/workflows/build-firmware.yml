@@ -85,6 +85,17 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Verify SMS clock-enable timing model
+        if: matrix.board == 'mk3' && matrix.core == 'sms'
+        run: |
+          if ! command -v iverilog >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends iverilog
+          fi
+          iverilog -g2012 -Iverilog/sd2snes_sms -s tb_sms_ce \
+            -o "$RUNNER_TEMP/sms-ce-test" verilog/sd2snes_sms/tb_sms_ce.v
+          vvp "$RUNNER_TEMP/sms-ce-test"
+
       - uses: ./.github/actions/prepare-build-image
         with:
           target: ${{ matrix.board }}

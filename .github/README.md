@@ -132,6 +132,11 @@ do the original and candidate run native ISE with the same seed 1 and strict
 PAR/TRACE gates. All models and reports remain diagnostic artifacts; production
 RTL is unchanged. The RAM coding references are AMD UG627, pages 133 and 144–150;
 the proof uses Yosys 0.33's strict miter comparison and SAT failure checks.
+The source model is checked before memory lowering. Yosys `memory_map` leaves
+the nonexistent 48..63 read-mux leaves undriven; those become explicit X values
+with `setundef -undriven -undef`, and the lowered model is checked again. This
+does not initialize storage or turn undefined output values into don't-care
+comparison masks.
 
 ## Toolchains
 

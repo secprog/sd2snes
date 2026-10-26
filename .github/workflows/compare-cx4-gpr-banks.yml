@@ -43,7 +43,10 @@ jobs:
               cd "$variant"
               # Preserve the exact 48-byte bound and the existing bus register.
               # Default read-port widening pads this non-power-of-two memory.
-              yosys -l preparation.log -p 'read_verilog -sv -formal model.v; hierarchy -check -top gpr_model; proc; memory -nowiden -memx; dffunmap; opt_clean; check -assert; write_json state.json'
+              # Check the source model before lowering. memory_map leaves the
+              # nonexistent 48..63 read-mux leaves undriven; explicitly retain
+              # them as X, never zero and never as new unconstrained inputs.
+              yosys -l preparation.log -p 'read_verilog -sv -formal model.v; hierarchy -check -top gpr_model; proc; check -assert; memory -nowiden -memx; dffunmap; opt_expr -keepdc; setundef -undriven -undef; opt_clean; check -assert; write_json state.json'
               model_name=gate
               if [[ "$variant" == gold ]]; then model_name=gold; fi
               python3 "$GITHUB_WORKSPACE/.github/scripts/cut-cx4-gpr-state.py" \

@@ -12,6 +12,10 @@ COMMON_IP = dac_buf msu_databuf snescmd_buf upd77c25_datram upd77c25_datrom upd7
 
 HEADER = config.vh
 
+# Limit only the synchronous freeze-control fanout during synthesis (UG625).
+# No clock/path requirement or RTL register boundary is changed by this XCF.
+XST_XCF = synthesis.xcf
+
 XIL_IP =
 XIL_IPCORE_DIR = ../sd2snes_dsp/ip/mk2
 

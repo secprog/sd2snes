@@ -151,7 +151,7 @@ main.ucf: ucf.extra $(VSRC_DIR)/main.ucf ALWAYS
 		echo "[mk2] fpga_$(CORE): main.ucf = ucf.extra + $(VSRC_DIR)/main.ucf"; fi
 endif
 
-main.ngc: main.xst main.prj $(UCF)
+main.ngc: main.xst main.prj $(UCF) $(XST_XCF)
 	$(call T,[mk2] fpga_$(CORE) - Synthesize)
 	rm -f $@
 	mkdir -p $(XILINX_XST_TMPDIR)
@@ -223,7 +223,7 @@ main.prj: $(XIL_IP) $(VSRC) $(VHSRC) $(HEADER)
 	for src in $(VHSRC); do echo vhdl work "$$src" >> main.prj; done
 
 # XST file - list of command line options for the synthesis tool (xst)
-main.xst: sd2snes_$(CORE).xise main.prj
+main.xst: sd2snes_$(CORE).xise main.prj $(XST_XCF)
 	$(XILINX_ENV) $(XILINX_BIN)/xtclsh $(XILINX_SCRIPTS)/xgenxstfile.tcl $< $@ main.prj $(XIL_IPCORE_DIR) $(XILINX_XST_TMPDIR)
 
 # UT file - list of command line options for the bit file generator (bitgen)

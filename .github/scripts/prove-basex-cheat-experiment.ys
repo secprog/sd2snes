@@ -3,14 +3,14 @@
 read_verilog -sv -formal gold.v
 hierarchy -check -top cheat
 proc
-memory_map
+memory
 opt_clean
 design -stash gold
 
 read_verilog -sv -formal candidate.v
 hierarchy -check -top cheat
 proc
-memory_map
+memory
 opt_clean
 design -stash gate
 

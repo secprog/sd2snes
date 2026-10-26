@@ -133,8 +133,11 @@ set_clock_uncertainty -fall_from [get_clocks {CLKIN}] -fall_to [get_clocks {CLKI
 # all fast bridge/audio/VDP logic retain single-cycle constraints.
 # See Intel Timing Analyzer Cookbook, "Clock Enable Multicycle Constraints".
 set sms_ce_q [get_pins {sms_ce|q}]
-set sms_cpu_ena [get_pins -hierarchical {sms_core:sms_inst|sms:u_sms|tv80s_ce:cpu|*|ena}]
+# Hierarchical-mode pin filters accept only one hierarchy separator. Use
+# compatibility matching for the complete CPU instance path (Quartus UG683243).
+set sms_cpu_ena [get_pins -compatibility_mode {*sms_inst*|*u_sms*|*cpu*|*|ena}]
 set sms_cpu_enabled [get_fanouts $sms_ce_q -through $sms_cpu_ena]
+post_message -type info "SMS CE selectors: Q=[get_collection_size $sms_ce_q], CPU ena=[get_collection_size $sms_cpu_ena], enabled=[get_collection_size $sms_cpu_enabled]"
 if {[get_collection_size $sms_ce_q] == 0 || [get_collection_size $sms_cpu_enabled] == 0} {
     error "SMS TV80 clock-enable collection is empty; check the physical enable pins"
 }

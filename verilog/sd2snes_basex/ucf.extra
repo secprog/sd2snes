@@ -1,5 +1,0 @@
-# Physical fanout guidance for the critical cheat-register write-enable path.
-# UG625 MAX_FANOUT=REDUCE asks MAP to duplicate equivalent gates/registers;
-# it adds no pipeline stage and does not change a clock or path requirement.
-# The parent main.ucf, including all clock/pin constraints, is appended by common.mk.
-NET "SNES_WR_end" MAX_FANOUT = REDUCE;

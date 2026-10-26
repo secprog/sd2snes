@@ -1,0 +1,139 @@
+name: Compare basex cheat decoder timing
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: basex-cheat-decoder-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  prove:
+    name: Prove the diagnostic decoder and reject its negative control
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Prepare the exact source comparison
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/prepare-basex-cheat-experiment.py \
+            verilog/sd2snes_base/cheat.v "$RUNNER_TEMP/cheat-proof"
+
+      - name: Install formal verification tools on the GitHub runner
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends yosys
+          yosys -V | tee "$RUNNER_TEMP/cheat-proof/tool-version.txt"
+
+      - name: Require complete equivalence and a failing negative control
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/cheat-proof"
+          sha256sum --check SHA256SUMS
+          cp gate.v candidate.v
+          yosys -l equivalence.log -s "$GITHUB_WORKSPACE/.github/scripts/prove-basex-cheat-experiment.ys"
+          grep -F 'Equivalence successfully proven!' equivalence.log
+          cp mutant.v candidate.v
+          negative_status=0
+          yosys -l negative-control.log -s "$GITHUB_WORKSPACE/.github/scripts/prove-basex-cheat-experiment.ys" \
+            || negative_status=$?
+          test "$negative_status" -ne 0
+          grep -Ei 'unproven.*equiv.*cells' negative-control.log
+          sha256sum --check SHA256SUMS
+          printf 'Candidate equivalence passed; deliberately incorrect data write was rejected.\n' \
+            | tee "$RUNNER_TEMP/cheat-proof/verified.txt" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload proof inputs and results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: basex-cheat-decoder-proof
+          path: ${{ runner.temp }}/cheat-proof/
+          if-no-files-found: error
+          retention-days: 14
+
+  compare:
+    name: basex ${{ matrix.source }} seed 46
+    needs: prove
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        source: [original, case-decoder]
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: basex-cheat-decoder-proof
+          path: ${{ runner.temp }}/cheat-proof
+
+      - name: Select the verified diagnostic input
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: |
+          set -euo pipefail
+          proof_dir="$RUNNER_TEMP/cheat-proof"
+          (cd "$proof_dir" && sha256sum --check SHA256SUMS)
+          test -s "$proof_dir/verified.txt"
+          cmp "$proof_dir/gold.v" verilog/sd2snes_base/cheat.v
+          if [[ "$SOURCE" == case-decoder ]]; then
+            cp "$proof_dir/gate.v" verilog/sd2snes_base/cheat.v
+          fi
+          {
+            printf 'Diagnostic source: %s\nRunner checkout: %s\n' "$SOURCE" "$GITHUB_SHA"
+            printf 'Placement seed: 46; timing constraints and project unchanged.\n'
+            for source_file in verilog/sd2snes_base/cheat.v verilog/sd2snes_base/main.ucf \
+              verilog/sd2snes_basex/sd2snes_basex.xise; do
+              printf '%s %s\n' "$(git hash-object --no-filters "$source_file")" "$source_file"
+            done
+          } | tee "$RUNNER_TEMP/basex-source.txt"
+
+      - uses: ./.github/actions/prepare-build-image
+        with:
+          target: mk2
+
+      - name: Compile basex with the existing strict timing gate
+        env:
+          ISE_CTABLE: '46'
+        run: |
+          set -euo pipefail
+          docker image inspect sd2snes-ci:mk2 --format 'ISE image ID: {{.Id}}' \
+            | tee -a "$RUNNER_TEMP/basex-source.txt"
+          container_name=sd2snes-basex-decoder-comparison
+          bash .github/scripts/report-activity.sh "$container_name" &
+          activity_pid=$!
+          trap 'kill "$activity_pid" 2>/dev/null || true; wait "$activity_pid" 2>/dev/null || true' EXIT
+          docker run --rm --name "$container_name" --user 0:0 \
+            --mac-address 08:00:27:68:c9:35 --env ISE_CTABLE \
+            --volume "$GITHUB_WORKSPACE:/work" --workdir /work \
+            --entrypoint /bin/bash sd2snes-ci:mk2 .github/scripts/build.sh mk2 basex \
+            2>&1 | tee "$RUNNER_TEMP/basex-build.log"
+
+      - name: Upload native comparison reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: basex-cheat-decoder-${{ matrix.source }}-seed-46
+          path: |
+            ${{ runner.temp }}/basex-source.txt
+            ${{ runner.temp }}/basex-build.log
+            verilog/sd2snes_basex/main.xst
+            verilog/sd2snes_basex/main.prj
+            verilog/sd2snes_basex/main.pcf
+            verilog/sd2snes_basex/*.syr
+            verilog/sd2snes_basex/*.par
+            verilog/sd2snes_basex/*.mrp
+            verilog/sd2snes_basex/*.psr
+            verilog/sd2snes_basex/*.twr
+            verilog/sd2snes_basex/*.bld
+            verilog/sd2snes_basex/*.unroutes
+          if-no-files-found: error
+          retention-days: 14

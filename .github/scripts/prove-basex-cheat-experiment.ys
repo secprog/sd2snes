@@ -1,0 +1,22 @@
+# Run in the hosted proof directory containing gold.v and candidate.v.
+# No blackboxes, assumptions, retiming, reset masks or skipped equivalence cells.
+read_verilog -sv -formal gold.v
+hierarchy -check -top cheat
+proc
+memory_map
+opt_clean
+design -stash gold
+
+read_verilog -sv -formal candidate.v
+hierarchy -check -top cheat
+proc
+memory_map
+opt_clean
+design -stash gate
+
+design -copy-from gold -as gold cheat
+design -copy-from gate -as gate cheat
+equiv_make gold gate equiv
+hierarchy -top equiv
+equiv_simple -undef -seq 1
+equiv_status -assert

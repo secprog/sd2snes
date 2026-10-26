@@ -1,1 +1,1 @@
-MODEL "cx4" max_fanout=64;
+MODEL "cx4" max_fanout=128;

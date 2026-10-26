@@ -89,6 +89,16 @@ tool-image provenance, generated synthesis settings, intermediate-file checksums
 timing and utilization reports. They are separate from release artifacts and do
 not publish reference firmware images.
 
+`Compare basex cheat decoder timing` is a separate manual diagnostic. It prepares
+an explicit six-slot case decoder from a verified `cheat.v` source blob, leaving
+the production RTL unchanged. Before either FPGA job can run, Yosys must prove
+every equivalence cell for the complete module with undefined-state modelling
+(`equiv_simple -undef -seq 1`, `equiv_status -assert`). The same checker must reject
+a deliberately incorrect write-data mutation. The original and candidate then
+use the same ISE project, constraints and seed 46. Only proof inputs and reports
+are uploaded; no diagnostic bitstreams enter a release. All verification and
+compilation in this workflow runs on GitHub-hosted runners.
+
 ## Toolchains
 
 - MkII: ISE 14.7 from

@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Check board coverage and packaged images on the GitHub runner."""
 import json
+import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import zipfile
@@ -36,6 +38,13 @@ def cores(board):
         for filename in required:
             if not (project / filename).is_file():
                 raise RuntimeError(f"Missing {board} project: {project / filename}")
+        if board == "mk2":
+            makefile = (project / "Makefile").read_text()
+            ip_dir = re.search(r"^XIL_IPCORE_DIR\s*=\s*(\S+)", makefile, re.MULTILINE)
+            if ip_dir:
+                ip_path = project / ip_dir[1]
+                if any(ip_path.glob("*.xco")) and not (ip_path / "coregen.cgc").is_file():
+                    raise RuntimeError(f"Missing CoreGen project: {ip_path / 'coregen.cgc'}")
     return names
 
 
@@ -54,7 +63,15 @@ def main():
     if mode == "matrix":
         matrix = [{"board": board, "core": name, "extension": EXT[board]}
                   for board in EXT for name in cores(board)]
+        selection = os.environ.get("FPGA_CORES", "").strip()
+        if selection:
+            requested = set(selection.split(","))
+            known = {f"{item['board']}:{item['core']}" for item in matrix}
+            if requested - known:
+                raise RuntimeError(f"Unknown FPGA targets: {sorted(requested - known)}")
+            matrix = [item for item in matrix if f"{item['board']}:{item['core']}" in requested]
         print("matrix=" + json.dumps({"include": matrix}, separators=(",", ":")))
+        print("boards=" + json.dumps(sorted({item["board"] for item in matrix})))
         return
     board = sys.argv[2]
     fpga_board = "mk2" if board == "mk2" else "mk3"

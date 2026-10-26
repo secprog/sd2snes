@@ -53,6 +53,11 @@ rejecting missing cores or files from the wrong board. The MkII mini image is
 also copied to the SD-card package because its boot diagnostics load it from
 the card. Core logs, utilization and timing reports are retained on success
 and failure; a failed core cannot cancel the other core jobs.
+For a focused retry, select `build: fpga` and set `fpga_cores` to targets such as
+`mk2:sgb,mk2:sgb_msu,mk2:gsu`. This builds only those cores without packaging or
+cancelling a full release run. Leave that field empty to check all FPGA cores.
+Failed MkII timing checks also generate a detailed TRACE report before rejecting
+the image.
 
 The default `make all` still creates a combined release. `make release
 RELEASE_BOARD=mk2`, `mk3` or `mk3-stm32` packages already-built files for a

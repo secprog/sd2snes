@@ -8,7 +8,7 @@ on:
       build:
         description: Three board-specific releases, software checks with existing FPGA images, or menus only
         type: choice
-        options: [all, software, menus]
+        options: [all, software, menus, fpga]
         default: all
       fpga_run_id:
         description: Run containing fpga-mk3 (required for software checks)
@@ -16,17 +16,21 @@ on:
       mk2_run_id:
         description: Optional run containing fpga-mk2-mini, to reuse the MkII bootstrap
         type: string
+      fpga_cores:
+        description: For fpga mode only, optional comma-separated targets (e.g. mk2:sgb,mk2:gsu)
+        type: string
 
 permissions:
   contents: read
   actions: read
 
 concurrency:
-  group: firmware-${{ github.ref }}-${{ inputs.build || 'all' }}-${{ inputs.build == 'software' && github.sha || 'latest' }}
+  group: firmware-${{ github.ref }}-${{ inputs.build || 'all' }}-${{ inputs.build == 'fpga' && github.run_id || inputs.build == 'software' && github.sha || 'latest' }}
   cancel-in-progress: true
 
 jobs:
   prepare-software:
+    if: inputs.build != 'fpga'
     name: Prepare cached GCC 13.5 toolchain
     runs-on: ubuntu-24.04
     timeout-minutes: 90
@@ -43,10 +47,13 @@ jobs:
     timeout-minutes: 5
     outputs:
       matrix: ${{ steps.cores.outputs.matrix }}
+      boards: ${{ steps.cores.outputs.boards }}
     steps:
       - uses: actions/checkout@v6
       - name: Check build scripts and derive matrix from Makefile
         id: cores
+        env:
+          FPGA_CORES: ${{ inputs.build == 'fpga' && inputs.fpga_cores || '' }}
         run: |
           bash -n .github/scripts/build.sh
           python3 .github/scripts/check-fpga-manifest.py matrix >> "$GITHUB_OUTPUT"
@@ -59,7 +66,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        board: [mk2, mk3]
+        board: ${{ fromJSON(needs.fpga-plan.outputs.boards) }}
     steps:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/prepare-build-image
@@ -87,6 +94,7 @@ jobs:
           BOARD: ${{ matrix.board }}
           CORE: ${{ matrix.core }}
         run: |
+          set -o pipefail
           container_name="sd2snes-$BOARD"
           args=(--rm --name "$container_name" --user 0:0 --volume "$GITHUB_WORKSPACE:/work" --workdir /work)
           if [[ "$BOARD" == mk2 ]]; then
@@ -138,7 +146,7 @@ jobs:
     name: Collect complete ${{ matrix.board }} FPGA set
     needs: [fpga-plan, fpga-core]
     # A failure on one board must not discard a complete set for the other.
-    if: ${{ !cancelled() && needs.fpga-plan.result == 'success' }}
+    if: ${{ !cancelled() && needs.fpga-plan.result == 'success' && inputs.build != 'fpga' }}
     runs-on: ubuntu-22.04
     timeout-minutes: 10
     strategy:
@@ -170,6 +178,7 @@ jobs:
           retention-days: 14
 
   menus:
+    if: inputs.build != 'fpga'
     name: Build SNES menus and onboarding
     needs: prepare-software
     runs-on: ubuntu-22.04
@@ -311,7 +320,7 @@ jobs:
   firmware:
     name: Build and package ${{ matrix.board }} firmware
     needs: [fpga, menus]
-    if: ${{ !cancelled() && needs.menus.result == 'success' && inputs.build != 'software' && inputs.build != 'menus' }}
+    if: ${{ !cancelled() && needs.menus.result == 'success' && inputs.build != 'software' && inputs.build != 'menus' && inputs.build != 'fpga' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:

@@ -1,0 +1,3 @@
+BEGIN MODEL "upd77c25"
+NET "ss_frozen" max_fanout=32;
+END;

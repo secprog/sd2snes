@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       build:
-        description: Full release, software checks with existing MkIII FPGA images, or menus only
+        description: Three board-specific releases, software checks with existing FPGA images, or menus only
         type: choice
         options: [all, software, menus]
         default: all
@@ -36,19 +36,45 @@ jobs:
         with:
           target: software
 
-  fpga:
+  fpga-plan:
     if: inputs.build != 'software' && inputs.build != 'menus'
-    name: Build ${{ matrix.board }} FPGA images
+    name: Check complete FPGA core coverage
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.cores.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Check build scripts and derive matrix from Makefile
+        id: cores
+        run: |
+          bash -n .github/scripts/build.sh
+          python3 .github/scripts/check-fpga-manifest.py matrix >> "$GITHUB_OUTPUT"
+
+  prepare-fpga:
+    name: Prepare cached ${{ matrix.board }} FPGA tools
+    needs: fpga-plan
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        board: [mk2, mk3]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/prepare-build-image
+        with:
+          target: ${{ matrix.board }}
+
+  fpga-core:
+    name: Build ${{ matrix.board }} core ${{ matrix.core }}
+    needs: [fpga-plan, prepare-fpga]
     runs-on: ubuntu-22.04
     timeout-minutes: 360
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - board: mk2
-            extension: bit
-          - board: mk3
-            extension: bi3
+      max-parallel: 12
+      matrix: ${{ fromJSON(needs.fpga-plan.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v6
 
@@ -56,9 +82,10 @@ jobs:
         with:
           target: ${{ matrix.board }}
 
-      - name: Compile FPGA images
+      - name: Compile FPGA core
         env:
           BOARD: ${{ matrix.board }}
+          CORE: ${{ matrix.core }}
         run: |
           container_name="sd2snes-$BOARD"
           args=(--rm --name "$container_name" --user 0:0 --volume "$GITHUB_WORKSPACE:/work" --workdir /work)
@@ -70,36 +97,76 @@ jobs:
           activity_pid=$!
           trap 'kill "$activity_pid" 2>/dev/null || true; wait "$activity_pid" 2>/dev/null || true' EXIT
           docker run "${args[@]}" --entrypoint /bin/bash "sd2snes-ci:$BOARD" \
-            .github/scripts/build.sh "$BOARD"
+            .github/scripts/build.sh "$BOARD" "$CORE" 2>&1 | tee "$RUNNER_TEMP/fpga-build.log"
 
-      - name: Collect FPGA images
+      - name: Collect FPGA image
         env:
           FPGA_EXT: ${{ matrix.extension }}
+          CORE: ${{ matrix.core }}
         run: |
-          shopt -s nullglob
-          files=(verilog/*/fpga_*."$FPGA_EXT")
-          ((${#files[@]} > 0))
+          file="verilog/sd2snes_$CORE/fpga_$CORE.$FPGA_EXT"
+          test -s "$file"
           mkdir -p "$RUNNER_TEMP/fpga-artifact"
-          cp --parents "${files[@]}" "$RUNNER_TEMP/fpga-artifact/"
+          cp --parents "$file" "$RUNNER_TEMP/fpga-artifact/"
 
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fpga-${{ matrix.board }}-core-${{ matrix.core }}
+          path: ${{ runner.temp }}/fpga-artifact/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload core build and timing reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fpga-reports-${{ matrix.board }}-${{ matrix.core }}
+          path: |
+            ${{ runner.temp }}/fpga-build.log
+            verilog/*/*.syr
+            verilog/*/*.par
+            verilog/*/*.mrp
+            verilog/*/*.bld
+            verilog/*/*.bgn
+            verilog/*/*.twr
+            verilog/*/output_files/*.rpt
+            verilog/*/output_files/*.summary
+          if-no-files-found: ignore
+          retention-days: 14
+
+  fpga:
+    name: Collect complete ${{ matrix.board }} FPGA set
+    needs: [fpga-plan, fpga-core]
+    # A failure on one board must not discard a complete set for the other.
+    if: ${{ !cancelled() && needs.fpga-plan.result == 'success' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        board: [mk2, mk3]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: fpga-${{ matrix.board }}-core-*
+          merge-multiple: true
+          path: .
+      - name: Verify complete board artifact
+        env:
+          BOARD: ${{ matrix.board }}
+        run: python3 .github/scripts/check-fpga-manifest.py artifact "$BOARD"
+      - name: Collect verified images
+        env:
+          EXT: ${{ matrix.board == 'mk2' && 'bit' || 'bi3' }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/fpga-artifact"
+          cp --parents verilog/*/fpga_*."$EXT" "$RUNNER_TEMP/fpga-artifact/"
       - uses: actions/upload-artifact@v4
         with:
           name: fpga-${{ matrix.board }}
           path: ${{ runner.temp }}/fpga-artifact/
           if-no-files-found: error
-          retention-days: 14
-
-      - name: Upload FPGA failure reports
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: fpga-${{ matrix.board }}-failure-reports
-          path: |
-            verilog/*/*.syr
-            verilog/*/*.par
-            verilog/*/output_files/*.rpt
-            verilog/*/output_files/*.summary
-          if-no-files-found: ignore
           retention-days: 14
 
   menus:
@@ -242,10 +309,21 @@ jobs:
           retention-days: 14
 
   firmware:
-    name: Build and package Mk.II and Mk.III firmware
+    name: Build and package ${{ matrix.board }} firmware
     needs: [fpga, menus]
-    runs-on: ubuntu-22.04
+    if: ${{ !cancelled() && needs.menus.result == 'success' && inputs.build != 'software' && inputs.build != 'menus' }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - board: mk2
+            fpga: mk2
+          - board: mk3
+            fpga: mk3
+          - board: mk3-stm32
+            fpga: mk3
     steps:
       - uses: actions/checkout@v6
 
@@ -255,31 +333,45 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          pattern: fpga-mk[23]
-          merge-multiple: true
+          name: fpga-${{ matrix.fpga }}
           path: .
 
-      - name: Compile firmware and menus and assemble package
+      - uses: actions/download-artifact@v4
+        with:
+          name: menus
+          path: snes/
+
+      - name: Verify board FPGA inputs
+        env:
+          FPGA_BOARD: ${{ matrix.fpga }}
+        run: python3 .github/scripts/check-fpga-manifest.py artifact "$FPGA_BOARD"
+
+      - name: Compile firmware and assemble board package
+        env:
+          BOARD: ${{ matrix.board }}
         run: |
           docker run --rm --user 0:0 --volume "$GITHUB_WORKSPACE:/work" --workdir /work \
-            sd2snes-ci:software /bin/bash .github/scripts/build.sh firmware
+            sd2snes-ci:software /bin/bash .github/scripts/build.sh firmware "$BOARD"
 
-      - name: Upload firmware package
+      - name: Upload board firmware package
         uses: actions/upload-artifact@v4
         with:
-          name: sd2snes-firmware-${{ github.sha }}
+          name: sd2snes-firmware-${{ matrix.board }}-${{ github.sha }}
           path: release/v*/sd2snes_firmware_v*.zip
           if-no-files-found: error
           retention-days: 14
 
-      - name: Upload firmware failure reports
-        if: failure()
+      - name: Upload firmware maps, binaries and build logs
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: firmware-failure-reports
+          name: firmware-reports-${{ matrix.board }}
           path: |
-            src/obj-*/*.map
-            snes/*.log
-            snes/onboarding/*.log
+            *-build.log
+            stm32-toolchain.log
+            src/obj-${{ matrix.board }}/*.map
+            src/obj-${{ matrix.board }}/*.elf
+            src/obj-${{ matrix.board }}/firmware.*
+            src/obj-${{ matrix.board }}/*.bin
           if-no-files-found: ignore
           retention-days: 14

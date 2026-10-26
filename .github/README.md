@@ -26,13 +26,37 @@ MkIII LPC and STM32 stay non-LTO; MkII retains its existing LTO setting.
 Compiler versions, full command lines, maps and binaries are uploaded.
 The normal software check uses the same cached container as release packaging.
 
-The MkII and MkIII jobs run in parallel and build the FPGA cores listed in
-`MK2CORES` and `MK3CORES` in the root Makefile, including each board's mini
-configuration image. The firmware job downloads both jobs' artifacts from the
-same run and runs `make all FPGA_PREBUILT=1`. This builds the ARM firmware for
-MkII, MkIII LPC, and MkIII STM32, the SNES menus, fonts, and card modules, then
-assembles the release ZIP. `FPGA_PREBUILT=1` fails if any required FPGA image is
-missing; ordinary local `make all` still builds the FPGA images.
+Full runs produce three independent firmware jobs and ZIPs: `mk2`, `mk3`
+(LPC), and `mk3-stm32`. Each ZIP contains only its board's MCU firmware, menu,
+FPGA images and matching card modules. MkIII LPC and STM32 use the same `.bi3`
+images, compiled once and included in both packages. STM32 remains non-LTO.
+
+Every FPGA core has its own hosted-runner job, with up to 12 running at once.
+The matrix comes from `MK2CORES` and `MK3CORES` in the root Makefile, plus mini.
+A coverage check compares those lists with the core directories and explicit
+board exclusions, so adding a core cannot silently leave it out of CI.
+
+| FPGA target | Runtime cores (mini is built and packaged in addition) |
+| --- | --- |
+| MkII (19) | base, basex, bootleg, col20, cx4, dsp, dspx, gsu, gsu3, obc1, sa1, sdd1, sgb, sgb_msu, spc7110, st0011, st0018, test, xc |
+| MkIII LPC / STM32 (23) | a26, base, bootleg, col20, cx4, dsp, gbc, gsu, gsu3, nes, nes_k, nes_mmc3, nes_mmc5, obc1, sa1, sdd1, sgb, sms, spc7110, st0011, st0018, test, xc |
+
+MkII uses separate `basex` and `dspx` images for extended mappers and competition
+carts, and separate SGB feature variants. MkIII includes those mapper features
+in its base/DSP images and uses one SGB image. NES, SMS, Atari and GBC loaders
+are MkIII-only; legacy NES/SMS ISE project files do not enable their MkII MCU
+loaders. Other board-specific feature and timing settings are retained.
+
+Complete board sets are verified before publishing `fpga-mk2` / `fpga-mk3`
+artifacts. Packaging checks the ZIP's exact FPGA list, MCU file and menu,
+rejecting missing cores or files from the wrong board. The MkII mini image is
+also copied to the SD-card package because its boot diagnostics load it from
+the card. Core logs, utilization and timing reports are retained on success
+and failure; a failed core cannot cancel the other core jobs.
+
+The default `make all` still creates a combined release. `make release
+RELEASE_BOARD=mk2`, `mk3` or `mk3-stm32` packages already-built files for a
+single board. These commands do not bypass FPGA timing or synthesis guards.
 
 ## Toolchains
 
@@ -84,9 +108,9 @@ trimming or software toolchain preparation script. Source changes reuse the cach
 configuration creates a new cache. The first build downloads the vendor images
 and prepares the environments. Hosted runners free unused SDKs to make room for
 that installation, and the image's size is printed in the job log.
-One preparation job builds and saves the software image before its dependent
-jobs start. On a cache hit, those jobs only load the completed image; they do not
-rebuild GCC, newlib or binutils, or install their prerequisites.
+Preparation jobs warm each required toolchain cache before dependent jobs
+start. On a cache hit, those jobs only load the completed image; they do not
+rebuild the toolchains or install their prerequisites.
 
 GitHub can evict caches that are unused or exceed the repository's storage
 limit; see [GitHub's cache limits](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#usage-limits-and-eviction-policy).

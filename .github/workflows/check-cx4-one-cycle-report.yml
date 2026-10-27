@@ -50,4 +50,27 @@ jobs:
           test "$status" -ne 0
           grep -F 'The diagnostic did not analyze DAC paths at the expected one-cycle period' "$RUNNER_TEMP/original-check.log"
 
+          python3 .github/scripts/inspect-cx4-sampler-paths.py "$report_dir/main.twr" \
+            --path snes_spi/byte_cnt_r_6 snes_mcu_cmd/DAC_ADDR_OUT_BUF_0 \
+            > "$RUNNER_TEMP/known-path-check.log" 2>&1
+          cat "$RUNNER_TEMP/known-path-check.log"
+          grep -F 'Original TS_DAC path snes_spi/byte_cnt_r_6 -> snes_mcu_cmd/DAC_ADDR_OUT_BUF_0:' "$RUNNER_TEMP/known-path-check.log"
+          grep -F 'Requirement:          49.979ns' "$RUNNER_TEMP/known-path-check.log"
+
+          status=0
+          python3 .github/scripts/inspect-cx4-sampler-paths.py "$report_dir/main.twr" \
+            --path definitely_missing_source definitely_missing_destination \
+            > "$RUNNER_TEMP/missing-path-check.log" 2>&1 || status=$?
+          cat "$RUNNER_TEMP/missing-path-check.log"
+          test "$status" -ne 0
+          grep -F 'No expected sampler path was found; diagnostic is inconclusive' "$RUNNER_TEMP/missing-path-check.log"
+
+          status=0
+          python3 .github/scripts/inspect-cx4-sampler-paths.py "$report_dir/single-cycle-audit.twr" \
+            --path snes_spi/byte_cnt_r_6 snes_mcu_cmd/DAC_ADDR_OUT_BUF_0 \
+            > "$RUNNER_TEMP/wrong-constraint-check.log" 2>&1 || status=$?
+          cat "$RUNNER_TEMP/wrong-constraint-check.log"
+          test "$status" -ne 0
+          grep -F 'Original four-cycle TS_DAC section is missing' "$RUNNER_TEMP/wrong-constraint-check.log"
+
           printf 'The captured one-cycle violation is rejected; the original four-cycle report cannot masquerade as a one-cycle result.\n' >> "$GITHUB_STEP_SUMMARY"

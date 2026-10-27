@@ -1,0 +1,203 @@
+name: Compare basex cheat clock-enable mapping
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: basex-cheat-ce-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  prove:
+    name: Prove all cheat writes; reject data, priority and reset mutations
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Prepare pinned component and native diagnostic sources
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/prepare-basex-ce-experiment.py \
+            verilog/sd2snes_base/cheat.v "$RUNNER_TEMP/ce-proof"
+
+      - name: Install formal tools on the GitHub runner
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends yosys
+          yosys -V | tee "$RUNNER_TEMP/ce-proof/tool-version.txt"
+
+      - name: Prove every cheat-array transition
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/ce-proof"
+          sha256sum --check SHA256SUMS
+          for variant in gold gate bad-data bad-priority bad-reset; do
+            mkdir "$variant"
+            cp "$variant.v" "$variant/model.v"
+            (
+              cd "$variant"
+              # Preserve invalid indices and every state bit without reset assumptions.
+              yosys -l preparation.log -p 'read_verilog -sv -formal model.v; hierarchy -check -top cheat_programming_model; flatten; proc; check -assert; memory -nowiden -memx; dffunmap; opt_expr -keepdc; setundef -undriven -undef; opt_clean; check -assert; write_json state.json'
+              model_name=gate
+              if [[ "$variant" == gold ]]; then model_name=gold; fi
+              python3 "$GITHUB_WORKSPACE/.github/scripts/cut-basex-write-state.py" \
+                state.json transition.json "$model_name" | tee state-audit.log
+            )
+          done
+          for variant in gate bad-data bad-priority bad-reset; do
+            cat > "$variant/prove.ys" <<'YOSYS'
+          read_json ../gold/transition.json
+          read_json transition.json
+          miter -equiv -make_assert -make_outputs -make_outcmp -flatten gold gate miter
+          hierarchy -check -top miter
+          opt_clean
+          check -assert
+          sat -verify -enable_undef -set-def-inputs -prove-asserts -show-inputs -show-outputs -dump_json counterexample.json -timeout 180
+          YOSYS
+            result=0
+            (cd "$variant" && yosys -l proof.log -s prove.ys) || result=$?
+            if [[ "$variant" == gate ]]; then
+              test "$result" -eq 0
+              grep -F 'SAT proof finished - no model found: SUCCESS!' "$variant/proof.log"
+            else
+              test "$result" -ne 0
+              grep -F 'SAT proof finished - model found: FAIL!' "$variant/proof.log"
+              test -s "$variant/counterexample.json"
+            fi
+          done
+          sha256sum --check SHA256SUMS
+          printf 'All 192 cheat-array next-state bits match for every common state and input; data, priority and reset mutations rejected.\n' \
+            | tee verified.txt >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload exact proof inputs, state audit and counterexamples
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: basex-cheat-ce-proof
+          path: ${{ runner.temp }}/ce-proof/
+          if-no-files-found: error
+          retention-days: 14
+
+  native:
+    name: Basex proved cheat CE experiment XST Speed MAP Area seed 46
+    needs: prove
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: basex-cheat-ce-proof
+          path: ${{ runner.temp }}/ce-proof
+
+      - name: Select only the proved runner-only candidate
+        run: |
+          set -euo pipefail
+          proof_dir="$RUNNER_TEMP/ce-proof"
+          (cd "$proof_dir" && sha256sum --check SHA256SUMS)
+          test -s "$proof_dir/verified.txt"
+          cmp "$proof_dir/original-cheat.v" verilog/sd2snes_base/cheat.v
+          test "$(git hash-object --no-filters verilog/sd2snes_base/main.ucf)" = e582e03059fbbcf21b4124e5dd7aa9ac8792fd6b
+          test "$(git hash-object --no-filters verilog/sd2snes_basex/sd2snes_basex.xise)" = 5338e8fa5fef0af0c526ff99563b17a0763ed34a
+          test ! -e verilog/sd2snes_basex/ucf.extra
+          cp "$proof_dir/candidate-cheat.v" verilog/sd2snes_base/cheat.v
+          {
+            printf 'Runner checkout: %s\nXST Speed / MAP Area / seed 46; production UCF and project unchanged.\n' "$GITHUB_SHA"
+            while IFS= read -r -d '' source_file; do
+              printf '%s %s\n' "$(git hash-object --no-filters "$source_file")" "$source_file"
+            done < <(git ls-files -z verilog/sd2snes_base/ verilog/sd2snes_basex/ verilog/common.mk verilog/xilinx_scripts/ .github/scripts/build.sh)
+          } | tee "$RUNNER_TEMP/basex-ce-source.txt"
+
+      - uses: ./.github/actions/prepare-build-image
+        with:
+          target: mk2
+
+      - name: Compile basex with strict native PAR and TRACE checks
+        env:
+          ISE_CTABLE: '46'
+        run: |
+          set -euo pipefail
+          docker image inspect sd2snes-ci:mk2 --format 'ISE image ID: {{.Id}}' \
+            | tee -a "$RUNNER_TEMP/basex-ce-source.txt"
+          container_name=sd2snes-basex-cheat-ce
+          bash .github/scripts/report-activity.sh "$container_name" &
+          activity_pid=$!
+          trap 'kill "$activity_pid" 2>/dev/null || true; wait "$activity_pid" 2>/dev/null || true' EXIT
+          docker run --rm --name "$container_name" --user 0:0 \
+            --mac-address 08:00:27:68:c9:35 --env ISE_CTABLE \
+            --volume "$GITHUB_WORKSPACE:/work" --workdir /work \
+            --entrypoint /bin/bash sd2snes-ci:mk2 .github/scripts/build.sh mk2 basex \
+            2>&1 | tee "$RUNNER_TEMP/basex-ce-build.log"
+
+      - name: Collect mapped or routed cheat-register evidence
+        if: always()
+        run: |
+          set -euo pipefail
+          core=verilog/sd2snes_basex
+          if [[ ! -s "$core/main_map.ncd" ]]; then
+            printf 'Cheat-register inspection inconclusive: mapped NCD unavailable.\n' \
+              | tee "$RUNNER_TEMP/basex-ce-xdl.txt"
+            exit 0
+          fi
+          design=main_map.ncd
+          if [[ -s "$core/main.ncd" ]]; then design=main.ncd; fi
+          docker run --rm --user 0:0 --mac-address 08:00:27:68:c9:35 \
+            --volume "$GITHUB_WORKSPACE:/work" --workdir /work/verilog/sd2snes_basex \
+            --entrypoint /bin/bash sd2snes-ci:mk2 -c \
+            'set -euo pipefail; xdl -ncd2xdl -nopips "$1" cheat-ce-audit.xdl' _ "$design"
+          python3 - "$core/cheat-ce-audit.xdl" "$design" <<'PY' | tee "$RUNNER_TEMP/basex-ce-xdl.txt"
+          import re
+          import sys
+          from pathlib import Path
+
+          text = Path(sys.argv[1]).read_text()
+          statements = re.findall(r'(?ms)^\s*(?:net|inst)\s+.*?;', text)
+          names = ('cheat_data_1_1', 'cheat_data<1><1>',
+                   'cheat_addr_1_3', 'cheat_addr<1><3>')
+          selected = [item for item in statements if any(name in item for name in names)]
+          print(f'Cheat-register XDL evidence from {sys.argv[2]}')
+          if not selected:
+              raise SystemExit('No targeted named register or net found; inspection inconclusive')
+          for item in selected:
+              print(item)
+          print('Manual review required: synthesis may rename, share or replicate registers.')
+          PY
+
+      - name: Record available intermediate checksums
+        if: always()
+        run: |
+          for result_file in main.ngc main.ngd main_map.ncd main.ncd; do
+            if [[ -f "verilog/sd2snes_basex/$result_file" ]]; then
+              sha256sum "verilog/sd2snes_basex/$result_file"
+            fi
+          done > "$RUNNER_TEMP/basex-ce-checksums.txt"
+
+      - name: Upload reports without publishing diagnostic bitstreams
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: basex-cheat-ce-seed-46
+          path: |
+            ${{ runner.temp }}/basex-ce-source.txt
+            ${{ runner.temp }}/basex-ce-build.log
+            ${{ runner.temp }}/basex-ce-xdl.txt
+            ${{ runner.temp }}/basex-ce-checksums.txt
+            verilog/sd2snes_basex/main.xst
+            verilog/sd2snes_basex/main.prj
+            verilog/sd2snes_basex/main.pcf
+            verilog/sd2snes_basex/sd2snes_basex.xise
+            verilog/sd2snes_basex/*.syr
+            verilog/sd2snes_basex/*.par
+            verilog/sd2snes_basex/*.mrp
+            verilog/sd2snes_basex/*.psr
+            verilog/sd2snes_basex/*.twr
+            verilog/sd2snes_basex/*.bld
+            verilog/sd2snes_basex/*.unroutes
+          if-no-files-found: error
+          retention-days: 14

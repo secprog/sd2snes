@@ -234,6 +234,20 @@ SP=0 in both native source and proof model. The strict comparison still checks
 invalid reads, and the wrapped-index negative control must fail. No reset,
 valid-address assumption or ignored-X comparison is introduced.
 
+The corrected factored DSPx gate passed the component proof, but the native
+Area/seed-68 trial failed with 165 setup errors, -1.657 ns worst slack, 6458
+LUTs and 3469 slices. Its new worst path runs from the mapper decode to a DSP
+data-register enable, with 63.8% of its delay in routing; DMA paths also
+fail. XST applied the LUT_MAP attribute, but this candidate is not promoted.
+
+The original Area/seed-68 implementation has 3493 occupied slices and its
+worst freeze-to-stack path spends 64% of its delay in routing. A bounded
+diagnostic tests only the original RTL with XST Area and the existing MAP
+Area/seed-68 settings. XST Area prioritizes reducing total logic (UG627 pages
+303–304); whether that helps routing or timing must be measured. The
+`original_only` input takes precedence over `include_original`. High effort,
+register balancing, clocks, uncertainty, PAR and strict checks are unchanged.
+
 The **Compare basex write-gate timing** diagnostic targets the five-level
 SNES write-strobe to cheat-data enable path (-0.827 ns in the original seed 46).
 Its runner-only candidate separates the six programming-slot selections from

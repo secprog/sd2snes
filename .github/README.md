@@ -208,7 +208,7 @@ original Area profile remains closer at 13 errors and -0.206 ns. Banking is
 not promoted.
 
 The **Compare DSPx stack write-gate timing** diagnostic instead retains the
-original sixteen 11-bit words and both read expressions. It separates each
+original sixteen 11-bit words and both read semantics. It separates each
 word's CALL/restore address selection from the final frozen-state and byte-lane
 gate, using the four-input behavioral `LUT_MAP` mechanism in UG627 pages
 245–247 and 345–346. The measured original freeze-to-stack path traverses four
@@ -217,13 +217,22 @@ register, clock stage, reset, initialization or CALL cycle is added. The native
 reports must establish actual mapping, capacity and timing improvement.
 
 The generator pins the same complete source, audits every access and parent
-condition, and recovers all text outside the moved writes byte for byte. All
+condition, and recovers all text outside the moved writes and explicit return
+read bound byte for byte. All
 four non-MkII configurations must remain identical. The existing 176-bit
 strict state-cut proof checks every transition and both reads, with flattened
 behavioral gates and real data/freeze/index-wrap negative counterexamples.
 Only a successful proof enables native Area/seed-68 compilation. The unchanged
 original control has already reproduced its result; `include_original` defaults
 to false to avoid compiling it again. Production RTL remains unchanged.
+
+The first write-gate proof blocked native compilation because Yosys 0.33's
+early memory-to-register conversion narrowed the original 32-bit return index
+to four bits. With SP=0 this wrapped to word 15 instead of preserving the
+original out-of-range X result. The candidate now explicitly returns X for
+SP=0 in both native source and proof model. The strict comparison still checks
+invalid reads, and the wrapped-index negative control must fail. No reset,
+valid-address assumption or ignored-X comparison is introduced.
 
 The **Compare basex write-gate timing** diagnostic targets the five-level
 SNES write-strobe to cheat-data enable path (-0.827 ns in the original seed 46).

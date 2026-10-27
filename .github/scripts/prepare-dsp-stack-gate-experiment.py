@@ -16,6 +16,12 @@ spec = importlib.util.spec_from_file_location(
 ref = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(ref)
 
+# The original unsized subtraction is 32 bits, so SP=0 reads outside the array.
+# Yosys 0.33 simplify.cc mem2reg read lowering narrows dynamic indices to the
+# memory address width. Retain the original invalid-read X explicitly in BOTH
+# the native candidate and the exact proof model; never mask it in the miter.
+RETURN_READ = "(regs_sp == 4'd0) ? 11'bx : stack[regs_sp-1]"
+
 HELPER = """// AMD UG627: one combinational LUT after the per-word decoders.
 // Preserve the original frozen-versus-running choice without new state.
 (* LUT_MAP="yes" *)
@@ -91,16 +97,20 @@ def main():
     write = factored_writes()
     insert = "\n`ifdef MK2\n" + write + "`endif"
     wrapped_restore = "`ifndef MK2\n" + ref.RESTORE + "\n`endif"
+    wrapped_return = ("`ifdef MK2\n" + ref.RETURN.replace("stack[regs_sp-1]", RETURN_READ)
+                      + "\n`else\n" + ref.RETURN + "\n`endif")
     helper = "\n`ifdef MK2\n" + HELPER + "`endif\n"
     candidate = original.replace(ref.PUSH + "\n", "")
     candidate = candidate.replace(ref.RESTORE, wrapped_restore)
+    candidate = candidate.replace(ref.RETURN, wrapped_return)
     candidate = candidate.replace(ref.WRITE_INDEX, ref.WRITE_INDEX + insert) + helper
 
-    # Recover every original byte, including declarations, read expressions and
-    # other registers' transitions, after undoing precisely these three edits.
+    # Recover every original byte, including declarations and other registers'
+    # transitions, after undoing precisely the writes and explicit read bound.
     recovered = candidate.removesuffix(helper)
     recovered = recovered.replace(ref.WRITE_INDEX + insert, ref.WRITE_INDEX)
     recovered = recovered.replace(wrapped_restore, ref.RESTORE)
+    recovered = recovered.replace(wrapped_return, ref.RETURN)
     recovered = recovered.replace(push_context.replace(ref.PUSH + "\n", ""), push_context)
     if recovered != original:
         raise SystemExit("Source outside the audited stack writes changed")
@@ -117,10 +127,10 @@ def main():
                   "      if(ss_wa >= 8'h34 && ss_wa <= 8'h53) begin\n"
                   + ref.RESTORE + "\n      end\n    end\n  end\nend")
     gold = ref.model(ref.DECL, gold_write, "stack[ss_stk_idx]", "stack[regs_sp-1]", False)
-    gate = ref.model(ref.DECL, write, "stack[ss_stk_idx]", "stack[regs_sp-1]", False) + HELPER
+    gate = ref.model(ref.DECL, write, "stack[ss_stk_idx]", RETURN_READ, False) + HELPER
     bad_data = gate.replace("<= stack_write_data[7:0];", "<= stack_write_data[7:0] ^ 8'h01;", 1)
     bad_freeze = gate.replace("(~frozen & push_selected)", "push_selected", 1)
-    bad_wrap = gate.replace("stack[regs_sp-1]", "stack[regs_sp-4'd1]", 1)
+    bad_wrap = gate.replace(RETURN_READ, "stack[regs_sp-4'd1]", 1)
     if any(mutant == gate for mutant in (bad_data, bad_freeze, bad_wrap)):
         raise SystemExit("A required negative-control mutation was not applied")
     output.mkdir(parents=True, exist_ok=True)
@@ -139,7 +149,7 @@ def main():
         "".join(difflib.unified_diff(original.splitlines(True), candidate.splitlines(True),
                                      "original-upd77c25.v", "candidate-upd77c25.v")), encoding="utf-8")
     print(f"Verified DSP blob {blob}; all stack accesses and parent conditions accounted for.")
-    print("Source outside stack writes recovered byte for byte; all four non-MkII configurations unchanged.")
+    print("Source outside stack writes/read bound recovered byte for byte; all four non-MkII configurations unchanged.")
     print("Generated factored write gates with unchanged 176-bit storage, two reads and three negative controls.")
 
 

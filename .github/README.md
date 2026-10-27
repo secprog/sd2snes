@@ -150,6 +150,28 @@ with `setundef -undriven -undef`, and the lowered model is checked again. This
 does not initialize storage or turn undefined output values into don't-care
 comparison masks.
 
+The **Compare DSPx stack bank timing** diagnostic targets the measured
+freeze-to-stack write-enable path. The original DSPx seed 68 has 13 setup
+errors, -0.206 ns worst slack and 0.339 ns clock uncertainty. The runner-only
+candidate separates each 11-bit stack word into 8-bit and 3-bit lanes with
+one write address per lane, using the distributed-RAM coding pattern in
+[AMD UG627](https://docs.amd.com/api/khub/documents/TRSkTbERlQzP8~B_44CW7A/content),
+pages 133 and 144–150. RAM inference and timing improvement must be measured;
+the existing clocks and uncertainty remain unchanged.
+
+The generator pins the complete DSP source blob, accounts for every stack
+access and checks the CALL/restore parent conditions. It also compares the
+entire non-MkII source after configuration selection. The formal component
+contains all 176 stack state bits and both asynchronous read paths. The same
+strict state-cut/SAT method used for CX4 checks every common binary state and
+input combination, including reset, frozen restores, partial-byte writes,
+overflow and the original unsized return-index subtraction. No reset or
+initialization is assumed. Data corruption, a missing freeze gate and an
+incorrectly wrapped return index must each produce a real counterexample.
+Only a passing proof enables original/banked native seed-68 builds with strict
+PAR/TRACE checks. This proves the extracted stack component, not the whole DSP
+or hardware operation; the candidate is not applied to production RTL.
+
 ## Toolchains
 
 - MkII: ISE 14.7 from

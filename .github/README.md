@@ -179,6 +179,29 @@ Only a passing proof enables original/banked native seed-68 builds with strict
 PAR/TRACE checks. This proves the extracted stack component, not the whole DSP
 or hardware operation; the candidate is not applied to production RTL.
 
+The **Compare basex write-gate timing** diagnostic targets the five-level
+SNES write-strobe to cheat-data enable path (-0.827 ns in the original seed 46).
+Its runner-only candidate separates the six programming-slot selections from
+the late command-priority gate. Each four-input gate uses the documented
+`LUT_MAP` module attribute from
+[AMD UG627, pages 245–247 and 345–346](https://docs.amd.com/api/khub/documents/TRSkTbERlQzP8~B_44CW7A/content).
+No register, clock stage, reset or priority change is intended. Native reports
+must confirm actual LUT mapping and timing; the attribute is not itself proof
+of an improvement.
+
+The generator pins the full cheat source, validates the entire original
+programming block, and accounts for every array access. Apart from moving its
+two array assignments into the new gates, all original source is recovered
+byte for byte, including declarations and all read expressions. A strict
+state-cut SAT proof checks all 192 storage bits for every common binary state
+and input, including simultaneous reset, command and programming requests and
+indices 6/7. The behavioral LUT helper is flattened, not blackboxed. Corrupted
+data, omitted command priority and omitted reset gating must each produce a
+real counterexample. This storage-component proof does not replace full FPGA
+timing or hardware validation. Only a passing proof allows the original and
+factored seed-46 native comparisons; their project and timing constraints stay
+unchanged. Production RTL and release artifacts are not modified.
+
 ## Toolchains
 
 - MkII: ISE 14.7 from

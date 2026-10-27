@@ -106,9 +106,8 @@ use the same ISE project, constraints and seed 46. Only proof inputs and reports
 are uploaded; no diagnostic bitstreams enter a release. All verification and
 compilation in this workflow runs on GitHub-hosted runners.
 
-`Compare CX4 GPR bank timing` tests three 16-byte banks in place of the original
-48-byte GPR array. XST reports 384 flip-flops for the original array; this is a
-targeted RAM-inference experiment, not an assumed timing fix. The source generator
+`Compare CX4 GPR bank timing` verifies three 16-byte banks in place of the original
+48-byte GPR array. XST reports 384 flip-flops for the original array. The source generator
 checks the complete original `cx4.v` blob and accounts for every GPR access. CPU
 write priority, frozen MMIO restores, byte order, out-of-range reads/writes and
 the existing registered bus read are included in the extracted component proof.
@@ -129,15 +128,17 @@ shortcut. Data corruption and wrong write-priority mutations must both produce
 counterexamples. This is a component proof tied to the exact source changes,
 not a whole-CX4 equivalence or hardware qualification claim. Only after it passes
 do the original and candidate run native ISE with the same seed 1 and strict
-PAR/TRACE gates. All models and reports remain diagnostic artifacts; production
-RTL is unchanged. The RAM coding references are AMD UG627, pages 133 and 144–150;
+PAR/TRACE gates. All models and reports remain diagnostic artifacts.
+The RAM coding references are AMD UG627, pages 133 and 144–150;
 the proof uses Yosys 0.33's strict miter comparison and SAT failure checks.
 The byte-to-bank address decoder uses an explicit combinational table because
 XST only supports division/remainder by powers of two (UG627 pages 128 and 491).
-The complete proof is repeated when this decoder changes. `include_original`
-defaults to true; it can be disabled when a recent unchanged control already
-exists under the identical image, project and constraints.
-`synthesis_goal` selects Area (the default) or Speed in the diagnostic runner's
+The complete proof is repeated when this decoder changes. The original source
+is fetched from pinned commit `b52dd4568a5cb9e7ec390c0c5be5aa17ed008dce`,
+independently blob-checked, and its generated candidate must match the current
+production source byte for byte. `include_original` defaults to false because
+the unchanged control has already been measured.
+`synthesis_goal` selects Area or Speed (the default) in the diagnostic runner's
 ISE project. It changes only that XST property and records the resulting project
 and source hashes. The banked Area/seed-1 trial reduced native use from 7010 to
 5418 LUTs and 3576 to 3162 slices, but still failed timing with 240 errors and
@@ -151,6 +152,18 @@ source, synthesis, seed and constraints. [AMD UG628, page 88](https://docs.amd.c
 documents that Speed prioritizes fewer LUT levels after timing, while Balanced
 prioritizes fewer LUTs. The measured free capacity permits testing that tradeoff;
 neither setting is assumed to close timing.
+
+The banked XST Speed / MAP Speed / seed-1 configuration passed
+[run 40525574671](https://github.com/secprog/sd2snes/actions/runs/40525574671)
+with PAR score 0 and TRACE reporting zero setup/hold errors. It used 5575 LUTs,
+3236 slices and the same 16 block RAMs. Minimum reported setup slack was
++0.007 ns and hold slack +0.433 ns under the unchanged constraints. This exact
+proved source and ISE project configuration are now the production defaults;
+`map_goal` also defaults to Speed. The diagnostic compares those defaults with
+the pinned original source when requested. The very small setup margin and the
+legacy constraint coverage still require separate hardware qualification.
+The shared source also requires MkIII integration validation.
+
 The source model is checked before memory lowering. Yosys `memory_map` leaves
 the nonexistent 48..63 read-mux leaves undriven; those become explicit X values
 with `setundef -undriven -undef`, and the lowered model is checked again. This

@@ -6,17 +6,17 @@ on:
       include_original:
         description: Rebuild the original control alongside the candidate
         type: boolean
-        default: true
+        default: false
       synthesis_goal:
         description: Diagnostic XST optimization goal; other project properties stay fixed
         type: choice
         options: [Area, Speed]
-        default: Area
+        default: Speed
       map_goal:
         description: Diagnostic MAP cover mode; other implementation properties stay fixed
         type: choice
         options: [Balanced, Speed]
-        default: Balanced
+        default: Speed
 
 permissions:
   contents: read
@@ -36,8 +36,14 @@ jobs:
       - name: Prepare pinned component and native diagnostic sources
         run: |
           set -euo pipefail
+          # Retain the pre-banking baseline after promoting the proved source.
+          # The generator independently verifies its complete Git blob.
+          baseline=b52dd4568a5cb9e7ec390c0c5be5aa17ed008dce
+          git fetch --no-tags --depth=1 origin "$baseline"
+          git show "$baseline:verilog/sd2snes_cx4/cx4.v" > "$RUNNER_TEMP/original-cx4.v"
           python3 .github/scripts/prepare-cx4-gpr-experiment.py \
-            verilog/sd2snes_cx4/cx4.v "$RUNNER_TEMP/gpr-proof"
+            "$RUNNER_TEMP/original-cx4.v" "$RUNNER_TEMP/gpr-proof"
+          cmp "$RUNNER_TEMP/gpr-proof/candidate-cx4.v" verilog/sd2snes_cx4/cx4.v
 
       - name: Install formal tools on the GitHub runner
         run: |
@@ -129,9 +135,9 @@ jobs:
           proof_dir="$RUNNER_TEMP/gpr-proof"
           (cd "$proof_dir" && sha256sum --check SHA256SUMS)
           test -s "$proof_dir/verified.txt"
-          cmp "$proof_dir/original-cx4.v" verilog/sd2snes_cx4/cx4.v
-          if [[ "$SOURCE" == banked ]]; then
-            cp "$proof_dir/candidate-cx4.v" verilog/sd2snes_cx4/cx4.v
+          cmp "$proof_dir/candidate-cx4.v" verilog/sd2snes_cx4/cx4.v
+          if [[ "$SOURCE" == original ]]; then
+            cp "$proof_dir/original-cx4.v" verilog/sd2snes_cx4/cx4.v
           fi
           python3 - <<'PY'
           import os
@@ -144,16 +150,14 @@ jobs:
               raise SystemExit("Invalid diagnostic MAP cover mode")
           path = Path("verilog/sd2snes_cx4/sd2snes_cx4.xise")
           text = path.read_text()
-          original = 'xil_pn:name="Optimization Goal" xil_pn:value="Area"'
+          original = 'xil_pn:name="Optimization Goal" xil_pn:value="Speed"'
           if text.count(original) != 1:
-              raise SystemExit("Expected exactly one original Area synthesis property")
-          if goal == "Speed":
-              text = text.replace(original, original.replace('"Area"', '"Speed"'))
-          original_cover = 'xil_pn:name="Optimization Strategy (Cover Mode)" xil_pn:value="Balanced"'
+              raise SystemExit("Expected exactly one production Speed synthesis property")
+          text = text.replace(original, original.replace('"Speed"', f'"{goal}"'))
+          original_cover = 'xil_pn:name="Optimization Strategy (Cover Mode)" xil_pn:value="Speed"'
           if text.count(original_cover) != 1:
-              raise SystemExit("Expected exactly one original Balanced MAP property")
-          if cover == "Speed":
-              text = text.replace(original_cover, original_cover.replace('"Balanced"', '"Speed"'))
+              raise SystemExit("Expected exactly one production Speed MAP property")
+          text = text.replace(original_cover, original_cover.replace('"Speed"', f'"{cover}"'))
           path.write_text(text)
           PY
           {

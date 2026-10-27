@@ -124,7 +124,92 @@ assign cx4_active = |cx4_busy;
 reg  [7:0] vector [31:0];
 /* 0x1f80 - 0x1faf (0x1fc0 - 0x1fef): general purpose register file
    SNES: 8 bits / CX4: 24 bits */
-reg  [7:0] gpr [47:0];
+// Three byte lanes of the same sixteen 24-bit GPR words.
+// Keep both read addresses and the original registered MMIO read latency.
+reg [7:0] gpr_bank0 [15:0];
+reg [7:0] gpr_bank1 [15:0];
+reg [7:0] gpr_bank2 [15:0];
+// XST only accepts division/remainder by powers of two. Decode each byte
+// address explicitly instead; this adds no clocked state or read latency.
+reg [4:0] gpr_bus_row;
+reg [1:0] gpr_bus_lane;
+always @* begin
+  gpr_bus_row = 5'bxxxxx;
+  gpr_bus_lane = 2'bxx;
+  case(ADDR[5:0])
+    6'd0: {gpr_bus_row, gpr_bus_lane} = {5'd0, 2'd0};
+    6'd1: {gpr_bus_row, gpr_bus_lane} = {5'd0, 2'd1};
+    6'd2: {gpr_bus_row, gpr_bus_lane} = {5'd0, 2'd2};
+    6'd3: {gpr_bus_row, gpr_bus_lane} = {5'd1, 2'd0};
+    6'd4: {gpr_bus_row, gpr_bus_lane} = {5'd1, 2'd1};
+    6'd5: {gpr_bus_row, gpr_bus_lane} = {5'd1, 2'd2};
+    6'd6: {gpr_bus_row, gpr_bus_lane} = {5'd2, 2'd0};
+    6'd7: {gpr_bus_row, gpr_bus_lane} = {5'd2, 2'd1};
+    6'd8: {gpr_bus_row, gpr_bus_lane} = {5'd2, 2'd2};
+    6'd9: {gpr_bus_row, gpr_bus_lane} = {5'd3, 2'd0};
+    6'd10: {gpr_bus_row, gpr_bus_lane} = {5'd3, 2'd1};
+    6'd11: {gpr_bus_row, gpr_bus_lane} = {5'd3, 2'd2};
+    6'd12: {gpr_bus_row, gpr_bus_lane} = {5'd4, 2'd0};
+    6'd13: {gpr_bus_row, gpr_bus_lane} = {5'd4, 2'd1};
+    6'd14: {gpr_bus_row, gpr_bus_lane} = {5'd4, 2'd2};
+    6'd15: {gpr_bus_row, gpr_bus_lane} = {5'd5, 2'd0};
+    6'd16: {gpr_bus_row, gpr_bus_lane} = {5'd5, 2'd1};
+    6'd17: {gpr_bus_row, gpr_bus_lane} = {5'd5, 2'd2};
+    6'd18: {gpr_bus_row, gpr_bus_lane} = {5'd6, 2'd0};
+    6'd19: {gpr_bus_row, gpr_bus_lane} = {5'd6, 2'd1};
+    6'd20: {gpr_bus_row, gpr_bus_lane} = {5'd6, 2'd2};
+    6'd21: {gpr_bus_row, gpr_bus_lane} = {5'd7, 2'd0};
+    6'd22: {gpr_bus_row, gpr_bus_lane} = {5'd7, 2'd1};
+    6'd23: {gpr_bus_row, gpr_bus_lane} = {5'd7, 2'd2};
+    6'd24: {gpr_bus_row, gpr_bus_lane} = {5'd8, 2'd0};
+    6'd25: {gpr_bus_row, gpr_bus_lane} = {5'd8, 2'd1};
+    6'd26: {gpr_bus_row, gpr_bus_lane} = {5'd8, 2'd2};
+    6'd27: {gpr_bus_row, gpr_bus_lane} = {5'd9, 2'd0};
+    6'd28: {gpr_bus_row, gpr_bus_lane} = {5'd9, 2'd1};
+    6'd29: {gpr_bus_row, gpr_bus_lane} = {5'd9, 2'd2};
+    6'd30: {gpr_bus_row, gpr_bus_lane} = {5'd10, 2'd0};
+    6'd31: {gpr_bus_row, gpr_bus_lane} = {5'd10, 2'd1};
+    6'd32: {gpr_bus_row, gpr_bus_lane} = {5'd10, 2'd2};
+    6'd33: {gpr_bus_row, gpr_bus_lane} = {5'd11, 2'd0};
+    6'd34: {gpr_bus_row, gpr_bus_lane} = {5'd11, 2'd1};
+    6'd35: {gpr_bus_row, gpr_bus_lane} = {5'd11, 2'd2};
+    6'd36: {gpr_bus_row, gpr_bus_lane} = {5'd12, 2'd0};
+    6'd37: {gpr_bus_row, gpr_bus_lane} = {5'd12, 2'd1};
+    6'd38: {gpr_bus_row, gpr_bus_lane} = {5'd12, 2'd2};
+    6'd39: {gpr_bus_row, gpr_bus_lane} = {5'd13, 2'd0};
+    6'd40: {gpr_bus_row, gpr_bus_lane} = {5'd13, 2'd1};
+    6'd41: {gpr_bus_row, gpr_bus_lane} = {5'd13, 2'd2};
+    6'd42: {gpr_bus_row, gpr_bus_lane} = {5'd14, 2'd0};
+    6'd43: {gpr_bus_row, gpr_bus_lane} = {5'd14, 2'd1};
+    6'd44: {gpr_bus_row, gpr_bus_lane} = {5'd14, 2'd2};
+    6'd45: {gpr_bus_row, gpr_bus_lane} = {5'd15, 2'd0};
+    6'd46: {gpr_bus_row, gpr_bus_lane} = {5'd15, 2'd1};
+    6'd47: {gpr_bus_row, gpr_bus_lane} = {5'd15, 2'd2};
+    6'd48: {gpr_bus_row, gpr_bus_lane} = {5'd16, 2'd0};
+    6'd49: {gpr_bus_row, gpr_bus_lane} = {5'd16, 2'd1};
+    6'd50: {gpr_bus_row, gpr_bus_lane} = {5'd16, 2'd2};
+    6'd51: {gpr_bus_row, gpr_bus_lane} = {5'd17, 2'd0};
+    6'd52: {gpr_bus_row, gpr_bus_lane} = {5'd17, 2'd1};
+    6'd53: {gpr_bus_row, gpr_bus_lane} = {5'd17, 2'd2};
+    6'd54: {gpr_bus_row, gpr_bus_lane} = {5'd18, 2'd0};
+    6'd55: {gpr_bus_row, gpr_bus_lane} = {5'd18, 2'd1};
+    6'd56: {gpr_bus_row, gpr_bus_lane} = {5'd18, 2'd2};
+    6'd57: {gpr_bus_row, gpr_bus_lane} = {5'd19, 2'd0};
+    6'd58: {gpr_bus_row, gpr_bus_lane} = {5'd19, 2'd1};
+    6'd59: {gpr_bus_row, gpr_bus_lane} = {5'd19, 2'd2};
+    6'd60: {gpr_bus_row, gpr_bus_lane} = {5'd20, 2'd0};
+    6'd61: {gpr_bus_row, gpr_bus_lane} = {5'd20, 2'd1};
+    6'd62: {gpr_bus_row, gpr_bus_lane} = {5'd20, 2'd2};
+    6'd63: {gpr_bus_row, gpr_bus_lane} = {5'd21, 2'd0};
+    default: begin gpr_bus_row = 5'bxxxxx; gpr_bus_lane = 2'bxx; end
+  endcase
+end
+wire [7:0] gpr_bus_data = (ADDR[5:0] < 6'd48)
+    ? ((gpr_bus_lane == 2'd0) ? gpr_bank0[gpr_bus_row[3:0]]
+     : (gpr_bus_lane == 2'd1) ? gpr_bank1[gpr_bus_row[3:0]]
+                            : gpr_bank2[gpr_bus_row[3:0]])
+    : 8'bxxxxxxxx; // Preserve the original out-of-range array read.
+
 wire [47:0] cpu_mul_result;
 
 reg [14:0] cx4_mmio_pagemem[1:0];
@@ -188,7 +273,7 @@ end
 assign MMIO_DO = MMIO_DOr;
 assign STATUS_DO = {1'b0, cx4_active, 4'b0000, ~cx4_active, 1'b0};
 always @(posedge CLK) VECTOR_DOr <= vector[ADDR[4:0]];
-always @(posedge CLK) GPR_DOr <= gpr[ADDR[5:0]];
+always @(posedge CLK) GPR_DOr <= gpr_bus_data;
 
 wire DATRAM_WR_EN = datram_enable & reg_we_rising;
 wire MMIO_WR_EN = mmio_enable & reg_we_rising;
@@ -700,9 +785,7 @@ always @(posedge CLK) begin
               8'h13: cpu_idb <= cpu_busaddr;
               8'h1c: cpu_idb <= cpu_ramaddr;
               8'h5x: cpu_idb <= constrom[op_param[3:0]];
-              8'h6x: cpu_idb <= {gpr[op_param[3:0]*3+2],
-                                 gpr[op_param[3:0]*3+1],
-                                 gpr[op_param[3:0]*3]};
+              8'h6x: cpu_idb <= {gpr_bank2[op_param[3:0]], gpr_bank1[op_param[3:0]], gpr_bank0[op_param[3:0]]};
               default: cpu_idb <= 24'b0;
             endcase
           end
@@ -722,9 +805,7 @@ always @(posedge CLK) begin
             8'h13: cpu_tmp <= cpu_busaddr;
             8'h1c: cpu_tmp <= cpu_ramaddr;
             8'h5x: cpu_tmp <= constrom[op_param[3:0]];
-            8'h6x: cpu_tmp <= {gpr[op_param[3:0]*3+2],
-                               gpr[op_param[3:0]*3+1],
-                               gpr[op_param[3:0]*3]};
+            8'h6x: cpu_tmp <= {gpr_bank2[op_param[3:0]], gpr_bank1[op_param[3:0]], gpr_bank0[op_param[3:0]]};
             default: cpu_tmp <= 24'b0;
           endcase
         end
@@ -740,9 +821,7 @@ always @(posedge CLK) begin
             8'h13: cx4_cpu_datram_addr <= cpu_busaddr;
             8'h1c: cx4_cpu_datram_addr <= cpu_ramaddr;
             8'h5x: cx4_cpu_datram_addr <= constrom[op_param[3:0]];
-            8'h6x: cx4_cpu_datram_addr <= {gpr[op_param[3:0]*3+2],
-                                           gpr[op_param[3:0]*3+1],
-                                           gpr[op_param[3:0]*3]};
+            8'h6x: cx4_cpu_datram_addr <= {gpr_bank2[op_param[3:0]], gpr_bank1[op_param[3:0]], gpr_bank0[op_param[3:0]]};
             default: cx4_cpu_datram_addr <= 24'b0;
           endcase
         end
@@ -1005,15 +1084,36 @@ end
 // savestate restore can write the 48 GPR bytes while frozen -- it uses the NATIVE
 // $00:7F80-$7FAF addresses ($E8 does not decode GPR, CS is 0 there), so no second
 // write port is needed.
-always @(posedge CLK) begin
+// One write address per bank; CPU writes retain priority over MMIO.
+reg [3:0] gpr_waddr;
+reg [23:0] gpr_wdata;
+reg [2:0] gpr_we;
+always @* begin
+  gpr_waddr = op_param[3:0];
+  gpr_wdata = cpu_idb;
+  gpr_we = 3'b000;
   if(cx4_cpu_en & CPU_STATE == ST_CPU_2
           && (op == OP_ST || op == OP_SWP)
           && (op_param[7:4] == 4'h6)) begin
-    gpr[op_param[3:0]*3+2] <= cpu_idb[23:16];
-    gpr[op_param[3:0]*3+1] <= cpu_idb[15:8];
-    gpr[op_param[3:0]*3] <= cpu_idb[7:0];
+    gpr_we = 3'b111;
   end
-  else if(GPR_WR_EN & (cx4_cpu_en | ss_frozen_r)) gpr[ADDR[5:0]] <= DI;
+  else if(GPR_WR_EN & (cx4_cpu_en | ss_frozen_r)) begin
+    gpr_waddr = gpr_bus_row[3:0];
+    gpr_wdata = {3{DI}};
+    if(ADDR[5:0] < 6'd48) begin
+      case(gpr_bus_lane)
+        2'd0: gpr_we = 3'b001;
+        2'd1: gpr_we = 3'b010;
+        2'd2: gpr_we = 3'b100;
+        default: gpr_we = 3'b000;
+      endcase
+    end
+  end
+end
+always @(posedge CLK) begin
+  if(gpr_we[0]) gpr_bank0[gpr_waddr] <= gpr_wdata[7:0];
+  if(gpr_we[1]) gpr_bank1[gpr_waddr] <= gpr_wdata[15:8];
+  if(gpr_we[2]) gpr_bank2[gpr_waddr] <= gpr_wdata[23:16];
 end
 
 // external multiplier

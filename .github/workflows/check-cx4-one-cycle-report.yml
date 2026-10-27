@@ -22,10 +22,19 @@ jobs:
           merge-multiple: true
           path: ${{ runner.temp }}/cx4-report
 
+      - uses: actions/download-artifact@v4
+        with:
+          artifact-ids: '12764839628'
+          run-id: '40570439286'
+          github-token: ${{ github.token }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/cx4-one-cycle-pass
+
       - name: Check the captured native reports without rebuilding
         run: |
           set -euo pipefail
           report_dir="$RUNNER_TEMP/cx4-report/sd2snes/sd2snes/verilog/sd2snes_cx4"
+          pass_dir="$RUNNER_TEMP/cx4-one-cycle-pass/sd2snes/sd2snes/verilog/sd2snes_cx4"
           test -s "$report_dir/main.pcf"
           test -s "$report_dir/single-cycle-audit.pcf"
           test -s "$report_dir/main.twr"
@@ -40,8 +49,8 @@ jobs:
           cat "$RUNNER_TEMP/one-cycle-check.log"
           test "$status" -ne 0
           grep -F '3406 paths, 207 endpoints, 1 failing endpoints, 1 setup errors, 0 hold errors, requirement 12.494 ns.' "$RUNNER_TEMP/one-cycle-check.log"
-          grep -F 'Counterfactual total: 1 timing errors, score 101.' "$RUNNER_TEMP/one-cycle-check.log"
-          grep -F 'The stricter counterfactual has timing errors; production constraints were unchanged' "$RUNNER_TEMP/one-cycle-check.log"
+          grep -F 'Timing total: 1 timing errors, score 101.' "$RUNNER_TEMP/one-cycle-check.log"
+          grep -F 'The one-cycle timing analysis has errors' "$RUNNER_TEMP/one-cycle-check.log"
 
           status=0
           python3 .github/scripts/cx4-single-cycle-audit.py check \
@@ -54,8 +63,14 @@ jobs:
             --path snes_spi/byte_cnt_r_6 snes_mcu_cmd/DAC_ADDR_OUT_BUF_0 \
             > "$RUNNER_TEMP/known-path-check.log" 2>&1
           cat "$RUNNER_TEMP/known-path-check.log"
-          grep -F 'Original TS_DAC path snes_spi/byte_cnt_r_6 -> snes_mcu_cmd/DAC_ADDR_OUT_BUF_0:' "$RUNNER_TEMP/known-path-check.log"
+          grep -F 'TS_DAC path snes_spi/byte_cnt_r_6 -> snes_mcu_cmd/DAC_ADDR_OUT_BUF_0:' "$RUNNER_TEMP/known-path-check.log"
           grep -F 'Requirement:          49.979ns' "$RUNNER_TEMP/known-path-check.log"
+
+          python3 .github/scripts/inspect-cx4-sampler-paths.py "$report_dir/single-cycle-audit.twr" \
+            --cycles 1 --path snes_spi/byte_cnt_r_6 snes_mcu_cmd/DAC_ADDR_OUT_BUF_0 \
+            > "$RUNNER_TEMP/one-cycle-path-check.log" 2>&1
+          cat "$RUNNER_TEMP/one-cycle-path-check.log"
+          grep -F 'Requirement:          12.494ns' "$RUNNER_TEMP/one-cycle-path-check.log"
 
           status=0
           python3 .github/scripts/inspect-cx4-sampler-paths.py "$report_dir/main.twr" \
@@ -71,12 +86,24 @@ jobs:
             > "$RUNNER_TEMP/wrong-constraint-check.log" 2>&1 || status=$?
           cat "$RUNNER_TEMP/wrong-constraint-check.log"
           test "$status" -ne 0
-          grep -F 'Original four-cycle TS_DAC section is missing' "$RUNNER_TEMP/wrong-constraint-check.log"
+          grep -F 'Expected 4-cycle TS_DAC section is missing' "$RUNNER_TEMP/wrong-constraint-check.log"
 
-          test "$(git hash-object --no-filters verilog/sd2snes_cx4/main.ucf)" = ba8e407f0419044aa91e4213b6b5502a083c077a
+          baseline=f1d148e4120c519909293c9c1fdfaca21fd88999
+          git fetch --no-tags --depth=1 origin "$baseline"
+          git show "$baseline:verilog/sd2snes_cx4/main.ucf" > "$RUNNER_TEMP/four-cycle.ucf"
+          test "$(git hash-object --no-filters "$RUNNER_TEMP/four-cycle.ucf")" = ba8e407f0419044aa91e4213b6b5502a083c077a
           python3 .github/scripts/cx4-single-cycle-audit.py prepare-ucf \
-            verilog/sd2snes_cx4/main.ucf "$RUNNER_TEMP/one-cycle.ucf"
+            "$RUNNER_TEMP/four-cycle.ucf" "$RUNNER_TEMP/one-cycle.ucf"
+          cmp "$RUNNER_TEMP/one-cycle.ucf" verilog/sd2snes_cx4/main.ucf
+          cmp "$RUNNER_TEMP/one-cycle.ucf" "$RUNNER_TEMP/cx4-one-cycle-pass/_temp/cx4-single-cycle.ucf"
+          test "$(git hash-object --no-filters verilog/sd2snes_cx4/main.ucf)" = f14f270cbe7525da1d8481c9d36226c2678f15f1
           python3 .github/scripts/cx4-single-cycle-audit.py check-pcf "$report_dir/single-cycle-audit.pcf"
+          python3 .github/scripts/cx4-single-cycle-audit.py check-pcf "$pass_dir/main.pcf"
+          python3 .github/scripts/cx4-single-cycle-audit.py check "$pass_dir/main.twr" \
+            > "$RUNNER_TEMP/native-pass-check.log" 2>&1
+          cat "$RUNNER_TEMP/native-pass-check.log"
+          grep -F '3406 paths, 207 endpoints, 0 failing endpoints, 0 setup errors, 0 hold errors, requirement 12.494 ns.' "$RUNNER_TEMP/native-pass-check.log"
+          grep -F 'Timing total: 0 timing errors, score 0.' "$RUNNER_TEMP/native-pass-check.log"
 
           status=0
           python3 .github/scripts/cx4-single-cycle-audit.py prepare-ucf \

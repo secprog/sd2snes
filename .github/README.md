@@ -177,8 +177,7 @@ no constraint is changed or waived.
 The resulting report in run 40555618424 shows that the existing TS_DAC
 constraint takes precedence for 3406 paths otherwise covered by TS_CLK21.
 Its slowest reported path takes 12.595 ns against a 12.494 ns clock period;
-the current four-cycle requirement is 49.979 ns. The logic and clock enables
-must be examined before deciding whether that exception is justified.
+the then-existing four-cycle requirement was 49.979 ns.
 It also reports an overlap between TS_SNES_SYSCLK and TS_CLK21 on the first
 DAC sysclk sampler. NGDBUILD identifies both derived DCM clocks from TS_CLKIN,
 which is consistent with UG612 page 37 explaining why the original translated
@@ -188,13 +187,19 @@ NGDBUILD additionally warns that 35 specified DAC-group FF names were not
 found; whether the affected paths are covered elsewhere must be investigated.
 These observations do not establish input, output or hardware timing coverage.
 
-The optional `audit_single_cycle` input performs a separate counterfactual
-analysis of the routed CX4 design with only TS_DAC tightened to one clock
-cycle in a temporary PCF. The original NCD, PCF and detailed timing report
-are checksummed before and after. The diagnostic requires nonempty path and
-timing results and fails if this stricter analysis has any timing errors; it
-does not alter production constraints or establish whether the original
-four-cycle exception is functionally valid.
+Run 40566803531 confirmed that the former four-cycle exception covered two
+DAC synchronizer paths whose registers advance on every CLK2 edge. Their
+reported delays fit in one cycle, but the exception was broader than their
+actual capture timing permits. Run 40570439286 implemented the same RTL with
+TS_DAC tightened to one cycle and all other UCF statements unchanged. PAR and
+TRACE reported zero errors; TRACE analyzed 3406 TS_DAC paths with 1.526 ns
+worst setup slack. The worst setup slack across the reported constraints was
+0.020 ns, and worst hold slack was 0.432 ns. The exact tested one-cycle UCF
+is now the MkII production default. The diagnostic workflow also verifies the
+routed PCF and nonempty one-cycle TRACE results. Its optional
+`audit_sampler_paths` input reports the two synchronizer paths under the
+production constraint. These results do not resolve TS_DAC2, missing names,
+I/O or jitter coverage, or replace hardware qualification.
 
 The source model is checked before memory lowering. Yosys `memory_map` leaves
 the nonexistent 48..63 read-mux leaves undriven; those become explicit X values

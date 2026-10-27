@@ -21,16 +21,8 @@ on:
         description: Generate a separate post-route timing-constraint interaction report
         type: boolean
         default: false
-      audit_single_cycle:
-        description: Analyze the existing DAC paths against one clock cycle in a separate report
-        type: boolean
-        default: false
       audit_sampler_paths:
         description: Inspect DAC synchronizer paths under the existing timing constraints
-        type: boolean
-        default: false
-      tighten_dac_for_implementation:
-        description: Implement the same RTL with a diagnostic single-cycle DAC requirement
         type: boolean
         default: false
 
@@ -184,21 +176,6 @@ jobs:
             done < <(git ls-files -z verilog/sd2snes_cx4/ verilog/common.mk verilog/xilinx_scripts/ .github/scripts/build.sh)
           } | tee "$RUNNER_TEMP/cx4-source.txt"
 
-      - name: Prepare a stricter DAC constraint for this diagnostic run
-        if: inputs.tighten_dac_for_implementation
-        run: |
-          set -euo pipefail
-          core=verilog/sd2snes_cx4
-          test "$(git hash-object --no-filters "$core/main.ucf")" = ba8e407f0419044aa91e4213b6b5502a083c077a
-          cp "$core/main.ucf" "$RUNNER_TEMP/cx4-original.ucf"
-          python3 .github/scripts/cx4-single-cycle-audit.py prepare-ucf \
-            "$RUNNER_TEMP/cx4-original.ucf" "$RUNNER_TEMP/cx4-single-cycle.ucf"
-          cp "$RUNNER_TEMP/cx4-single-cycle.ucf" "$core/main.ucf"
-          sha256sum "$RUNNER_TEMP/cx4-original.ucf" "$core/main.ucf" \
-            | tee "$RUNNER_TEMP/cx4-ucf-checksums.txt"
-          printf 'This runner-only diagnostic tightens TS_DAC to one cycle and leaves all other source constraints unchanged.\n' \
-            >> "$GITHUB_STEP_SUMMARY"
-
       - uses: ./.github/actions/prepare-build-image
         with:
           target: mk2
@@ -220,14 +197,13 @@ jobs:
             --entrypoint /bin/bash sd2snes-ci:mk2 .github/scripts/build.sh mk2 cx4 \
             2>&1 | tee "$RUNNER_TEMP/cx4-build.log"
 
-      - name: Verify single-cycle DAC coverage in the strict native result
-        if: inputs.tighten_dac_for_implementation
+      - name: Verify production DAC paths use the single-cycle requirement
         run: |
           set -euo pipefail
           core=verilog/sd2snes_cx4
           python3 .github/scripts/cx4-single-cycle-audit.py check-pcf "$core/main.pcf"
           python3 .github/scripts/cx4-single-cycle-audit.py check "$core/main.twr" \
-            | tee "$RUNNER_TEMP/cx4-tight-dac-result.txt"
+            | tee "$RUNNER_TEMP/cx4-production-dac-result.txt"
 
       - name: Audit constraint interactions on the routed design
         if: inputs.audit_tsi
@@ -262,31 +238,8 @@ jobs:
             ' 2>&1 | tee "$RUNNER_TEMP/cx4-sampler-trace.log" || trace_status=$?
           sha256sum --check "$RUNNER_TEMP/cx4-sampler-inputs.sha256"
           test "$trace_status" -eq 0
-          python3 .github/scripts/inspect-cx4-sampler-paths.py "$core/sampler-full.twr" \
+          python3 .github/scripts/inspect-cx4-sampler-paths.py "$core/sampler-full.twr" --cycles 1 \
             | tee "$RUNNER_TEMP/cx4-sampler-paths.txt"
-
-      - name: Analyze a stricter one-cycle DAC counterfactual
-        if: inputs.audit_single_cycle
-        run: |
-          set -euo pipefail
-          core=verilog/sd2snes_cx4
-          test -s "$core/main.ncd" && test -s "$core/main.pcf" && test -s "$core/main.twr"
-          sha256sum "$core/main.ncd" "$core/main.pcf" "$core/main.twr" \
-            > "$RUNNER_TEMP/cx4-single-cycle-inputs.sha256"
-          python3 .github/scripts/cx4-single-cycle-audit.py prepare \
-            "$core/main.pcf" "$core/single-cycle-audit.pcf"
-          trace_status=0
-          docker run --rm --user 0:0 --mac-address 08:00:27:68:c9:35 \
-            --volume "$GITHUB_WORKSPACE:/work" --workdir /work/verilog/sd2snes_cx4 \
-            --entrypoint /bin/bash sd2snes-ci:mk2 -c '
-              set -euo pipefail
-              trce -v 10 -n 10 -u 10 -fastpaths -o single-cycle-audit.twr \
-                main.ncd single-cycle-audit.pcf
-            ' 2>&1 | tee "$RUNNER_TEMP/cx4-single-cycle.log" || trace_status=$?
-          sha256sum --check "$RUNNER_TEMP/cx4-single-cycle-inputs.sha256"
-          test "$trace_status" -eq 0
-          python3 .github/scripts/cx4-single-cycle-audit.py check \
-            "$core/single-cycle-audit.twr" | tee "$RUNNER_TEMP/cx4-single-cycle-result.txt"
 
       - name: Record available intermediate checksums
         if: always()
@@ -306,21 +259,14 @@ jobs:
             ${{ runner.temp }}/cx4-source.txt
             ${{ runner.temp }}/cx4-build.log
             ${{ runner.temp }}/cx4-tsi.log
-            ${{ runner.temp }}/cx4-single-cycle.log
-            ${{ runner.temp }}/cx4-single-cycle-result.txt
-            ${{ runner.temp }}/cx4-single-cycle-inputs.sha256
+            ${{ runner.temp }}/cx4-production-dac-result.txt
             ${{ runner.temp }}/cx4-sampler-trace.log
             ${{ runner.temp }}/cx4-sampler-paths.txt
             ${{ runner.temp }}/cx4-sampler-inputs.sha256
-            ${{ runner.temp }}/cx4-original.ucf
-            ${{ runner.temp }}/cx4-single-cycle.ucf
-            ${{ runner.temp }}/cx4-ucf-checksums.txt
-            ${{ runner.temp }}/cx4-tight-dac-result.txt
             ${{ runner.temp }}/cx4-build-checksums.txt
             verilog/sd2snes_cx4/main.xst
             verilog/sd2snes_cx4/main.prj
             verilog/sd2snes_cx4/main.pcf
-            verilog/sd2snes_cx4/single-cycle-audit.pcf
             verilog/sd2snes_cx4/sd2snes_cx4.xise
             verilog/sd2snes_cx4/*.syr
             verilog/sd2snes_cx4/*.par

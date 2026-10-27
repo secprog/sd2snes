@@ -70,13 +70,13 @@ def check(report_path):
     if paths == 0 or endpoints == 0 or not 12.493 <= required_ns <= 12.496:
         raise SystemExit("The diagnostic did not analyze DAC paths at the expected one-cycle period")
     print(
-        f"Counterfactual TS_DAC: {paths} paths, {endpoints} endpoints, "
+        f"TS_DAC: {paths} paths, {endpoints} endpoints, "
         f"{failing} failing endpoints, {setup_errors} setup errors, "
         f"{hold_errors} hold errors, requirement {required_ns:.3f} ns."
     )
-    print(f"Counterfactual total: {all_errors} timing errors, score {score}.")
+    print(f"Timing total: {all_errors} timing errors, score {score}.")
     if failing or errors_total or setup_errors or hold_errors or all_errors or score:
-        raise SystemExit("The stricter counterfactual has timing errors; production constraints were unchanged")
+        raise SystemExit("The one-cycle timing analysis has errors")
 
 
 def main():

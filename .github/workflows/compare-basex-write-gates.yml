@@ -2,6 +2,12 @@ name: Compare basex write-gate timing
 
 on:
   workflow_dispatch:
+    inputs:
+      map_goal:
+        description: Diagnostic MAP cover mode; synthesis, seed and timing constraints stay fixed
+        type: choice
+        options: [Area, Speed]
+        default: Area
 
 permissions:
   contents: read
@@ -85,7 +91,7 @@ jobs:
           retention-days: 14
 
   compare:
-    name: Basex ${{ matrix.source }} seed 46
+    name: Basex ${{ matrix.source }} MAP ${{ inputs.map_goal }} seed 46
     needs: prove
     runs-on: ubuntu-22.04
     timeout-minutes: 120
@@ -104,6 +110,7 @@ jobs:
       - name: Select only the proved diagnostic source
         env:
           SOURCE: ${{ matrix.source }}
+          MAP_GOAL: ${{ inputs.map_goal }}
         run: |
           set -euo pipefail
           proof_dir="$RUNNER_TEMP/write-proof"
@@ -113,9 +120,25 @@ jobs:
           if [[ "$SOURCE" == factored ]]; then
             cp "$proof_dir/candidate-cheat.v" verilog/sd2snes_base/cheat.v
           fi
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          goal = os.environ["MAP_GOAL"]
+          if goal not in ("Area", "Speed"):
+              raise SystemExit("Invalid diagnostic MAP cover mode")
+          path = Path("verilog/sd2snes_basex/sd2snes_basex.xise")
+          text = path.read_text()
+          original = 'xil_pn:name="Optimization Strategy (Cover Mode)" xil_pn:value="Area" xil_pn:valueState="default"'
+          if text.count(original) != 1:
+              raise SystemExit("Expected exactly one original Area MAP property")
+          if goal == "Speed":
+              changed = original.replace('value="Area"', 'value="Speed"').replace('valueState="default"', 'valueState="non-default"')
+              text = text.replace(original, changed)
+          path.write_text(text)
+          PY
           {
             printf 'Diagnostic source: %s\nRunner checkout: %s\n' "$SOURCE" "$GITHUB_SHA"
-            printf 'Placement seed: 46; project, clocks, jitter and timing constraints unchanged.\n'
+            printf 'MAP cover: %s; placement seed: 46. Other project properties, clocks, jitter and timing constraints unchanged.\n' "$MAP_GOAL"
             while IFS= read -r -d '' source_file; do
               printf '%s %s\n' "$(git hash-object --no-filters "$source_file")" "$source_file"
             done < <(git ls-files -z verilog/sd2snes_base/ verilog/sd2snes_basex/ verilog/common.mk verilog/xilinx_scripts/ .github/scripts/build.sh)
@@ -155,7 +178,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: basex-write-gate-${{ matrix.source }}-seed-46
+          name: basex-write-gate-${{ matrix.source }}-map-${{ inputs.map_goal }}-seed-46
           path: |
             ${{ runner.temp }}/basex-source.txt
             ${{ runner.temp }}/basex-build.log
@@ -163,6 +186,7 @@ jobs:
             verilog/sd2snes_basex/main.xst
             verilog/sd2snes_basex/main.prj
             verilog/sd2snes_basex/main.pcf
+            verilog/sd2snes_basex/sd2snes_basex.xise
             verilog/sd2snes_basex/*.syr
             verilog/sd2snes_basex/*.par
             verilog/sd2snes_basex/*.mrp

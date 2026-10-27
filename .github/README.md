@@ -257,6 +257,17 @@ timing or hardware validation. Only a passing proof allows the original and
 factored seed-46 native comparisons; their project and timing constraints stay
 unchanged. Production RTL and release artifacts are not modified.
 
+The factored basex Area/seed-46 trial applied the LUT_MAP attribute but failed
+with 126 setup errors and -1.818 ns worst slack, compared with 124 and -0.827 ns
+for the reproduced original. It used 6237 LUTs and 3432 slices, freeing 29
+slices. The new worst path traverses six LUT levels from the SNES address to
+the SRTC state enable; BSX and DMA paths also fail. No cheat-storage endpoint
+appears among the reported failing paths, which is not a full coverage claim.
+The diagnostic now permits a bounded MAP Speed comparison of both sources at
+the same seed 46 to test UG628's LUT-depth tradeoff. Synthesis, PAR, the full
+formal gate and every timing constraint stay fixed. The Area candidate is not
+promoted or repeated unchanged.
+
 ## Toolchains
 
 - MkII: ISE 14.7 from

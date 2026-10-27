@@ -162,7 +162,17 @@ proved source and ISE project configuration are now the production defaults;
 `map_goal` also defaults to Speed. The diagnostic compares those defaults with
 the pinned original source when requested. The very small setup margin and the
 legacy constraint coverage still require separate hardware qualification.
-The shared source also requires MkIII integration validation.
+The shared source subsequently passed MkIII integration in run 40529045613.
+
+The passing CX4 PAR report also says three timing constraints were not applied.
+TRACE reports zero data paths for TS_CLKIN, TS_SNES_SYSCLK and TS_DAC2; the
+first two still have component pulse/period checks, and the derived internal
+clocks have analyzed paths. This correspondence alone does not establish why
+PAR reports three unapplied constraints or whether all intended paths are
+covered. The optional `audit_tsi` input runs a separate post-route TRACE
+timing-specification interaction report on the exact routed design (UG628
+page 184). It preserves and checksums the original NCD, PCF and detailed TWR;
+no constraint is changed or waived.
 
 The source model is checked before memory lowering. Yosys `memory_map` leaves
 the nonexistent 48..63 read-mux leaves undriven; those become explicit X values

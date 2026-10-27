@@ -17,6 +17,10 @@ on:
         type: choice
         options: [Balanced, Speed]
         default: Speed
+      audit_tsi:
+        description: Generate a separate post-route timing-constraint interaction report
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -189,6 +193,21 @@ jobs:
             --entrypoint /bin/bash sd2snes-ci:mk2 .github/scripts/build.sh mk2 cx4 \
             2>&1 | tee "$RUNNER_TEMP/cx4-build.log"
 
+      - name: Audit constraint interactions on the routed design
+        if: inputs.audit_tsi
+        run: |
+          set -euo pipefail
+          docker run --rm --user 0:0 --mac-address 08:00:27:68:c9:35 \
+            --volume "$GITHUB_WORKSPACE:/work" --workdir /work/verilog/sd2snes_cx4 \
+            --entrypoint /bin/bash sd2snes-ci:mk2 -c '
+              set -euo pipefail
+              test -s main.ncd && test -s main.pcf && test -s main.twr
+              sha256sum main.ncd main.pcf main.twr > tsi-input-checksums.txt
+              trce -tsi main.tsi -o tsi-audit.twr main.ncd main.pcf
+              test -s main.tsi
+              sha256sum --check tsi-input-checksums.txt
+            ' 2>&1 | tee "$RUNNER_TEMP/cx4-tsi.log"
+
       - name: Record available intermediate checksums
         if: always()
         run: |
@@ -206,6 +225,7 @@ jobs:
           path: |
             ${{ runner.temp }}/cx4-source.txt
             ${{ runner.temp }}/cx4-build.log
+            ${{ runner.temp }}/cx4-tsi.log
             ${{ runner.temp }}/cx4-build-checksums.txt
             verilog/sd2snes_cx4/main.xst
             verilog/sd2snes_cx4/main.prj
@@ -216,6 +236,8 @@ jobs:
             verilog/sd2snes_cx4/*.mrp
             verilog/sd2snes_cx4/*.psr
             verilog/sd2snes_cx4/*.twr
+            verilog/sd2snes_cx4/*.tsi
+            verilog/sd2snes_cx4/tsi-input-checksums.txt
             verilog/sd2snes_cx4/*.bld
             verilog/sd2snes_cx4/*.unroutes
           if-no-files-found: error

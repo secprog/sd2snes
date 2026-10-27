@@ -1,0 +1,193 @@
+name: Compare DSPx freeze replica timing
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dsp-freeze-replica-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  prove:
+    name: Prove freeze transition and core guards; reject three mutations
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Prepare pinned source and exact transition projections
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/prepare-dsp-freeze-replica-experiment.py \
+            verilog/sd2snes_dsp/upd77c25.v "$RUNNER_TEMP/freeze-proof"
+
+      - name: Install formal tools on the GitHub runner
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends yosys
+          yosys -V | tee "$RUNNER_TEMP/freeze-proof/tool-version.txt"
+
+      - name: Prove every equal-state transition and reject mutations
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/freeze-proof"
+          sha256sum --check SHA256SUMS
+          for variant in gate bad-reset bad-boundary bad-guard; do
+            mkdir "$variant"
+            cp "$variant.v" "$variant/model.v"
+            cat > "$variant/prove.ys" <<'YOSYS'
+          read_verilog -sv -formal ../gold.v model.v
+          proc
+          miter -equiv -make_assert -make_outputs -make_outcmp -flatten gold gate miter
+          hierarchy -check -top miter
+          opt_clean
+          check -assert
+          sat -verify -enable_undef -set-def-inputs -prove-asserts -show-inputs -show-outputs -dump_json counterexample.json -timeout 180
+          YOSYS
+            result=0
+            (cd "$variant" && yosys -l proof.log -s prove.ys) || result=$?
+            if [[ "$variant" == gate ]]; then
+              test "$result" -eq 0
+              grep -F 'SAT proof finished - no model found: SUCCESS!' "$variant/proof.log"
+            else
+              test "$result" -ne 0
+              grep -F 'SAT proof finished - model found: FAIL!' "$variant/proof.log"
+              test -s "$variant/counterexample.json"
+            fi
+          done
+          sha256sum --check SHA256SUMS
+          printf 'Equal initialized freeze values remain equal for every binary transition; main guards match and all three negative controls produced counterexamples.\n' \
+            | tee verified.txt >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload exact proof inputs and counterexamples
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsp-freeze-replica-proof
+          path: ${{ runner.temp }}/freeze-proof/
+          if-no-files-found: error
+          retention-days: 14
+
+  native:
+    name: DSPx proved freeze replica, original Speed/Area seed 68
+    needs: prove
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dsp-freeze-replica-proof
+          path: ${{ runner.temp }}/freeze-proof
+
+      - name: Select only the proved runner-only candidate
+        run: |
+          set -euo pipefail
+          proof_dir="$RUNNER_TEMP/freeze-proof"
+          (cd "$proof_dir" && sha256sum --check SHA256SUMS)
+          test -s "$proof_dir/verified.txt"
+          cmp "$proof_dir/original-upd77c25.v" verilog/sd2snes_dsp/upd77c25.v
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/main.ucf)" = 4f34c4cf9e475ac171a216c3f15fff74918fd03c
+          test "$(git hash-object --no-filters verilog/sd2snes_dspx/sd2snes_dspx.xise)" = 2822b63c005bce73e8e7aaf332bcdbd983d1492d
+          test ! -e verilog/sd2snes_dspx/ucf.extra
+          cp "$proof_dir/candidate-upd77c25.v" verilog/sd2snes_dsp/upd77c25.v
+          {
+            printf 'Runner checkout: %s\nXST Speed / MAP Area / seed 68; production UCF and project unchanged.\n' "$GITHUB_SHA"
+            while IFS= read -r -d '' source_file; do
+              printf '%s %s\n' "$(git hash-object --no-filters "$source_file")" "$source_file"
+            done < <(git ls-files -z verilog/sd2snes_dsp/ verilog/sd2snes_dspx/ verilog/common.mk verilog/xilinx_scripts/ .github/scripts/build.sh)
+          } | tee "$RUNNER_TEMP/dsp-replica-source.txt"
+
+      - uses: ./.github/actions/prepare-build-image
+        with:
+          target: mk2
+
+      - name: Compile DSPx with strict native PAR and TRACE checks
+        env:
+          ISE_CTABLE: '68'
+        run: |
+          set -euo pipefail
+          docker image inspect sd2snes-ci:mk2 --format 'ISE image ID: {{.Id}}' \
+            | tee -a "$RUNNER_TEMP/dsp-replica-source.txt"
+          container_name=sd2snes-dsp-freeze-replica
+          bash .github/scripts/report-activity.sh "$container_name" &
+          activity_pid=$!
+          trap 'kill "$activity_pid" 2>/dev/null || true; wait "$activity_pid" 2>/dev/null || true' EXIT
+          docker run --rm --name "$container_name" --user 0:0 \
+            --mac-address 08:00:27:68:c9:35 --env ISE_CTABLE \
+            --volume "$GITHUB_WORKSPACE:/work" --workdir /work \
+            --entrypoint /bin/bash sd2snes-ci:mk2 .github/scripts/build.sh mk2 dspx \
+            2>&1 | tee "$RUNNER_TEMP/dsp-replica-build.log"
+
+      - name: Collect mapped or routed freeze-control evidence
+        if: always()
+        run: |
+          set -euo pipefail
+          core=verilog/sd2snes_dspx
+          if [[ ! -s "$core/main_map.ncd" ]]; then
+            printf 'Freeze-control inspection inconclusive: mapped NCD unavailable.\n' \
+              | tee "$RUNNER_TEMP/dsp-replica-xdl.txt"
+            exit 0
+          fi
+          design=main_map.ncd
+          if [[ -s "$core/main.ncd" ]]; then design=main.ncd; fi
+          docker run --rm --user 0:0 --mac-address 08:00:27:68:c9:35 \
+            --volume "$GITHUB_WORKSPACE:/work" --workdir /work/verilog/sd2snes_dspx \
+            --entrypoint /bin/bash sd2snes-ci:mk2 -c \
+            'set -euo pipefail; xdl -ncd2xdl -nopips "$1" freeze-audit.xdl' _ "$design"
+          python3 - "$core/freeze-audit.xdl" "$design" <<'PY' | tee "$RUNNER_TEMP/dsp-replica-xdl.txt"
+          import re
+          import sys
+          from pathlib import Path
+
+          text = Path(sys.argv[1]).read_text()
+          statements = re.findall(r'(?ms)^\s*(?:net|inst)\s+.*?;', text)
+          selected = [item for item in statements
+                      if 'ss_frozen' in item or 'ss_core_frozen' in item]
+          print(f'Freeze-control XDL evidence from {sys.argv[2]}')
+          if not selected:
+              raise SystemExit('No named freeze-control instance or net found; inspection inconclusive')
+          for item in selected:
+              pins = len(re.findall(r'\binpin\b', item))
+              print(f'Input pins in statement: {pins}')
+              print(item)
+          print('Named evidence requires manual review; synthesis may rename signals.')
+          PY
+
+      - name: Record available intermediate checksums
+        if: always()
+        run: |
+          for result_file in main.ngc main.ngd main_map.ncd main.ncd; do
+            if [[ -f "verilog/sd2snes_dspx/$result_file" ]]; then
+              sha256sum "verilog/sd2snes_dspx/$result_file"
+            fi
+          done > "$RUNNER_TEMP/dsp-replica-checksums.txt"
+
+      - name: Upload reports without publishing diagnostic bitstreams
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsp-freeze-replica-seed-68
+          path: |
+            ${{ runner.temp }}/dsp-replica-source.txt
+            ${{ runner.temp }}/dsp-replica-build.log
+            ${{ runner.temp }}/dsp-replica-xdl.txt
+            ${{ runner.temp }}/dsp-replica-checksums.txt
+            verilog/sd2snes_dspx/main.xst
+            verilog/sd2snes_dspx/main.prj
+            verilog/sd2snes_dspx/main.pcf
+            verilog/sd2snes_dspx/sd2snes_dspx.xise
+            verilog/sd2snes_dspx/*.syr
+            verilog/sd2snes_dspx/*.par
+            verilog/sd2snes_dspx/*.mrp
+            verilog/sd2snes_dspx/*.psr
+            verilog/sd2snes_dspx/*.twr
+            verilog/sd2snes_dspx/*.bld
+            verilog/sd2snes_dspx/*.unroutes
+          if-no-files-found: error
+          retention-days: 14

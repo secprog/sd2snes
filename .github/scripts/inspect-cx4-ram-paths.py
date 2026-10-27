@@ -40,12 +40,13 @@ def prepare(source, destination):
         raise SystemExit("Diagnostic group or constraint already exists")
     if original.count("SCHEMATIC END;") != 1:
         raise SystemExit("Expected one PCF schematic terminator")
-    clk21 = group(original, "CLK21")
-    dac = group(original, "DAC")
+    # PCF group members can wrap between BEL and the quoted identifier.
+    clk21 = set(re.findall(r'\bBEL\s+"([^"]+)"', group(original, "CLK21")))
+    dac = set(re.findall(r'\bBEL\s+"([^"]+)"', group(original, "DAC")))
     for target in TARGETS:
-        if f'BEL "{target}"' not in clk21:
+        if target not in clk21:
             raise SystemExit(f"Expected filter register absent from CLK21: {target}")
-        if f'BEL "{target}"' in dac:
+        if target in dac:
             raise SystemExit(f"Filter register unexpectedly appears in DAC group: {target}")
     result = original.replace("SCHEMATIC END;", DIAGNOSTIC_ADDITION + "SCHEMATIC END;", 1)
     if result.replace(DIAGNOSTIC_ADDITION, "", 1) != original:

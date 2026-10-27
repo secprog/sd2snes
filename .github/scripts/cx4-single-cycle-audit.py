@@ -7,6 +7,8 @@ from pathlib import Path
 
 ORIGINAL = b'TS_DAC = MAXDELAY FROM TIMEGRP "FFS" TO TIMEGRP "DAC" TS_CLK21 / 4;'
 SINGLE_CYCLE = b'TS_DAC = MAXDELAY FROM TIMEGRP "FFS" TO TIMEGRP "DAC" TS_CLK21;'
+ORIGINAL_UCF = b'TIMESPEC TS_DAC = FROM "FFS" TO "DAC" TS_CLK21 / 4;'
+SINGLE_CYCLE_UCF = b'TIMESPEC TS_DAC = FROM "FFS" TO "DAC" TS_CLK21;'
 
 
 def prepare(original_path, diagnostic_path):
@@ -18,6 +20,24 @@ def prepare(original_path, diagnostic_path):
         raise SystemExit("Diagnostic PCF contains an unexpected change")
     Path(diagnostic_path).write_bytes(diagnostic)
     print("Prepared diagnostic PCF: only TS_DAC is tightened to one clock cycle.")
+
+
+def prepare_ucf(original_path, diagnostic_path):
+    original = Path(original_path).read_bytes()
+    if original.count(ORIGINAL_UCF) != 1 or SINGLE_CYCLE_UCF in original:
+        raise SystemExit("Expected exactly one original four-cycle TS_DAC in the UCF")
+    diagnostic = original.replace(ORIGINAL_UCF, SINGLE_CYCLE_UCF, 1)
+    if diagnostic.replace(SINGLE_CYCLE_UCF, ORIGINAL_UCF, 1) != original:
+        raise SystemExit("Diagnostic UCF contains an unexpected change")
+    Path(diagnostic_path).write_bytes(diagnostic)
+    print("Prepared diagnostic UCF: only TS_DAC is tightened to one clock cycle.")
+
+
+def check_pcf(pcf_path):
+    pcf = Path(pcf_path).read_bytes()
+    if pcf.count(SINGLE_CYCLE) != 1 or ORIGINAL in pcf:
+        raise SystemExit("Expected exactly one single-cycle TS_DAC in the routed PCF")
+    print("Routed PCF contains the single-cycle TS_DAC.")
 
 
 def check(report_path):
@@ -62,10 +82,17 @@ def check(report_path):
 def main():
     if len(sys.argv) == 4 and sys.argv[1] == "prepare":
         prepare(sys.argv[2], sys.argv[3])
+    elif len(sys.argv) == 4 and sys.argv[1] == "prepare-ucf":
+        prepare_ucf(sys.argv[2], sys.argv[3])
+    elif len(sys.argv) == 3 and sys.argv[1] == "check-pcf":
+        check_pcf(sys.argv[2])
     elif len(sys.argv) == 3 and sys.argv[1] == "check":
         check(sys.argv[2])
     else:
-        raise SystemExit("usage: cx4-single-cycle-audit.py prepare ORIGINAL.PCF DIAGNOSTIC.PCF | check REPORT.TWR")
+        raise SystemExit(
+            "usage: cx4-single-cycle-audit.py prepare ORIGINAL.PCF DIAGNOSTIC.PCF | "
+            "prepare-ucf ORIGINAL.UCF DIAGNOSTIC.UCF | check-pcf PCF | check REPORT.TWR"
+        )
 
 
 if __name__ == "__main__":

@@ -73,4 +73,25 @@ jobs:
           test "$status" -ne 0
           grep -F 'Original four-cycle TS_DAC section is missing' "$RUNNER_TEMP/wrong-constraint-check.log"
 
+          test "$(git hash-object --no-filters verilog/sd2snes_cx4/main.ucf)" = ba8e407f0419044aa91e4213b6b5502a083c077a
+          python3 .github/scripts/cx4-single-cycle-audit.py prepare-ucf \
+            verilog/sd2snes_cx4/main.ucf "$RUNNER_TEMP/one-cycle.ucf"
+          python3 .github/scripts/cx4-single-cycle-audit.py check-pcf "$report_dir/single-cycle-audit.pcf"
+
+          status=0
+          python3 .github/scripts/cx4-single-cycle-audit.py prepare-ucf \
+            "$RUNNER_TEMP/one-cycle.ucf" "$RUNNER_TEMP/should-not-exist.ucf" \
+            > "$RUNNER_TEMP/repeat-ucf-check.log" 2>&1 || status=$?
+          cat "$RUNNER_TEMP/repeat-ucf-check.log"
+          test "$status" -ne 0
+          grep -F 'Expected exactly one original four-cycle TS_DAC in the UCF' "$RUNNER_TEMP/repeat-ucf-check.log"
+          test ! -e "$RUNNER_TEMP/should-not-exist.ucf"
+
+          status=0
+          python3 .github/scripts/cx4-single-cycle-audit.py check-pcf "$report_dir/main.pcf" \
+            > "$RUNNER_TEMP/original-pcf-check.log" 2>&1 || status=$?
+          cat "$RUNNER_TEMP/original-pcf-check.log"
+          test "$status" -ne 0
+          grep -F 'Expected exactly one single-cycle TS_DAC in the routed PCF' "$RUNNER_TEMP/original-pcf-check.log"
+
           printf 'The captured one-cycle violation is rejected; the original four-cycle report cannot masquerade as a one-cycle result.\n' >> "$GITHUB_STEP_SUMMARY"

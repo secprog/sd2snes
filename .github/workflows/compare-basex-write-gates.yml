@@ -3,8 +3,18 @@ name: Compare basex write-gate timing
 on:
   workflow_dispatch:
     inputs:
+      source_scope:
+        description: Select the diagnostic source without repeating an unchanged control
+        type: choice
+        options: [both, original, factored]
+        default: both
+      synthesis_goal:
+        description: Diagnostic XST goal; effort, register balancing and timing constraints stay fixed
+        type: choice
+        options: [Speed, Area]
+        default: Speed
       map_goal:
-        description: Diagnostic MAP cover mode; synthesis, seed and timing constraints stay fixed
+        description: Diagnostic MAP cover mode; seed and timing constraints stay fixed
         type: choice
         options: [Area, Speed]
         default: Area
@@ -91,14 +101,14 @@ jobs:
           retention-days: 14
 
   compare:
-    name: Basex ${{ matrix.source }} MAP ${{ inputs.map_goal }} seed 46
+    name: Basex ${{ matrix.source }} XST ${{ inputs.synthesis_goal }} MAP ${{ inputs.map_goal }} seed 46
     needs: prove
     runs-on: ubuntu-22.04
     timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
-        source: [original, factored]
+        source: ${{ fromJSON(inputs.source_scope == 'both' && '["original","factored"]' || inputs.source_scope == 'original' && '["original"]' || '["factored"]') }}
     steps:
       - uses: actions/checkout@v6
 
@@ -110,6 +120,7 @@ jobs:
       - name: Select only the proved diagnostic source
         env:
           SOURCE: ${{ matrix.source }}
+          SYNTHESIS_GOAL: ${{ inputs.synthesis_goal }}
           MAP_GOAL: ${{ inputs.map_goal }}
         run: |
           set -euo pipefail
@@ -124,10 +135,19 @@ jobs:
           import os
           from pathlib import Path
           goal = os.environ["MAP_GOAL"]
+          synthesis_goal = os.environ["SYNTHESIS_GOAL"]
           if goal not in ("Area", "Speed"):
               raise SystemExit("Invalid diagnostic MAP cover mode")
+          if synthesis_goal not in ("Area", "Speed"):
+              raise SystemExit("Invalid diagnostic XST optimization goal")
           path = Path("verilog/sd2snes_basex/sd2snes_basex.xise")
           text = path.read_text()
+          original_synthesis = 'xil_pn:name="Optimization Goal" xil_pn:value="Speed" xil_pn:valueState="default"'
+          if text.count(original_synthesis) != 1:
+              raise SystemExit("Expected exactly one original Speed XST property")
+          if synthesis_goal == "Area":
+              changed = original_synthesis.replace('value="Speed"', 'value="Area"').replace('valueState="default"', 'valueState="non-default"')
+              text = text.replace(original_synthesis, changed)
           original = 'xil_pn:name="Optimization Strategy (Cover Mode)" xil_pn:value="Area" xil_pn:valueState="default"'
           if text.count(original) != 1:
               raise SystemExit("Expected exactly one original Area MAP property")
@@ -138,7 +158,7 @@ jobs:
           PY
           {
             printf 'Diagnostic source: %s\nRunner checkout: %s\n' "$SOURCE" "$GITHUB_SHA"
-            printf 'MAP cover: %s; placement seed: 46. Other project properties, clocks, jitter and timing constraints unchanged.\n' "$MAP_GOAL"
+            printf 'XST goal: %s; MAP cover: %s; placement seed: 46. Other project properties, clocks, jitter and timing constraints unchanged.\n' "$SYNTHESIS_GOAL" "$MAP_GOAL"
             while IFS= read -r -d '' source_file; do
               printf '%s %s\n' "$(git hash-object --no-filters "$source_file")" "$source_file"
             done < <(git ls-files -z verilog/sd2snes_base/ verilog/sd2snes_basex/ verilog/common.mk verilog/xilinx_scripts/ .github/scripts/build.sh)
@@ -178,7 +198,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: basex-write-gate-${{ matrix.source }}-map-${{ inputs.map_goal }}-seed-46
+          name: basex-write-gate-${{ matrix.source }}-xst-${{ inputs.synthesis_goal }}-map-${{ inputs.map_goal }}-seed-46
           path: |
             ${{ runner.temp }}/basex-source.txt
             ${{ runner.temp }}/basex-build.log

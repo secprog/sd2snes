@@ -268,6 +268,22 @@ the same seed 46 to test UG628's LUT-depth tradeoff. Synthesis, PAR, the full
 formal gate and every timing constraint stay fixed. The Area candidate is not
 promoted or repeated unchanged.
 
+Both basex MAP Speed trials also failed. Original seed 46 used 3495 slices
+and 6262 LUTs with 526 setup errors and -2.585 ns worst slack. The factored
+variant used 3470 slices and 6271 LUTs with 617 errors and -3.532 ns slack.
+Its worst cheat-write path has only three logic levels, but routing accounts
+for 78.7% of the delay, including a 5.387 ns single-load net. The LUT helper
+appears as one LUT in the native path; reduced logic depth did not close timing.
+
+A separate bounded diagnostic selects only the original RTL, XST Area, MAP
+Area and seed 46. XST Area prioritizes reducing the logic footprint (UG627,
+pages 303–304); this tests a capacity/routing tradeoff against the measured
+original High XST Speed/Area MAP profile. High effort, existing register
+balancing, PAR and all timing constraints stay fixed. The workflow's
+`source_scope` avoids another unchanged control or failed factored profile.
+Resource reduction and timing closure must be measured before this setting
+can become a production default.
+
 ## Toolchains
 
 - MkII: ISE 14.7 from

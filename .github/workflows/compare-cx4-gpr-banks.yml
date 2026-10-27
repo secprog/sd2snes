@@ -12,6 +12,11 @@ on:
         type: choice
         options: [Area, Speed]
         default: Area
+      map_goal:
+        description: Diagnostic MAP cover mode; other implementation properties stay fixed
+        type: choice
+        options: [Balanced, Speed]
+        default: Balanced
 
 permissions:
   contents: read
@@ -98,7 +103,7 @@ jobs:
           retention-days: 14
 
   compare:
-    name: CX4 ${{ matrix.source }} ${{ inputs.synthesis_goal }} seed 1
+    name: CX4 ${{ matrix.source }} XST ${{ inputs.synthesis_goal }} MAP ${{ inputs.map_goal }} seed 1
     needs: prove
     runs-on: ubuntu-22.04
     timeout-minutes: 120
@@ -118,6 +123,7 @@ jobs:
         env:
           SOURCE: ${{ matrix.source }}
           XST_GOAL: ${{ inputs.synthesis_goal }}
+          MAP_GOAL: ${{ inputs.map_goal }}
         run: |
           set -euo pipefail
           proof_dir="$RUNNER_TEMP/gpr-proof"
@@ -133,17 +139,26 @@ jobs:
           goal = os.environ["XST_GOAL"]
           if goal not in ("Area", "Speed"):
               raise SystemExit("Invalid diagnostic synthesis goal")
+          cover = os.environ["MAP_GOAL"]
+          if cover not in ("Balanced", "Speed"):
+              raise SystemExit("Invalid diagnostic MAP cover mode")
           path = Path("verilog/sd2snes_cx4/sd2snes_cx4.xise")
           text = path.read_text()
           original = 'xil_pn:name="Optimization Goal" xil_pn:value="Area"'
           if text.count(original) != 1:
               raise SystemExit("Expected exactly one original Area synthesis property")
           if goal == "Speed":
-              path.write_text(text.replace(original, original.replace('"Area"', '"Speed"')))
+              text = text.replace(original, original.replace('"Area"', '"Speed"'))
+          original_cover = 'xil_pn:name="Optimization Strategy (Cover Mode)" xil_pn:value="Balanced"'
+          if text.count(original_cover) != 1:
+              raise SystemExit("Expected exactly one original Balanced MAP property")
+          if cover == "Speed":
+              text = text.replace(original_cover, original_cover.replace('"Balanced"', '"Speed"'))
+          path.write_text(text)
           PY
           {
             printf 'Diagnostic source: %s\nRunner checkout: %s\n' "$SOURCE" "$GITHUB_SHA"
-            printf 'XST goal: %s; placement seed: 1. Other project properties, clocks and timing constraints unchanged.\n' "$XST_GOAL"
+            printf 'XST goal: %s; MAP cover: %s; placement seed: 1. Other project properties, clocks and timing constraints unchanged.\n' "$XST_GOAL" "$MAP_GOAL"
             while IFS= read -r -d '' source_file; do
               printf '%s %s\n' "$(git hash-object --no-filters "$source_file")" "$source_file"
             done < <(git ls-files -z verilog/sd2snes_cx4/ verilog/common.mk verilog/xilinx_scripts/ .github/scripts/build.sh)
@@ -183,7 +198,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: cx4-gpr-${{ matrix.source }}-${{ inputs.synthesis_goal }}-seed-1
+          name: cx4-gpr-${{ matrix.source }}-xst-${{ inputs.synthesis_goal }}-map-${{ inputs.map_goal }}-seed-1
           path: |
             ${{ runner.temp }}/cx4-source.txt
             ${{ runner.temp }}/cx4-build.log

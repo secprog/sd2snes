@@ -144,6 +144,13 @@ and source hashes. The banked Area/seed-1 trial reduced native use from 7010 to
 -2.502 ns worst setup slack. This new capacity margin motivates a bounded Speed
 trial; the original unbanked Speed design exceeded capacity. Neither variant is
 promoted into production without passing native timing and integration.
+Banked XST Speed with Balanced mapping subsequently used 5539 LUTs and 3146
+slices, with 153 setup errors and -1.951 ns worst slack. The `map_goal` input
+allows a separate bounded Speed cover-mode trial while preserving the same
+source, synthesis, seed and constraints. [AMD UG628, page 88](https://docs.amd.com/api/khub/documents/OxIb6JgZldFkcqM0jPOm9A/content)
+documents that Speed prioritizes fewer LUT levels after timing, while Balanced
+prioritizes fewer LUTs. The measured free capacity permits testing that tradeoff;
+neither setting is assumed to close timing.
 The source model is checked before memory lowering. Yosys `memory_map` leaves
 the nonexistent 48..63 read-mux leaves undriven; those become explicit X values
 with `setundef -undriven -undef`, and the lowered model is checked again. This

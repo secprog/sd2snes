@@ -90,7 +90,9 @@ def check(original_report, diagnostic_report):
     if not errors:
         raise SystemExit("Missing diagnostic setup/hold summary")
     total, setup, hold = map(int, errors.groups())
-    blocks = re.findall(r"(?ms)^Slack \(setup path\):.*?(?=^-{5,}|\Z)", part)
+    # TRACE reports FROM:TO setup paths as "Slack:" on this ISE release,
+    # while PERIOD reports often use "Slack (setup path):".
+    blocks = re.findall(r"(?ms)^Slack(?: \(setup path\))?:.*?(?=^-{5,}|\Z)", part)
     selected = [block for block in blocks
                 if re.search(r"(?m)^\s*Source:\s+.*snes_dac/snes_dac_buf", block)
                 and any(re.search(r"(?m)^\s*Destination:\s+" + re.escape(target) + r"\b", block)

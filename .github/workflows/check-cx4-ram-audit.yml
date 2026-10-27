@@ -21,6 +21,13 @@ jobs:
           github-token: ${{ github.token }}
           merge-multiple: true
           path: ${{ runner.temp }}/cx4-report
+      - uses: actions/download-artifact@v4
+        with:
+          artifact-ids: '12769066028'
+          run-id: '40577451143'
+          github-token: ${{ github.token }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/cx4-ram-experiment
 
       - name: Validate the guard against the retained production PCF and report
         run: |
@@ -62,4 +69,35 @@ jobs:
             > "$RUNNER_TEMP/wrong-report.log" 2>&1 || status=$?
           test "$status" -ne 0
           grep -F 'Missing TS_DIAG_RAM_TO_FILTER timing section' "$RUNNER_TEMP/wrong-report.log"
-          printf 'Actual production PCF accepted; repeated, missing-target and wrong-report controls rejected.\n' >> "$GITHUB_STEP_SUMMARY"
+
+          actual="$RUNNER_TEMP/cx4-ram-experiment/sd2snes/sd2snes/verilog/sd2snes_cx4"
+          test -s "$actual/main.pcf" && test -s "$actual/main.twr"
+          test -s "$actual/ram-diagnostic.pcf" && test -s "$actual/ram-diagnostic.twr"
+          python3 .github/scripts/inspect-cx4-ram-paths.py prepare \
+            "$actual/main.pcf" "$RUNNER_TEMP/regenerated-ram.pcf"
+          cmp "$RUNNER_TEMP/regenerated-ram.pcf" "$actual/ram-diagnostic.pcf"
+          python3 .github/scripts/inspect-cx4-ram-paths.py check \
+            "$actual/main.twr" "$actual/ram-diagnostic.twr" \
+            | tee "$RUNNER_TEMP/actual-path.log"
+          grep -F 'Original TS_DAC2: 0 paths, 0 endpoints, 0 failing endpoints.' "$RUNNER_TEMP/actual-path.log"
+          grep -F 'Diagnostic RAM-to-filter group: 4 paths, 4 endpoints, 0 failing endpoints.' "$RUNNER_TEMP/actual-path.log"
+          grep -F 'Destination:          snes_dac/ci_0_0' "$RUNNER_TEMP/actual-path.log"
+          grep -F 'Requirement:          12.494ns' "$RUNNER_TEMP/actual-path.log"
+          grep -F 'Diagnostic timing errors: 0, setup: 0, hold: 0.' "$RUNNER_TEMP/actual-path.log"
+
+          python3 - "$actual/ram-diagnostic.twr" "$RUNNER_TEMP/missing-source.twr" <<'PY'
+          import sys
+          from pathlib import Path
+          text = Path(sys.argv[1]).read_text()
+          if "snes_dac/snes_dac_buf" not in text:
+              raise SystemExit("Expected DAC RAM source in retained report")
+          Path(sys.argv[2]).write_text(text.replace("snes_dac/snes_dac_buf", "unrelated_memory"))
+          PY
+          status=0
+          python3 .github/scripts/inspect-cx4-ram-paths.py check \
+            "$actual/main.twr" "$RUNNER_TEMP/missing-source.twr" \
+            > "$RUNNER_TEMP/missing-source.log" 2>&1 || status=$?
+          test "$status" -ne 0
+          grep -F 'No reported DAC-buffer-to-target path found' "$RUNNER_TEMP/missing-source.log"
+
+          printf 'Actual production PCF and routed diagnostic paths accepted; repeated, missing-target, missing-source and wrong-report controls rejected.\n' >> "$GITHUB_STEP_SUMMARY"

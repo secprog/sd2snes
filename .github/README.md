@@ -202,6 +202,29 @@ formal gate, synthesis settings, clock uncertainty and native timing checks
 remain. This tests the depth-versus-capacity tradeoff documented in UG628
 page 88; the failed Area candidate is not a production change.
 
+Both DSP Speed-cover trials also failed: original seed 68 had 22 setup
+errors and -0.792 ns worst slack; banked had 369 and -2.064 ns. The unchanged
+original Area profile remains closer at 13 errors and -0.206 ns. Banking is
+not promoted.
+
+The **Compare DSPx stack write-gate timing** diagnostic instead retains the
+original sixteen 11-bit words and both read expressions. It separates each
+word's CALL/restore address selection from the final frozen-state and byte-lane
+gate, using the four-input behavioral `LUT_MAP` mechanism in UG627 pages
+245–247 and 345–346. The measured original freeze-to-stack path traverses four
+LUT levels; this experiment puts the freeze decision in one final LUT. No
+register, clock stage, reset, initialization or CALL cycle is added. The native
+reports must establish actual mapping, capacity and timing improvement.
+
+The generator pins the same complete source, audits every access and parent
+condition, and recovers all text outside the moved writes byte for byte. All
+four non-MkII configurations must remain identical. The existing 176-bit
+strict state-cut proof checks every transition and both reads, with flattened
+behavioral gates and real data/freeze/index-wrap negative counterexamples.
+Only a successful proof enables native Area/seed-68 compilation. The unchanged
+original control has already reproduced its result; `include_original` defaults
+to false to avoid compiling it again. Production RTL remains unchanged.
+
 The **Compare basex write-gate timing** diagnostic targets the five-level
 SNES write-strobe to cheat-data enable path (-0.827 ns in the original seed 46).
 Its runner-only candidate separates the six programming-slot selections from

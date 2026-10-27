@@ -176,6 +176,9 @@ no constraint is changed or waived.
 
 The resulting report in run 40555618424 shows that the existing TS_DAC
 constraint takes precedence for 3406 paths otherwise covered by TS_CLK21.
+Its slowest reported path takes 12.595 ns against a 12.494 ns clock period;
+the current four-cycle requirement is 49.979 ns. The logic and clock enables
+must be examined before deciding whether that exception is justified.
 It also reports an overlap between TS_SNES_SYSCLK and TS_CLK21 on the first
 DAC sysclk sampler. NGDBUILD identifies both derived DCM clocks from TS_CLKIN,
 which is consistent with UG612 page 37 explaining why the original translated
@@ -184,6 +187,14 @@ ignored, but its cause is not established by the interaction report.
 NGDBUILD additionally warns that 35 specified DAC-group FF names were not
 found; whether the affected paths are covered elsewhere must be investigated.
 These observations do not establish input, output or hardware timing coverage.
+
+The optional `audit_single_cycle` input performs a separate counterfactual
+analysis of the routed CX4 design with only TS_DAC tightened to one clock
+cycle in a temporary PCF. The original NCD, PCF and detailed timing report
+are checksummed before and after. The diagnostic requires nonempty path and
+timing results and fails if this stricter analysis has any timing errors; it
+does not alter production constraints or establish whether the original
+four-cycle exception is functionally valid.
 
 The source model is checked before memory lowering. Yosys `memory_map` leaves
 the nonexistent 48..63 read-mux leaves undriven; those become explicit X values

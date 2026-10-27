@@ -7,6 +7,11 @@ on:
         description: Rebuild the original control alongside the candidate
         type: boolean
         default: true
+      synthesis_goal:
+        description: Diagnostic XST optimization goal; other project properties stay fixed
+        type: choice
+        options: [Area, Speed]
+        default: Area
 
 permissions:
   contents: read
@@ -93,7 +98,7 @@ jobs:
           retention-days: 14
 
   compare:
-    name: CX4 ${{ matrix.source }} seed 1
+    name: CX4 ${{ matrix.source }} ${{ inputs.synthesis_goal }} seed 1
     needs: prove
     runs-on: ubuntu-22.04
     timeout-minutes: 120
@@ -112,6 +117,7 @@ jobs:
       - name: Select only the proved diagnostic source
         env:
           SOURCE: ${{ matrix.source }}
+          XST_GOAL: ${{ inputs.synthesis_goal }}
         run: |
           set -euo pipefail
           proof_dir="$RUNNER_TEMP/gpr-proof"
@@ -121,9 +127,23 @@ jobs:
           if [[ "$SOURCE" == banked ]]; then
             cp "$proof_dir/candidate-cx4.v" verilog/sd2snes_cx4/cx4.v
           fi
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          goal = os.environ["XST_GOAL"]
+          if goal not in ("Area", "Speed"):
+              raise SystemExit("Invalid diagnostic synthesis goal")
+          path = Path("verilog/sd2snes_cx4/sd2snes_cx4.xise")
+          text = path.read_text()
+          original = 'xil_pn:name="Optimization Goal" xil_pn:value="Area"'
+          if text.count(original) != 1:
+              raise SystemExit("Expected exactly one original Area synthesis property")
+          if goal == "Speed":
+              path.write_text(text.replace(original, original.replace('"Area"', '"Speed"')))
+          PY
           {
             printf 'Diagnostic source: %s\nRunner checkout: %s\n' "$SOURCE" "$GITHUB_SHA"
-            printf 'Placement seed: 1; project, clocks and timing constraints unchanged.\n'
+            printf 'XST goal: %s; placement seed: 1. Other project properties, clocks and timing constraints unchanged.\n' "$XST_GOAL"
             while IFS= read -r -d '' source_file; do
               printf '%s %s\n' "$(git hash-object --no-filters "$source_file")" "$source_file"
             done < <(git ls-files -z verilog/sd2snes_cx4/ verilog/common.mk verilog/xilinx_scripts/ .github/scripts/build.sh)
@@ -163,7 +183,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: cx4-gpr-${{ matrix.source }}-seed-1
+          name: cx4-gpr-${{ matrix.source }}-${{ inputs.synthesis_goal }}-seed-1
           path: |
             ${{ runner.temp }}/cx4-source.txt
             ${{ runner.temp }}/cx4-build.log
@@ -171,6 +191,7 @@ jobs:
             verilog/sd2snes_cx4/main.xst
             verilog/sd2snes_cx4/main.prj
             verilog/sd2snes_cx4/main.pcf
+            verilog/sd2snes_cx4/sd2snes_cx4.xise
             verilog/sd2snes_cx4/*.syr
             verilog/sd2snes_cx4/*.par
             verilog/sd2snes_cx4/*.mrp

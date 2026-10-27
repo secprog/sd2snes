@@ -137,6 +137,13 @@ XST only supports division/remainder by powers of two (UG627 pages 128 and 491).
 The complete proof is repeated when this decoder changes. `include_original`
 defaults to true; it can be disabled when a recent unchanged control already
 exists under the identical image, project and constraints.
+`synthesis_goal` selects Area (the default) or Speed in the diagnostic runner's
+ISE project. It changes only that XST property and records the resulting project
+and source hashes. The banked Area/seed-1 trial reduced native use from 7010 to
+5418 LUTs and 3576 to 3162 slices, but still failed timing with 240 errors and
+-2.502 ns worst setup slack. This new capacity margin motivates a bounded Speed
+trial; the original unbanked Speed design exceeded capacity. Neither variant is
+promoted into production without passing native timing and integration.
 The source model is checked before memory lowering. Yosys `memory_map` leaves
 the nonexistent 48..63 read-mux leaves undriven; those become explicit X values
 with `setundef -undriven -undef`, and the lowered model is checked again. This

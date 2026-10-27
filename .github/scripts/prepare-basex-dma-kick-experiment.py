@@ -11,6 +11,8 @@ from pathlib import Path
 BLOBS = {
     "main.v": "2bd168af3e0254a6c985ff7cd5b0413afafab0a9",
     "dma.v": "00dde5ec7e35baf936df5b696a0a7501039ebc84",
+    "address.v": "36ce9a5c17fc80b9ddda1d869f0d75a4fb52356c",
+    "config.vh": "1a9a6a14b8b08eb6e931ce2320326e913aa8000e",
 }
 ORIGINAL_KICK = "wire op_kick = reg_we_rising & enable & (reg_addr == 4'd9) & reg_data_in[0];"
 FAST_EXPR = (
@@ -19,6 +21,9 @@ FAST_EXPR = (
 )
 FAST_DECL = """`ifdef MK2
 `ifdef BASE_EXT
+// The original 1-bit net is implicit at the address-module port. XST requires
+// it to be declared before it is used in this continuous expression.
+wire dma_enable;
 // Runner-only experiment: decode the selected DMA trigger before the mux.
 wire DMA_OP_KICK_FAST = """ + FAST_EXPR + ";\n`endif\n`endif"
 FAST_PORT = """`ifdef MK2
@@ -155,7 +160,9 @@ def main():
     if len(sys.argv) != 3:
         raise SystemExit("usage: prepare-basex-dma-kick-experiment.py SOURCE_DIR OUTPUT_DIR")
     source_dir, output = map(Path, sys.argv[1:])
-    original_main, original_dma = (read_pinned(source_dir / name) for name in ("main.v", "dma.v"))
+    original_main, original_dma, address, config = (
+        read_pinned(source_dir / name) for name in ("main.v", "dma.v", "address.v", "config.vh")
+    )
     for text, fragment in ((original_main, "dma snes_dma ("),
                            (original_main, "  .clkin(CLK2),"),
                            (original_dma, "module dma(\n"),
@@ -166,6 +173,13 @@ def main():
             unique(text, fragment)
     if re.search(r"\b(?:DMA_OP_KICK_FAST|op_kick_fast)\b", original_main + original_dma):
         raise SystemExit("Fast kick names already exist")
+    if re.search(r"(?m)^\s*(?:wire|reg|input|output|inout)\b[^;\n]*\bdma_enable\b", original_main):
+        raise SystemExit("The expected implicit DMA enable already has an explicit declaration")
+    if "`default_nettype" in original_main or "`default_nettype" in config:
+        raise SystemExit("Unexpected nettype directive in pinned main or config")
+    unique(original_main, ".dma_enable(dma_enable),")
+    unique(address, "  output dma_enable,")
+    unique(address, "assign dma_enable = ")
     # One declaration, two real consumers, and one explanatory comment.
     if len(re.findall(r"\bop_kick\b", original_dma)) != 4:
         raise SystemExit("Unexpected number of op_kick occurrences")
@@ -218,7 +232,8 @@ def main():
         diffs.extend(difflib.unified_diff(old.splitlines(True), new.splitlines(True),
                                         f"original-{name}.v", f"candidate-{name}.v"))
     (output / "candidate.diff").write_text("".join(diffs), encoding="utf-8")
-    print("Pinned complete main and DMA blobs; candidate recovers both originals exactly.")
+    print("Pinned complete main, DMA, address and config blobs; candidate recovers both changed originals exactly.")
+    print("Original DMA enable is implicitly connected to the pinned 1-bit address-module output; candidate declares that same net explicitly.")
     print("Six non-target configurations audited; projected actual DMA ports and kick expressions.")
     print("Five mutated source expressions require genuine counterexamples; no assumptions about timing.")
 

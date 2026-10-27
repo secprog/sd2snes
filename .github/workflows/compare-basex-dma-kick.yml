@@ -93,6 +93,8 @@ jobs:
           test -s "$proof_dir/verified.txt"
           cmp "$proof_dir/original-main.v" verilog/sd2snes_base/main.v
           cmp "$proof_dir/original-dma.v" verilog/sd2snes_base/dma.v
+          test "$(git hash-object --no-filters verilog/sd2snes_base/address.v)" = 36ce9a5c17fc80b9ddda1d869f0d75a4fb52356c
+          test "$(git hash-object --no-filters verilog/sd2snes_base/config.vh)" = 1a9a6a14b8b08eb6e931ce2320326e913aa8000e
           test "$(git hash-object --no-filters verilog/sd2snes_base/main.ucf)" = e582e03059fbbcf21b4124e5dd7aa9ac8792fd6b
           test "$(git hash-object --no-filters verilog/sd2snes_basex/sd2snes_basex.xise)" = 5338e8fa5fef0af0c526ff99563b17a0763ed34a
           test ! -e verilog/sd2snes_basex/ucf.extra

@@ -1,0 +1,206 @@
+name: Compare DSPx RAM write-enable factoring
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dsp-ram-write-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  prove:
+    name: Prove RAM write-enable boundary and reject mutations
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Prepare pinned source projections and candidate
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/prepare-dsp-ram-write-experiment.py \
+            verilog/sd2snes_dsp/upd77c25.v "$RUNNER_TEMP/ram-write-proof"
+
+      - name: Install formal tools on the GitHub runner
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends yosys
+          yosys -V | tee "$RUNNER_TEMP/ram-write-proof/tool-version.txt"
+          grep -F 'Yosys 0.33' "$RUNNER_TEMP/ram-write-proof/tool-version.txt"
+
+      - name: Prove binary and X-state boundaries with real counterexamples
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/ram-write-proof"
+          sha256sum --check SHA256SUMS
+          for variant in gate bad-address bad-freeze bad-write bad-absorb; do
+            mkdir "$variant"
+            cp "$variant.v" "$variant/model.v"
+            for domain in binary undef; do
+              if [[ "$domain" == undef && "$variant" != gate && "$variant" != bad-absorb ]]; then continue; fi
+              constraint='-set-def-inputs'
+              if [[ "$domain" == undef ]]; then constraint=''; fi
+              cat > "$variant/$domain.ys" <<YOSYS
+          read_verilog -sv -formal ../gold.v model.v
+          proc
+          miter -equiv -make_assert -make_outputs -make_outcmp -flatten gold gate miter
+          hierarchy -check -top miter
+          opt_clean
+          check -assert
+          sat -verify -enable_undef $constraint -prove-asserts -show-inputs -show-outputs -dump_json $domain-counterexample.json -timeout 180
+          YOSYS
+              result=0
+              (cd "$variant" && yosys -l "$domain.log" -s "$domain.ys") || result=$?
+              if [[ "$variant" == gate || ( "$variant" == bad-absorb && "$domain" == binary ) ]]; then
+                test "$result" -eq 0
+                grep -F 'SAT proof finished - no model found: SUCCESS!' "$variant/$domain.log"
+              else
+                test "$result" -ne 0
+                grep -F 'SAT proof finished - model found: FAIL!' "$variant/$domain.log"
+                test -s "$variant/$domain-counterexample.json"
+              fi
+            done
+          done
+          sha256sum --check SHA256SUMS
+          printf 'The projected control, register-window and RAM-write outputs match for binary and Yosys X-state inputs. Three binary mutants and a binary-equivalent X-state mutant have counterexamples. This is a component proof, not a whole-FPGA or hardware proof.\n' \
+            | tee verified.txt >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload proof inputs, models and counterexamples
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsp-ram-write-proof
+          path: ${{ runner.temp }}/ram-write-proof/
+          if-no-files-found: error
+          retention-days: 14
+
+  native:
+    name: DSPx proved RAM write factoring, MAP Area seed 68
+    needs: prove
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dsp-ram-write-proof
+          path: ${{ runner.temp }}/ram-write-proof
+
+      - name: Select only the proved runner-only candidate
+        run: |
+          set -euo pipefail
+          proof_dir="$RUNNER_TEMP/ram-write-proof"
+          (cd "$proof_dir" && sha256sum --check SHA256SUMS)
+          test -s "$proof_dir/verified.txt"
+          test "$(git rev-parse HEAD:verilog)" = 4e50365f59f38217b67c5126276873a29be737d5
+          cmp "$proof_dir/original-upd77c25.v" verilog/sd2snes_dsp/upd77c25.v
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/main.ucf)" = 4f34c4cf9e475ac171a216c3f15fff74918fd03c
+          test "$(git hash-object --no-filters verilog/sd2snes_dspx/sd2snes_dspx.xise)" = 2822b63c005bce73e8e7aaf332bcdbd983d1492d
+          test ! -e verilog/sd2snes_dspx/ucf.extra
+          cp "$proof_dir/candidate-upd77c25.v" verilog/sd2snes_dsp/upd77c25.v
+          {
+            printf 'Runner checkout: %s\nXST Speed / MAP Area / seed 68; project and UCF unchanged.\n' "$GITHUB_SHA"
+            while IFS= read -r -d '' file; do
+              printf '%s %s\n' "$(git hash-object --no-filters "$file")" "$file"
+            done < <(git ls-files -z verilog/sd2snes_dsp/ verilog/sd2snes_dspx/ verilog/common.mk verilog/xilinx_scripts/ .github/scripts/build.sh)
+          } | tee "$RUNNER_TEMP/dsp-ram-write-source.txt"
+
+      - uses: ./.github/actions/prepare-build-image
+        with:
+          target: mk2
+
+      - name: Compile DSPx with strict native PAR and TRACE checks
+        env:
+          ISE_CTABLE: '68'
+        run: |
+          set -euo pipefail
+          image_id=$(docker image inspect sd2snes-ci:mk2 --format '{{.Id}}')
+          printf 'ISE image ID: %s\n' "$image_id" | tee -a "$RUNNER_TEMP/dsp-ram-write-source.txt"
+          test "$image_id" = sha256:5e3bbb00649997abca8843b1d82d8529eda99a0f2868d37ad9777e0ad5fd50e8
+          container_name=sd2snes-dsp-ram-write
+          bash .github/scripts/report-activity.sh "$container_name" &
+          activity_pid=$!
+          trap 'kill "$activity_pid" 2>/dev/null || true; wait "$activity_pid" 2>/dev/null || true' EXIT
+          docker run --rm --name "$container_name" --user 0:0 \
+            --mac-address 08:00:27:68:c9:35 --env ISE_CTABLE \
+            --volume "$GITHUB_WORKSPACE:/work" --workdir /work \
+            --entrypoint /bin/bash sd2snes-ci:mk2 .github/scripts/build.sh mk2 dspx \
+            2>&1 | tee "$RUNNER_TEMP/dsp-ram-write-build.log"
+
+      - name: Record source changes and actual tool profile
+        if: always()
+        run: |
+          set -euo pipefail
+          {
+            printf 'Tracked verilog changes after build:\n'
+            git diff --name-only -- verilog
+            printf 'Candidate source hash: '; git hash-object --no-filters verilog/sd2snes_dsp/upd77c25.v
+            printf 'UCF hash: '; git hash-object --no-filters verilog/sd2snes_dsp/main.ucf
+            printf 'Project hash: '; git hash-object --no-filters verilog/sd2snes_dspx/sd2snes_dspx.xise
+          } | tee "$RUNNER_TEMP/dsp-ram-write-post.txt"
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/upd77c25.v)" = "$(git hash-object --no-filters "$RUNNER_TEMP/ram-write-proof/candidate-upd77c25.v")"
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/main.ucf)" = 4f34c4cf9e475ac171a216c3f15fff74918fd03c
+          test "$(git hash-object --no-filters verilog/sd2snes_dspx/sd2snes_dspx.xise)" = 2822b63c005bce73e8e7aaf332bcdbd983d1492d
+          test "$(git diff --name-only -- verilog)" = verilog/sd2snes_dsp/upd77c25.v
+          grep -Fx -- '-opt_mode Speed' verilog/sd2snes_dspx/main.xst
+          grep -E '/map -p .* -timing .* -ol high -xe n -t 68 .* -cm area ' "$RUNNER_TEMP/dsp-ram-write-build.log"
+          grep -E '/par -w -ol high -xe c -t 68 ' "$RUNNER_TEMP/dsp-ram-write-build.log"
+
+      - name: Inspect the mapped RAM write-enable logic
+        if: always()
+        run: |
+          set -euo pipefail
+          core=verilog/sd2snes_dspx
+          if [[ ! -s "$core/main_map.ncd" ]]; then
+            echo 'Mapped NCD missing; RAM write inspection is inconclusive.' | tee "$RUNNER_TEMP/dsp-ram-write-xdl.txt"
+            exit 1
+          fi
+          docker run --rm --user 0:0 --mac-address 08:00:27:68:c9:35 \
+            --volume "$GITHUB_WORKSPACE:/work" --workdir /work/verilog/sd2snes_dspx \
+            --entrypoint /bin/bash sd2snes-ci:mk2 -c \
+            'set -euo pipefail; xdl -ncd2xdl -nopips main_map.ncd ram-write-audit.xdl'
+          python3 - "$core/ram-write-audit.xdl" <<'PY' | tee "$RUNNER_TEMP/dsp-ram-write-xdl.txt"
+          import re
+          import sys
+          from pathlib import Path
+
+          text = Path(sys.argv[1]).read_text()
+          statements = re.findall(r'(?ms)^\s*(?:net|inst)\s+.*?;', text)
+          selected = [item for item in statements if re.search(r'snes_dspx/(?:ram_web|ss_ctrl)', item)]
+          if not any('snes_dspx/ram_web' in item for item in selected):
+              raise SystemExit('No named RAM write net or instance found; inspection inconclusive')
+          print('Mapped NCD evidence only; review source, fanout and implementation manually.')
+          for item in selected:
+              pins = len(re.findall(r'\binpin\b', item))
+              print(f'Input pins in statement: {pins}')
+              print(item)
+          PY
+
+      - name: Upload diagnostic reports without bitstreams
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsp-ram-write-seed-68
+          path: |
+            ${{ runner.temp }}/dsp-ram-write-source.txt
+            ${{ runner.temp }}/dsp-ram-write-post.txt
+            ${{ runner.temp }}/dsp-ram-write-build.log
+            ${{ runner.temp }}/dsp-ram-write-xdl.txt
+            verilog/sd2snes_dspx/main.xst
+            verilog/sd2snes_dspx/main.prj
+            verilog/sd2snes_dspx/main.pcf
+            verilog/sd2snes_dspx/sd2snes_dspx.xise
+            verilog/sd2snes_dspx/*.syr
+            verilog/sd2snes_dspx/*.par
+            verilog/sd2snes_dspx/*.mrp
+            verilog/sd2snes_dspx/*.psr
+            verilog/sd2snes_dspx/*.twr
+            verilog/sd2snes_dspx/*.bld
+            verilog/sd2snes_dspx/*.unroutes
+          if-no-files-found: error
+          retention-days: 14

@@ -1,0 +1,89 @@
+name: Check CX4 native RAM-path report guard
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  check:
+    name: Check retained PCF and reject misleading path reports
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          artifact-ids: '12769066028'
+          run-id: '40577451143'
+          github-token: ${{ github.token }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/cx4-ram-experiment
+
+      - name: Exercise the guard with real paths and a labeled synthetic wrapper
+        run: |
+          set -euo pipefail
+          core="$RUNNER_TEMP/cx4-ram-experiment/sd2snes/sd2snes/verilog/sd2snes_cx4"
+          test -s "$core/main.pcf" && test -s "$core/main.twr" && test -s "$core/ram-diagnostic.twr"
+          python3 - "$core/ram-diagnostic.twr" "$RUNNER_TEMP/native-fixture.twr" <<'PY'
+          import re
+          import sys
+          from pathlib import Path
+
+          text = Path(sys.argv[1]).read_text()
+          section = re.search(r'(?ms)^Timing constraint: TS_DIAG_RAM_TO_FILTER\b.*?(?=^={10,}|\Z)', text)
+          if not section:
+              raise SystemExit('Expected the retained diagnostic constraint')
+          first = section.group(0).find('Paths for end point snes_dac/ci_0_')
+          last = section.group(0).find('Derived Constraint Report')
+          if first < 0 or last <= first:
+              raise SystemExit('Expected the four retained diagnostic path blocks')
+          fixture = ('Synthetic parser fixture; not an original-constraint timing result.\n'
+                     'Timing constraint: TS_CLK21 = PERIOD TIMEGRP "CLK21" 80.0333333 MHz HIGH 50%;\n'
+                     ' 4 paths analyzed, 4 endpoints analyzed, 0 failing endpoints\n'
+                     ' 0 timing errors detected. (0 setup errors, 0 hold errors, 0 component switching limit errors)\n'
+                     + section.group(0)[first:last]
+                     + '\n================================================================================\n'
+                     'Analysis completed synthetic parser fixture\n')
+          Path(sys.argv[2]).write_text(fixture)
+          PY
+          python3 .github/scripts/inspect-cx4-native-ram-paths.py \
+            "$core/main.pcf" "$RUNNER_TEMP/native-fixture.twr" | tee "$RUNNER_TEMP/fixture-result.txt"
+          for target in 0 1 2 3; do
+            grep -F "Original TS_CLK21 RAM-to-filter path to snes_dac/ci_0_$target:" "$RUNNER_TEMP/fixture-result.txt"
+          done
+
+          for report in "$core/main.twr" "$core/ram-diagnostic.twr"; do
+            status=0
+            python3 .github/scripts/inspect-cx4-native-ram-paths.py "$core/main.pcf" "$report" \
+              > "$RUNNER_TEMP/wrong-report.log" 2>&1 || status=$?
+            test "$status" -ne 0
+            grep -F 'Missing RAM-to-filter path(s) under original TS_CLK21' "$RUNNER_TEMP/wrong-report.log"
+          done
+
+          python3 - "$RUNNER_TEMP/native-fixture.twr" "$RUNNER_TEMP" <<'PY'
+          import sys
+          from pathlib import Path
+          text = Path(sys.argv[1]).read_text()
+          out = Path(sys.argv[2])
+          for name, old, new in (
+              ('missing-source', 'snes_dac/snes_dac_buf/', 'unrelated_memory/'),
+              ('missing-target', 'snes_dac/ci_0_3', 'snes_dac/missing_filter'),
+              ('wrong-requirement', '12.494ns', '49.979ns'),
+              ('wrong-constraint', 'Timing constraint: TS_CLK21 = PERIOD', 'Timing constraint: TS_OTHER = PERIOD'),
+              ('failed-summary', '0 timing errors detected. (0 setup errors', '1 timing errors detected. (1 setup errors'),
+          ):
+              if old not in text:
+                  raise SystemExit(f'Missing fixture mutation anchor {old}')
+              (out / (name + '.twr')).write_text(text.replace(old, new))
+          PY
+          for variant in missing-source missing-target wrong-requirement wrong-constraint failed-summary; do
+            status=0
+            python3 .github/scripts/inspect-cx4-native-ram-paths.py \
+              "$core/main.pcf" "$RUNNER_TEMP/$variant.twr" > "$RUNNER_TEMP/$variant.log" 2>&1 || status=$?
+            test "$status" -ne 0
+            grep -E 'inspection inconclusive' "$RUNNER_TEMP/$variant.log"
+          done
+          printf 'Synthetic wrapper around actual paths accepted; original and diagnostic reports plus five invalid fixtures rejected. No synthetic report is timing evidence.\n' >> "$GITHUB_STEP_SUMMARY"

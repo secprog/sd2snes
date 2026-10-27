@@ -1,0 +1,168 @@
+name: Compare MkII MAP extra effort
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mk2-map-extra-effort-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  compare:
+    name: ${{ matrix.core }} MAP continue, seed ${{ matrix.seed }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - core: basex
+            source: sd2snes_base
+            seed: '46'
+            project_blob: 5338e8fa5fef0af0c526ff99563b17a0763ed34a
+            ucf_blob: e582e03059fbbcf21b4124e5dd7aa9ac8792fd6b
+          - core: dspx
+            source: sd2snes_dsp
+            seed: '68'
+            project_blob: 2822b63c005bce73e8e7aaf332bcdbd983d1492d
+            ucf_blob: 4f34c4cf9e475ac171a216c3f15fff74918fd03c
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Pin sources and change only the diagnostic MAP effort
+        env:
+          CORE: ${{ matrix.core }}
+          SOURCE: ${{ matrix.source }}
+          PROJECT_BLOB: ${{ matrix.project_blob }}
+          UCF_BLOB: ${{ matrix.ucf_blob }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD:verilog)" = 4e50365f59f38217b67c5126276873a29be737d5
+          test "$(git hash-object --no-filters .github/scripts/build.sh)" = 847665b375209d705de918d54f89cff194b074b1
+          test "$(git hash-object --no-filters .github/actions/prepare-build-image/action.yml)" = ac2a66fc24d4a15658b666cdc5f5db7964df4c3b
+          git diff --exit-code -- verilog .github/scripts/build.sh .github/actions/prepare-build-image/action.yml
+          project="verilog/sd2snes_$CORE/sd2snes_$CORE.xise"
+          ucf="verilog/$SOURCE/main.ucf"
+          test "$(git hash-object --no-filters "$project")" = "$PROJECT_BLOB"
+          test "$(git hash-object --no-filters "$ucf")" = "$UCF_BLOB"
+          python3 - "$project" <<'PY'
+          import sys
+          from pathlib import Path
+
+          path = Path(sys.argv[1])
+          original = path.read_bytes()
+          before = b'<property xil_pn:name="Extra Effort" xil_pn:value="Normal" xil_pn:valueState="non-default"/>'
+          after = before.replace(b'value="Normal"', b'value="Continue on Impossible"')
+          if original.count(before) != 1 or after in original:
+              raise SystemExit("Unexpected MAP extra-effort property")
+          candidate = original.replace(before, after, 1)
+          if candidate.replace(after, before, 1) != original:
+              raise SystemExit("Diagnostic project failed exact original recovery")
+          path.write_bytes(candidate)
+          PY
+          git hash-object --no-filters "$project" > "$RUNNER_TEMP/candidate-project.sha"
+          git diff -- "$project" | tee "$RUNNER_TEMP/project.diff"
+          {
+            printf 'Runner checkout: %s\nCore: %s\nOriginal verilog tree: %s\n' "$GITHUB_SHA" "$CORE" "$(git rev-parse HEAD:verilog)"
+            printf 'Original project blob: %s\nDiagnostic project blob: %s\nUCF blob: %s\n' "$PROJECT_BLOB" "$(git hash-object --no-filters "$project")" "$UCF_BLOB"
+            printf 'Only MAP extra effort is changed in a runner checkout; no timing requirements or production source changes.\n'
+          } | tee "$RUNNER_TEMP/identity.txt"
+
+      - uses: ./.github/actions/prepare-build-image
+        with:
+          target: mk2
+
+      - name: Compile with the existing strict timing gate
+        id: compile
+        env:
+          CORE: ${{ matrix.core }}
+          ISE_CTABLE: ${{ matrix.seed }}
+        run: |
+          set -euo pipefail
+          image_id=$(docker image inspect sd2snes-ci:mk2 --format '{{.Id}}')
+          printf 'ISE image ID: %s\n' "$image_id" | tee -a "$RUNNER_TEMP/identity.txt"
+          test "$image_id" = sha256:5e3bbb00649997abca8843b1d82d8529eda99a0f2868d37ad9777e0ad5fd50e8
+          container_name="sd2snes-map-extra-$CORE"
+          bash .github/scripts/report-activity.sh "$container_name" &
+          activity_pid=$!
+          trap 'kill "$activity_pid" 2>/dev/null || true; wait "$activity_pid" 2>/dev/null || true' EXIT
+          docker run --rm --name "$container_name" --user 0:0 \
+            --mac-address 08:00:27:68:c9:35 --env ISE_CTABLE \
+            --volume "$GITHUB_WORKSPACE:/work" --workdir /work \
+            --entrypoint /bin/bash sd2snes-ci:mk2 .github/scripts/build.sh mk2 "$CORE" \
+            2>&1 | tee "$RUNNER_TEMP/build.log"
+
+      - name: Verify actual implementation options
+        if: always() && steps.compile.outcome != 'skipped'
+        env:
+          CORE: ${{ matrix.core }}
+          SOURCE: ${{ matrix.source }}
+          UCF_BLOB: ${{ matrix.ucf_blob }}
+          EXPECTED_SEED: ${{ matrix.seed }}
+        run: |
+          set -euo pipefail
+          project="verilog/sd2snes_$CORE/sd2snes_$CORE.xise"
+          test "$(git hash-object --no-filters "$project")" = "$(cat "$RUNNER_TEMP/candidate-project.sha")"
+          test "$(git hash-object --no-filters "verilog/$SOURCE/main.ucf")" = "$UCF_BLOB"
+          test "$(git diff --name-only -- verilog)" = "$project"
+          grep -Ex -- '-opt_mode Speed' "verilog/sd2snes_$CORE/main.xst"
+          python3 - "$RUNNER_TEMP/build.log" "$EXPECTED_SEED" <<'PY'
+          import re
+          import shlex
+          import sys
+          from pathlib import Path
+
+          lines = Path(sys.argv[1]).read_text(errors="strict").splitlines()
+          seed = sys.argv[2]
+          for tool, expected in (
+              ("map", {"-logic_opt": "on", "-ol": "high", "-xe": "c", "-t": seed, "-register_duplication": "on", "-cm": "area"}),
+              ("par", {"-ol": "high", "-xe": "c", "-t": seed}),
+          ):
+              commands = [line for line in lines if re.search(r"/" + tool + r"\s+-", line)]
+              if len(commands) != 1:
+                  raise SystemExit(f"Missing or unexpected {tool} command; result is inconclusive")
+              args = shlex.split(commands[0].split(" || ", 1)[0].strip())
+              if tool == "map" and args.count("-timing") != 1:
+                  raise SystemExit("MAP is not explicitly timing-driven; result is inconclusive")
+              for flag, value in expected.items():
+                  if args.count(flag) != 1 or args.index(flag) + 1 >= len(args) or args[args.index(flag) + 1] != value:
+                      raise SystemExit(f"Unexpected {tool} option {flag}; result is inconclusive")
+              print(f"Verified {tool} command: {commands[0]}")
+          PY
+
+      - name: Confirm the native timing result
+        if: steps.compile.outcome == 'success'
+        env:
+          CORE: ${{ matrix.core }}
+        run: |
+          set -euo pipefail
+          dir="verilog/sd2snes_$CORE"
+          grep -Eq 'Timing Score: 0 \(Setup: 0, Hold: 0' "$dir/main.par"
+          grep -Eq 'Timing errors: 0[[:space:]]+Score: 0[[:space:]]+\(Setup/Max: 0, Hold: 0\)' "$dir/main.twr"
+          echo 'Native PAR and TRACE explicitly report zero timing errors.'
+
+      - name: Upload diagnostic reports without bitstreams
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mk2-${{ matrix.core }}-map-extra-continue-seed-${{ matrix.seed }}
+          path: |
+            ${{ runner.temp }}/identity.txt
+            ${{ runner.temp }}/project.diff
+            ${{ runner.temp }}/build.log
+            verilog/sd2snes_${{ matrix.core }}/sd2snes_${{ matrix.core }}.xise
+            verilog/sd2snes_${{ matrix.core }}/main.xst
+            verilog/sd2snes_${{ matrix.core }}/main.prj
+            verilog/sd2snes_${{ matrix.core }}/main.pcf
+            verilog/sd2snes_${{ matrix.core }}/*.syr
+            verilog/sd2snes_${{ matrix.core }}/*.par
+            verilog/sd2snes_${{ matrix.core }}/*.mrp
+            verilog/sd2snes_${{ matrix.core }}/*.psr
+            verilog/sd2snes_${{ matrix.core }}/*.twr
+            verilog/sd2snes_${{ matrix.core }}/*.bld
+            verilog/sd2snes_${{ matrix.core }}/*.unroutes
+          if-no-files-found: error
+          retention-days: 14

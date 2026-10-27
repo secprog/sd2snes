@@ -1,0 +1,90 @@
+name: Check CX4 RAM-to-DAC intersection guard
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  check:
+    name: Check PCF preservation, coverage and interaction guards
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          artifact-ids: '12769066028'
+          run-id: '40577451143'
+          github-token: ${{ github.token }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/cx4-retained
+
+      - name: Exercise actual PCF and labeled synthetic reports
+        run: |
+          set -euo pipefail
+          core="$RUNNER_TEMP/cx4-retained/sd2snes/sd2snes/verilog/sd2snes_cx4"
+          test -s "$core/main.pcf" && test -s "$core/main.twr" && test -s "$core/ram-diagnostic.twr"
+          script=.github/scripts/inspect-cx4-ram-dac-intersection.py
+          python3 "$script" prepare "$core/main.pcf" "$RUNNER_TEMP/ram-all.pcf"
+          status=0
+          python3 "$script" prepare "$RUNNER_TEMP/ram-all.pcf" "$RUNNER_TEMP/duplicate.pcf" > "$RUNNER_TEMP/duplicate.log" 2>&1 || status=$?
+          test "$status" -ne 0
+          python3 - "$core/ram-diagnostic.twr" "$RUNNER_TEMP" <<'PY'
+          import re
+          import sys
+          from pathlib import Path
+          text = Path(sys.argv[1]).read_text()
+          out = Path(sys.argv[2])
+          match = re.search(r'(?ms)^Timing constraint: TS_DIAG_RAM_TO_FILTER\b.*?(?=^={10,}|\Z)', text)
+          if not match:
+              raise SystemExit("Missing retained diagnostic section")
+          section = match.group(0).replace("TS_DIAG_RAM_TO_FILTER", "TS_DIAG_RAM_TO_ALLFF", 1)
+          section = section.replace('"DAC_FILTER_DIAG"', '"FFS"', 1)
+          blocks = re.split(r'(?m)(?=^Paths for end point )', section)
+          if len(blocks) != 5:
+              raise SystemExit(f"Expected four retained endpoint blocks, got {len(blocks)-1}")
+          fixture = 'Synthetic parser fixture, not timing evidence.\n' + section + '\nAnalysis completed synthetic fixture\n'
+          (out / 'fixture.twr').write_text(fixture)
+          (out / 'fixture.tsi').write_text('Constraint Interaction Report\nClock Domain Overlap Report\nTimespec interaction analysis completed synthetic fixture\n')
+          extra = next((x for x in blocks[1:] if x.startswith('Paths for end point snes_dac/ci_0_3 ')), None)
+          if extra is None:
+              raise SystemExit("Missing positive-control endpoint")
+          extra = extra.replace('snes_dac/ci_0_3', 'snes_dac/vol_reg_7')
+          mixed = fixture.replace('4 paths analyzed, 4 endpoints analyzed', '5 paths analyzed, 5 endpoints analyzed', 1)
+          mixed = mixed.replace('Analysis completed synthetic fixture', extra + '\nAnalysis completed synthetic fixture', 1)
+          (out / 'mixed.twr').write_text(mixed)
+          for name, old, new in (
+              ('wrong-count', '4 paths analyzed, 4 endpoints analyzed', '4 paths analyzed, 5 endpoints analyzed'),
+              ('wrong-source', 'snes_dac/snes_dac_buf/', 'unrelated_memory/'),
+              ('wrong-requirement', '12.494ns', '49.979ns'),
+              ('wrong-constraint', 'TS_DIAG_RAM_TO_ALLFF', 'TS_DIAG_OTHER'),
+              ('failed-summary', '0 timing errors detected. (0 setup errors', '1 timing errors detected. (1 setup errors'),
+          ):
+              if old not in fixture:
+                  raise SystemExit(f"Missing mutation anchor: {name}")
+              (out / (name + '.twr')).write_text(fixture.replace(old, new))
+          (out / 'overridden.tsi').write_text(
+              'Constraint Interaction Report\n'
+              'Constraint interactions for TS_DIAG_RAM_TO_ALLFF = synthetic;\n'
+              '  1 paths removed by TS_OTHER;\n'
+              'Clock Domain Overlap Report\nTimespec interaction analysis completed synthetic fixture\n')
+          PY
+          python3 "$script" check "$core/main.pcf" "$core/main.twr" "$RUNNER_TEMP/fixture.twr" "$RUNNER_TEMP/fixture.tsi" | tee "$RUNNER_TEMP/result.txt"
+          grep -F 'destination names also in original DAC group: 0' "$RUNNER_TEMP/result.txt"
+          python3 "$script" check "$core/main.pcf" "$core/main.twr" "$RUNNER_TEMP/mixed.twr" "$RUNNER_TEMP/fixture.tsi" | tee "$RUNNER_TEMP/mixed-result.txt"
+          grep -F 'destination names also in original DAC group: 1' "$RUNNER_TEMP/mixed-result.txt"
+          grep -F 'snes_dac/vol_reg_7' "$RUNNER_TEMP/mixed-result.txt"
+          for variant in wrong-count wrong-source wrong-requirement wrong-constraint failed-summary; do
+            status=0
+            python3 "$script" check "$core/main.pcf" "$core/main.twr" "$RUNNER_TEMP/$variant.twr" "$RUNNER_TEMP/fixture.tsi" > "$RUNNER_TEMP/$variant.log" 2>&1 || status=$?
+            test "$status" -ne 0
+            grep -F 'inconclusive' "$RUNNER_TEMP/$variant.log"
+          done
+          status=0
+          python3 "$script" check "$core/main.pcf" "$core/main.twr" "$RUNNER_TEMP/fixture.twr" "$RUNNER_TEMP/overridden.tsi" > "$RUNNER_TEMP/overridden.log" 2>&1 || status=$?
+          test "$status" -ne 0
+          grep -F 'inconclusive' "$RUNNER_TEMP/overridden.log"
+          printf 'Actual PCF preserved; synthetic fixtures checked zero and nonzero intersections and rejected missing coverage, wrong source, requirement, constraint, timing and override. Synthetic fixtures are not timing evidence.\n' >> "$GITHUB_STEP_SUMMARY"

@@ -33,6 +33,10 @@ on:
         description: Find selected DAC RAM paths under the unchanged native clock constraint
         type: boolean
         default: false
+      audit_ram_dac_intersection:
+        description: Inspect RAM-to-FF destinations against the existing DAC group
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -304,6 +308,37 @@ jobs:
             "$core/main.pcf" "$core/native-ram-full.twr" \
             | tee "$RUNNER_TEMP/cx4-native-ram-paths.txt"
 
+      - name: Inspect RAM-to-FF destinations with a separate stricter PCF
+        if: inputs.audit_ram_dac_intersection
+        env:
+          SOURCE: ${{ matrix.source }}
+          XST_GOAL: ${{ inputs.synthesis_goal }}
+          MAP_GOAL: ${{ inputs.map_goal }}
+        run: |
+          set -euo pipefail
+          core=verilog/sd2snes_cx4
+          test "$SOURCE" = banked && test "$XST_GOAL" = Speed && test "$MAP_GOAL" = Speed
+          test "$(git hash-object --no-filters "$core/main.ucf")" = f14f270cbe7525da1d8481c9d36226c2678f15f1
+          test -s "$core/main.ncd" && test -s "$core/main.pcf" && test -s "$core/main.twr"
+          sha256sum "$core/main.ncd" "$core/main.pcf" "$core/main.twr" \
+            > "$RUNNER_TEMP/cx4-ram-intersection-inputs.sha256"
+          python3 .github/scripts/inspect-cx4-ram-dac-intersection.py prepare \
+            "$core/main.pcf" "$core/ram-all-diagnostic.pcf"
+          trap 'rm -f "$core/ram-all-full.twr" "$core/ram-all-tsi.twr"' EXIT
+          trace_status=0
+          docker run --rm --user 0:0 --mac-address 08:00:27:68:c9:35 \
+            --volume "$GITHUB_WORKSPACE:/work" --workdir /work/verilog/sd2snes_cx4 \
+            --entrypoint /bin/bash sd2snes-ci:mk2 -c '
+              set -euo pipefail
+              trce -v 1 -n 30000 -o ram-all-full.twr main.ncd ram-all-diagnostic.pcf
+              trce -tsi ram-all.tsi -o ram-all-tsi.twr main.ncd ram-all-diagnostic.pcf
+            ' 2>&1 | tee "$RUNNER_TEMP/cx4-ram-intersection-trace.log" || trace_status=$?
+          sha256sum --check "$RUNNER_TEMP/cx4-ram-intersection-inputs.sha256"
+          test "$trace_status" -eq 0
+          python3 .github/scripts/inspect-cx4-ram-dac-intersection.py check \
+            "$core/main.pcf" "$core/main.twr" "$core/ram-all-full.twr" "$core/ram-all.tsi" \
+            | tee "$RUNNER_TEMP/cx4-ram-intersection-result.txt"
+
       - name: Record available intermediate checksums
         if: always()
         run: |
@@ -332,11 +367,15 @@ jobs:
             ${{ runner.temp }}/cx4-native-ram-inputs.sha256
             ${{ runner.temp }}/cx4-native-ram-trace.log
             ${{ runner.temp }}/cx4-native-ram-paths.txt
+            ${{ runner.temp }}/cx4-ram-intersection-inputs.sha256
+            ${{ runner.temp }}/cx4-ram-intersection-trace.log
+            ${{ runner.temp }}/cx4-ram-intersection-result.txt
             ${{ runner.temp }}/cx4-build-checksums.txt
             verilog/sd2snes_cx4/main.xst
             verilog/sd2snes_cx4/main.prj
             verilog/sd2snes_cx4/main.pcf
             verilog/sd2snes_cx4/ram-diagnostic.pcf
+            verilog/sd2snes_cx4/ram-all-diagnostic.pcf
             verilog/sd2snes_cx4/sd2snes_cx4.xise
             verilog/sd2snes_cx4/*.syr
             verilog/sd2snes_cx4/*.par

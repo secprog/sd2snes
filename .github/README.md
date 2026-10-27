@@ -192,6 +192,16 @@ Only a passing proof enables original/banked native seed-68 builds with strict
 PAR/TRACE checks. This proves the extracted stack component, not the whole DSP
 or hardware operation; the candidate is not applied to production RTL.
 
+The first DSP banked Area/seed-68 result inferred four distributed RAMs,
+used 6244 LUTs and 3425 slices, and failed timing with 224 setup errors and
+-2.689 ns worst slack. Its new worst path traverses eight logic levels from
+SNES address decoding to a DSP data-register enable. The diagnostic `map_goal`
+input permits a bounded Speed cover-mode comparison on the original and
+banked sources at the same seed 68. Only MAP cover mode changes; the full
+formal gate, synthesis settings, clock uncertainty and native timing checks
+remain. This tests the depth-versus-capacity tradeoff documented in UG628
+page 88; the failed Area candidate is not a production change.
+
 The **Compare basex write-gate timing** diagnostic targets the five-level
 SNES write-strobe to cheat-data enable path (-0.827 ns in the original seed 46).
 Its runner-only candidate separates the six programming-slot selections from

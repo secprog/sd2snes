@@ -16,6 +16,11 @@ on:
         type: choice
         options: [Speed, Area]
         default: Speed
+      placement_probe:
+        description: Optional runner-only placement probe for the measured stack-9 critical path
+        type: choice
+        options: [none, stack9-near-ce]
+        default: none
 
 permissions:
   contents: read
@@ -99,7 +104,7 @@ jobs:
           retention-days: 14
 
   compare:
-    name: DSPx ${{ matrix.source }} XST ${{ inputs.synthesis_goal }} MAP Area seed 68
+    name: DSPx ${{ matrix.source }} XST ${{ inputs.synthesis_goal }} MAP Area seed 68 ${{ inputs.placement_probe }}
     needs: prove
     runs-on: ubuntu-22.04
     timeout-minutes: 120
@@ -120,6 +125,7 @@ jobs:
           SOURCE: ${{ matrix.source }}
           SYNTHESIS_GOAL: ${{ inputs.synthesis_goal }}
           MAP_GOAL: Area
+          PLACEMENT_PROBE: ${{ inputs.placement_probe }}
         run: |
           set -euo pipefail
           proof_dir="$RUNNER_TEMP/stack-gate-proof"
@@ -128,6 +134,21 @@ jobs:
           cmp "$proof_dir/original-upd77c25.v" verilog/sd2snes_dsp/upd77c25.v
           if [[ "$SOURCE" == factored ]]; then
             cp "$proof_dir/candidate-upd77c25.v" verilog/sd2snes_dsp/upd77c25.v
+          fi
+          if [[ "$PLACEMENT_PROBE" == stack9-near-ce ]]; then
+            [[ "$SOURCE" == original && "$SYNTHESIS_GOAL" == Speed ]]
+            [[ "$(git hash-object --no-filters verilog/sd2snes_dsp/main.ucf)" == 4f34c4cf9e475ac171a216c3f15fff74918fd03c ]]
+            [[ "$(git hash-object --no-filters verilog/sd2snes_dsp/upd77c25.v)" == ba14f5b6dd198fbb5645f005fb3784890beec2c4 ]]
+            [[ "$(git hash-object --no-filters verilog/sd2snes_dspx/sd2snes_dspx.xise)" == 2822b63c005bce73e8e7aaf332bcdbd983d1492d ]]
+            test ! -e verilog/sd2snes_dspx/ucf.extra
+            cat > verilog/sd2snes_dspx/ucf.extra <<'UCF'
+          # Runner-only physical placement probe; parent timing and pins follow unchanged.
+          INST "snes_dspx/stack<9>_3" LOC = SLICE_X30Y50:SLICE_X34Y55;
+          INST "snes_dspx/stack<9>_6" LOC = SLICE_X30Y50:SLICE_X34Y55;
+          UCF
+          elif [[ "$PLACEMENT_PROBE" != none ]]; then
+            echo "Invalid diagnostic placement probe" >&2
+            exit 1
           fi
           python3 - <<'PY'
           import os
@@ -157,6 +178,10 @@ jobs:
           {
             printf 'Diagnostic source: %s\nRunner checkout: %s\n' "$SOURCE" "$GITHUB_SHA"
             printf 'XST goal: %s; MAP cover: %s; placement seed: 68. Other project properties, clocks, jitter and timing constraints unchanged.\n' "$SYNTHESIS_GOAL" "$MAP_GOAL"
+            printf 'Placement probe: %s\n' "$PLACEMENT_PROBE"
+            if [[ -f verilog/sd2snes_dspx/ucf.extra ]]; then
+              sha256sum verilog/sd2snes_dspx/ucf.extra
+            fi
             while IFS= read -r -d '' source_file; do
               printf '%s %s\n' "$(git hash-object --no-filters "$source_file")" "$source_file"
             done < <(git ls-files -z verilog/sd2snes_dsp/ verilog/sd2snes_dspx/ verilog/common.mk verilog/xilinx_scripts/ .github/scripts/build.sh)
@@ -183,6 +208,23 @@ jobs:
             --entrypoint /bin/bash sd2snes-ci:mk2 .github/scripts/build.sh mk2 dspx \
             2>&1 | tee "$RUNNER_TEMP/dsp-build.log"
 
+      - name: Record targeted placement from the native design
+        if: always() && inputs.placement_probe == 'stack9-near-ce'
+        run: |
+          set -euo pipefail
+          core=verilog/sd2snes_dspx
+          test -s "$core/main.pcf"
+          test -s "$core/main_map.ncd"
+          design=main_map.ncd
+          if [[ -s "$core/main.ncd" ]]; then design=main.ncd; fi
+          docker run --rm --user 0:0 --mac-address 08:00:27:68:c9:35 \
+            --volume "$GITHUB_WORKSPACE:/work" --workdir /work/verilog/sd2snes_dspx \
+            --entrypoint /bin/bash sd2snes-ci:mk2 -c \
+            'set -euo pipefail; xdl -ncd2xdl -nopips "$1" placement-probe.xdl' _ "$design"
+          python3 .github/scripts/inspect-dsp-placement-probe.py \
+            "$core/main.pcf" "$core/placement-probe.xdl" "$design" \
+            | tee "$RUNNER_TEMP/dsp-placement-probe.txt"
+
       - name: Record available intermediate checksums
         if: always()
         run: |
@@ -196,15 +238,18 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: dsp-stack-gate-${{ matrix.source }}-xst-${{ inputs.synthesis_goal }}-map-Area-seed-68
+          name: dsp-stack-gate-${{ matrix.source }}-xst-${{ inputs.synthesis_goal }}-map-Area-seed-68-${{ inputs.placement_probe }}
           path: |
             ${{ runner.temp }}/dsp-source.txt
             ${{ runner.temp }}/dsp-build.log
+            ${{ runner.temp }}/dsp-placement-probe.txt
             ${{ runner.temp }}/dsp-build-checksums.txt
             verilog/sd2snes_dspx/main.xst
             verilog/sd2snes_dspx/main.prj
             verilog/sd2snes_dspx/main.pcf
             verilog/sd2snes_dspx/sd2snes_dspx.xise
+            verilog/sd2snes_dspx/ucf.extra
+            verilog/sd2snes_dspx/main.ucf
             verilog/sd2snes_dspx/*.syr
             verilog/sd2snes_dspx/*.par
             verilog/sd2snes_dspx/*.mrp

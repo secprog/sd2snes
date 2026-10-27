@@ -174,6 +174,17 @@ timing-specification interaction report on the exact routed design (UG628
 page 184). It preserves and checksums the original NCD, PCF and detailed TWR;
 no constraint is changed or waived.
 
+The resulting report in run 40555618424 shows that the existing TS_DAC
+constraint takes precedence for 3406 paths otherwise covered by TS_CLK21.
+It also reports an overlap between TS_SNES_SYSCLK and TS_CLK21 on the first
+DAC sysclk sampler. NGDBUILD identifies both derived DCM clocks from TS_CLKIN,
+which is consistent with UG612 page 37 explaining why the original translated
+clock constraint reports zero data paths. TS_DAC2 is explicitly reported as
+ignored, but its cause is not established by the interaction report.
+NGDBUILD additionally warns that 35 specified DAC-group FF names were not
+found; whether the affected paths are covered elsewhere must be investigated.
+These observations do not establish input, output or hardware timing coverage.
+
 The source model is checked before memory lowering. Yosys `memory_map` leaves
 the nonexistent 48..63 read-mux leaves undriven; those become explicit X values
 with `setundef -undriven -undef`, and the lowered model is checked again. This
@@ -257,6 +268,20 @@ Area/seed-68 settings. XST Area prioritizes reducing total logic (UG627 pages
 303–304); whether that helps routing or timing must be measured. The
 `original_only` input takes precedence over `include_original`. High effort,
 register balancing, clocks, uncertainty, PAR and strict checks are unchanged.
+
+Both original-RTL XST Area tests failed: DSPx had 257 setup errors and
+-1.923 ns slack, and basex had 251 errors and -1.594 ns. The Speed/Area
+profiles remain closer to meeting timing.
+
+The optional runner-only DSPx placement probe keeps the original RTL and
+timing constraints. It constrains just the two stack-9 flip-flops on the
+original worst path to a small slice range near the measured clock-enable
+logic. In the reproduced baseline, that final six-load connection alone
+took 3.816 ns. UG625 describes a LOC range as a placement constraint; it
+does not promise that routing or global timing improves. The workflow checks
+the original source, project and UCF hashes, retains all parent constraints,
+and records the actual mapped or routed placement. Missing placement evidence
+or any native timing violation fails the diagnostic.
 
 The **Compare basex write-gate timing** diagnostic targets the five-level
 SNES write-strobe to cheat-data enable path (-0.827 ns in the original seed 46).

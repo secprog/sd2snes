@@ -32,11 +32,11 @@ def check(report_path):
         raise SystemExit("TRACE did not report the diagnostic TS_DAC constraint")
     block = section.group(0)
     counts = re.search(
-        r"(?m)^\s*(\d+) paths analyzed,\s*(\d+) endpoints analyzed,\s*(\d+) failing endpoints",
+        r"(?m)^\s*(\d+) paths analyzed,\s*(\d+) endpoints analyzed,\s*(\d+) failing endpoints?",
         block,
     )
     errors = re.search(
-        r"(?m)^\s*(\d+) timing errors detected\.\s*\((\d+) setup errors,\s*(\d+) hold errors",
+        r"(?m)^\s*(\d+) timing errors? detected\.\s*\((\d+) setup errors?,\s*(\d+) hold errors?",
         block,
     )
     requirement = re.search(r"(?m)^\s*Requirement:\s*([\d.]+)ns", block)

@@ -1,0 +1,53 @@
+name: Check CX4 one-cycle report guard
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  check:
+    name: Verify the guard rejects the measured violation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          artifact-ids: '12762292077'
+          run-id: '40561085339'
+          github-token: ${{ github.token }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/cx4-report
+
+      - name: Check the captured native reports without rebuilding
+        run: |
+          set -euo pipefail
+          report_dir="$RUNNER_TEMP/cx4-report/sd2snes/sd2snes/verilog/sd2snes_cx4"
+          test -s "$report_dir/main.pcf"
+          test -s "$report_dir/single-cycle-audit.pcf"
+          test -s "$report_dir/main.twr"
+          test -s "$report_dir/single-cycle-audit.twr"
+          python3 .github/scripts/cx4-single-cycle-audit.py prepare \
+            "$report_dir/main.pcf" "$RUNNER_TEMP/regenerated-one-cycle.pcf"
+          cmp "$RUNNER_TEMP/regenerated-one-cycle.pcf" "$report_dir/single-cycle-audit.pcf"
+
+          status=0
+          python3 .github/scripts/cx4-single-cycle-audit.py check \
+            "$report_dir/single-cycle-audit.twr" > "$RUNNER_TEMP/one-cycle-check.log" 2>&1 || status=$?
+          cat "$RUNNER_TEMP/one-cycle-check.log"
+          test "$status" -ne 0
+          grep -F '3406 paths, 207 endpoints, 1 failing endpoints, 1 setup errors, 0 hold errors, requirement 12.494 ns.' "$RUNNER_TEMP/one-cycle-check.log"
+          grep -F 'Counterfactual total: 1 timing errors, score 101.' "$RUNNER_TEMP/one-cycle-check.log"
+          grep -F 'The stricter counterfactual has timing errors; production constraints were unchanged' "$RUNNER_TEMP/one-cycle-check.log"
+
+          status=0
+          python3 .github/scripts/cx4-single-cycle-audit.py check \
+            "$report_dir/main.twr" > "$RUNNER_TEMP/original-check.log" 2>&1 || status=$?
+          cat "$RUNNER_TEMP/original-check.log"
+          test "$status" -ne 0
+          grep -F 'The diagnostic did not analyze DAC paths at the expected one-cycle period' "$RUNNER_TEMP/original-check.log"
+
+          printf 'The captured one-cycle violation is rejected; the original four-cycle report cannot masquerade as a one-cycle result.\n' >> "$GITHUB_STEP_SUMMARY"

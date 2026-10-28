@@ -1,0 +1,148 @@
+name: Prove DSPx freeze global-buffer experiment
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dsp-freeze-bufg-proof-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  prove:
+    name: Prove the source-bound freeze buffer and guard priorities
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install and identify hosted proof tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends yosys iverilog
+          mkdir -p "$RUNNER_TEMP/dsp-freeze-bufg-proof"
+          yosys -V | tee "$RUNNER_TEMP/dsp-freeze-bufg-proof/tool-version.txt"
+          grep -F 'Yosys 0.33 (git sha1 2584903a060)' "$RUNNER_TEMP/dsp-freeze-bufg-proof/tool-version.txt"
+          iverilog -V > "$RUNNER_TEMP/dsp-freeze-bufg-proof/iverilog-version.txt" 2>&1
+
+      - name: Prepare exact original and runner-only candidate
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD:verilog)" = 4e50365f59f38217b67c5126276873a29be737d5
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/config.vh)" = 1a9a6a14b8b08eb6e931ce2320326e913aa8000e
+          git diff --exit-code -- verilog
+          git diff --cached --exit-code
+          python3 .github/scripts/prepare-dsp-freeze-bufg-proof.py \
+            verilog/sd2snes_dsp/upd77c25.v "$RUNNER_TEMP/dsp-freeze-bufg-proof"
+
+      - name: Check the hosted Yosys BUFG model and real preprocessing
+        run: |
+          set -euo pipefail
+          proof="$RUNNER_TEMP/dsp-freeze-bufg-proof"
+          python3 - "$proof" <<'PY'
+          import hashlib
+          import re
+          import sys
+          from pathlib import Path
+          lib = Path('/usr/share/yosys/xilinx/cells_sim.v')
+          text = lib.read_text(encoding='utf-8')
+          matches = re.findall(r'(?ms)^module BUFG\s*\(.*?^endmodule\s*$', text)
+          if len(matches) != 1 or not re.search(r'\bassign\s+O\s*=\s*I\s*;', matches[0]):
+              raise SystemExit('The hosted Yosys BUFG model is missing or not the expected identity')
+          model = matches[0] + '\n'
+          (Path(sys.argv[1]) / 'yosys-bufg-model.v').write_text(model, encoding='utf-8')
+          print('Yosys cells_sim.v SHA256:', hashlib.sha256(lib.read_bytes()).hexdigest())
+          print('The checked Yosys BUFG output is assigned from its input; timing is not modeled by this proof.')
+          PY
+          for cfg in none debug mk3 mk3-debug mk2 mk2-debug dsp dsp-debug mk3-dsp mk3-dsp-debug mk2-dsp mk2-dsp-debug; do
+            flags=()
+            [[ "$cfg" == *mk2* ]] && flags+=(-DMK2)
+            [[ "$cfg" == *mk3* ]] && flags+=(-DMK3)
+            [[ "$cfg" == *dsp* ]] && flags+=(-DDSP_COMP)
+            [[ "$cfg" == *debug* ]] && flags+=(-DDEBUG)
+            for version in original candidate; do
+              iverilog -g2012 -E -I verilog/sd2snes_dsp "${flags[@]}" \
+                -o "$proof/pp-$cfg-$version.v" "$proof/$version-upd77c25.v"
+            done
+          done
+          python3 - "$proof" <<'PY'
+          import re
+          import sys
+          from pathlib import Path
+          root = Path(sys.argv[1])
+          configs = ('none','debug','mk3','mk3-debug','mk2','mk2-debug','dsp',
+                     'dsp-debug','mk3-dsp','mk3-dsp-debug','mk2-dsp','mk2-dsp-debug')
+          for cfg in configs:
+              old = (root / f'pp-{cfg}-original.v').read_text()
+              new = (root / f'pp-{cfg}-candidate.v').read_text()
+              if not old.strip() or not new.strip():
+                  raise SystemExit(f'Empty actual preprocessing result for {cfg}')
+              target = cfg in ('mk2-dsp','mk2-dsp-debug')
+              if target:
+                  if new.count('BUFG dspx_freeze_bufg') != 1 or new.count('ss_frozen_global') != 10:
+                      raise SystemExit(f'Unexpected actual target buffer selection: {cfg}')
+                  run = 'if(RST & ~ss_frozen_global)'
+                  restore = 'else if(RST & ss_frozen_global)'
+                  if new.count(run) != 4 or new.count(restore) != 4:
+                      raise SystemExit(f'Unexpected actual target guard selection: {cfg}')
+                  recovered = new.replace('wire ss_frozen_global;', '', 1)
+                  recovered = recovered.replace('BUFG dspx_freeze_bufg (.I(ss_frozen), .O(ss_frozen_global));', '', 1)
+                  recovered = recovered.replace(run, 'if(RST & ~ss_frozen)')
+                  recovered = recovered.replace(restore, 'else if(RST & ss_frozen)')
+                  if re.sub(r'\s+', '', old) != re.sub(r'\s+', '', recovered):
+                      raise SystemExit(f'Actual target differs outside the buffer and guards: {cfg}')
+              elif re.sub(r'\s+', '', old) != re.sub(r'\s+', '', new):
+                  raise SystemExit(f'Actual non-target preprocessing differs: {cfg}')
+              print(f'{cfg}: actual preprocessing checked')
+          PY
+
+      - name: Prove binary and X-state boundaries and reject real mutations
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/dsp-freeze-bufg-proof"
+          sha256sum --check SHA256SUMS
+          binary=(gate bad-invert bad-stuck bad-run0 bad-run1 bad-run2 bad-run3 bad-restore0 bad-restore1 bad-restore2 bad-restore3 bad-x-buffer)
+          for variant in "${binary[@]}"; do mkdir "$variant"; cp "$variant.v" "$variant/model.v"; done
+          for mode in binary xstate; do
+            if [[ "$mode" == binary ]]; then variants=("${binary[@]}"); input_flags='-set-def-inputs'
+            else variants=(gate bad-x-buffer); input_flags=''; fi
+            for variant in "${variants[@]}"; do
+              cat > "$variant/prove-$mode.ys" <<YOSYS
+          read_verilog -sv -formal ../gold.v model.v
+          proc -ifx -noopt
+          miter -equiv -make_assert -make_outputs -make_outcmp gold gate miter
+          hierarchy -check -top miter
+          flatten -wb
+          hierarchy -check -top miter
+          opt_clean
+          check -assert
+          write_json miter-$mode.json
+          sat -verify -enable_undef $input_flags -prove-asserts -show-inputs -show-outputs -dump_json counterexample-$mode.json -timeout 300
+          YOSYS
+              result=0
+              (cd "$variant" && yosys -l "proof-$mode.log" -s "prove-$mode.ys") || result=$?
+              test -s "$variant/miter-$mode.json"
+              if [[ "$variant" == gate || ( "$variant" == bad-x-buffer && "$mode" == binary ) ]]; then
+                test "$result" -eq 0
+                grep -F 'SAT proof finished - no model found: SUCCESS!' "$variant/proof-$mode.log"
+              else
+                test "$result" -ne 0
+                grep -F 'SAT proof finished - model found: FAIL!' "$variant/proof-$mode.log"
+                test -s "$variant/counterexample-$mode.json"
+              fi
+            done
+          done
+          sha256sum --check SHA256SUMS
+          printf 'The source-projected BUFG identity and four run/restore guard priorities match for binary and Yosys-X inputs; all binary and X-sensitive mutations produced counterexamples. This is not FPGA timing, post-synthesis sequential equivalence or hardware proof.\n' | tee verified.txt >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload proof sources, preprocessed inputs, miters and counterexamples
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsp-freeze-bufg-proof
+          path: ${{ runner.temp }}/dsp-freeze-bufg-proof/
+          if-no-files-found: error
+          retention-days: 14

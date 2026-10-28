@@ -1,0 +1,161 @@
+name: Inspect retained basex map and CoreGen help
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: basex-retained-map-inspection-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  guard:
+    name: Check bounded basex XDL extractor with synthetic fixtures
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - name: Exercise extractor controls on hosted runner
+        run: python3 .github/scripts/inspect-basex-retained-map.py --self-check
+
+  inspect:
+    name: Inspect failed S-RTC map and installed CoreGen help only
+    needs: guard
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Verify unchanged production sources and parser
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD:verilog)" = 4e50365f59f38217b67c5126276873a29be737d5
+          test "$(git hash-object --no-filters .github/scripts/inspect-dsp-retained-map.py)" = 2b3b867372717b5729e26cb4880cb1af0b01a965
+          test "$(git hash-object --no-filters .github/actions/prepare-build-image/action.yml)" = ac2a66fc24d4a15658b666cdc5f5db7964df4c3b
+          test "$(git hash-object --no-filters verilog/sd2snes_base/cheat.v)" = dfc2f4fe2dc21fdd07da735fa1cd57a7aa6f4f3f
+          test "$(git hash-object --no-filters verilog/common.mk)" = 1dd382cd82f2fdd56391dc8245d0782a6b356402
+          git diff --exit-code
+          git diff --cached --exit-code
+
+      - name: Verify and download exact retained mapped candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = secprog/sd2snes
+          mkdir -p "$RUNNER_TEMP/basex-retained-input" "$RUNNER_TEMP/basex-map-inspection" "$RUNNER_TEMP/coregen-help"
+          report="$RUNNER_TEMP/basex-map-inspection"
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/12838179882" > "$report/artifact-meta.json"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/40735386633/jobs?per_page=100" > "$report/jobs.json"
+          python3 - "$report" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          root = Path(sys.argv[1])
+          artifact = json.loads((root / 'artifact-meta.json').read_text())
+          assert artifact['id'] == 12838179882 and artifact['expired'] is False
+          assert artifact['name'] == 'basex-srtc-decode-seed-46-mapped-ncd'
+          assert artifact['digest'] == 'sha256:fb383362d5da8991c4bce008a523f2616d9183d142adb377254e44bc6a0f0d29'
+          run = artifact['workflow_run']
+          assert run['id'] == 40735386633 and run['head_sha'] == 'eed64558de082dfa877effdccd807a618be5faa6'
+          assert run['repository_id'] == run['head_repository_id'] == 1433388489
+          jobs = json.loads((root / 'jobs.json').read_text())['jobs']
+          job, = [job for job in jobs if job['id'] == 122982417062]
+          assert job['status'] == 'completed' and job['conclusion'] == 'failure'
+          steps = {step['name']: step['conclusion'] for step in job['steps']}
+          assert steps['Select exactly the proved runner-only source'] == 'success'
+          assert steps['Compile using strict native PAR and TRACE checks'] == 'failure'
+          assert steps['Verify candidate, project, constraints and all tracked inputs'] == 'failure'
+          assert steps['Retain the mapped NCD separately on GitHub'] == 'success'
+          print('Retained failed S-RTC candidate identity verified; no baseline or timing-pass claim')
+          PY
+          curl --fail --silent --show-error --location --retry 2 --connect-timeout 15 --max-time 180 \
+            --header "Authorization: Bearer $GH_TOKEN" --header 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/12838179882/zip" \
+            --output "$RUNNER_TEMP/basex-retained.zip"
+          echo "fb383362d5da8991c4bce008a523f2616d9183d142adb377254e44bc6a0f0d29  $RUNNER_TEMP/basex-retained.zip" | sha256sum --check
+          python3 - "$RUNNER_TEMP/basex-retained.zip" "$RUNNER_TEMP/basex-retained-input/main_map.ncd" <<'PY'
+          import hashlib
+          import sys
+          import zipfile
+          from pathlib import Path
+          with zipfile.ZipFile(sys.argv[1]) as archive:
+              files = [item for item in archive.infolist() if not item.is_dir()]
+              assert len(files) == 1 and files[0].filename == 'main_map.ncd'
+              data = archive.read(files[0])
+          assert hashlib.sha256(data).hexdigest() == '1024ea79ca5b09c2bbe125d030773c60e6b5f5db2c0c406559b326e0669ef202'
+          Path(sys.argv[2]).write_bytes(data)
+          PY
+          sha256sum "$RUNNER_TEMP/basex-retained-input/main_map.ncd" | tee "$report/ncd-before.sha256"
+
+      - uses: ./.github/actions/prepare-build-image
+        id: image
+        with:
+          target: mk2
+
+      - name: Convert retained map and collect complete bounded statements
+        run: |
+          set -euo pipefail
+          image=$(docker image inspect sd2snes-ci:mk2 --format '{{.Id}}')
+          test "$image" = sha256:5e3bbb00649997abca8843b1d82d8529eda99a0f2868d37ad9777e0ad5fd50e8
+          report="$RUNNER_TEMP/basex-map-inspection"
+          printf 'ISE image: %s\nArtifact 12838179882; failed run 40735386633; job 122982417062\n' "$image" | tee "$report/identity.txt"
+          docker run --rm --user 0:0 --mac-address 08:00:27:68:c9:35 \
+            --volume "$RUNNER_TEMP/basex-retained-input:/input:ro" \
+            --volume "$report:/output" --workdir /output \
+            --entrypoint /bin/bash sd2snes-ci:mk2 -c \
+            'set -euo pipefail; xdl -ncd2xdl -nopips /input/main_map.ncd /output/main_map.xdl; test -s /output/main_map.xdl' \
+            2>&1 | tee "$report/xdl-conversion.log"
+          sha256sum --check "$report/ncd-before.sha256"
+          sha256sum "$report/main_map.xdl" | tee "$report/xdl.sha256"
+          python3 .github/scripts/inspect-basex-retained-map.py "$report/main_map.xdl" | tee "$report/cheat-neighborhoods.txt"
+
+      - name: Read installed CoreGen help without project or generation inputs
+        if: always() && steps.image.outcome == 'success'
+        run: |
+          set -euo pipefail
+          image=$(docker image inspect sd2snes-ci:mk2 --format '{{.Id}}')
+          test "$image" = sha256:5e3bbb00649997abca8843b1d82d8529eda99a0f2868d37ad9777e0ad5fd50e8
+          report="$RUNNER_TEMP/coregen-help"
+          printf 'ISE image: %s\nCommand: coregen -h; no project/configuration inputs mounted\n' "$image" | tee "$report/identity.txt"
+          docker run --rm --user 0:0 --mac-address 08:00:27:68:c9:35 \
+            --env JAVA_OPTS=-XX:+IgnoreUnrecognizedVMOptions \
+            --env _JAVA_OPTIONS=-XX:+IgnoreUnrecognizedVMOptions \
+            --volume "$report:/output" --workdir /output \
+            --entrypoint /bin/bash sd2snes-ci:mk2 -c '
+              set -euo pipefail
+              command -v coregen | tee /output/executable.txt
+              sha256sum "$(command -v coregen)" | tee /output/executable.sha256
+              status=0
+              timeout 90s coregen -h > /output/coregen-help.txt 2>&1 || status=$?
+              printf "%s\n" "$status" | tee /output/exit-status.txt
+              test "$(wc -c < /output/coregen-help.txt)" -le 1000000
+              cat /output/coregen-help.txt
+              test "$status" -eq 0
+              grep -Ei "usage|options" /output/coregen-help.txt
+            ' 2>&1 | tee "$report/command.log"
+
+      - name: Confirm inspection did not modify tracked or staged inputs
+        if: always()
+        run: |
+          set -euo pipefail
+          git diff --exit-code
+          git diff --cached --exit-code
+          printf '%s\n' 'Read-only candidate-map/help inspection only; no synthesis, IP generation, routing, timing pass, or production change.' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload small inspection reports only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: basex-retained-map-and-coregen-help
+          path: |
+            ${{ runner.temp }}/basex-map-inspection/*.json
+            ${{ runner.temp }}/basex-map-inspection/*.sha256
+            ${{ runner.temp }}/basex-map-inspection/*.txt
+            ${{ runner.temp }}/basex-map-inspection/*.log
+            ${{ runner.temp }}/coregen-help/*
+          if-no-files-found: error
+          retention-days: 14

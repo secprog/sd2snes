@@ -1,0 +1,256 @@
+name: Compare basex S-RTC address decoder
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: basex-srtc-decode-native-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  native:
+    name: Basex proved S-RTC decoder, XST Speed MAP Area seed 46
+    runs-on: ubuntu-22.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download the independently inspected source-bound proof
+        uses: actions/download-artifact@v4
+        with:
+          name: basex-srtc-decode-proof
+          path: ${{ runner.temp }}/basex-srtc-decode-proof
+          run-id: 40734607663
+          github-token: ${{ github.token }}
+
+      - name: Download the original basex timing report for comparison
+        uses: actions/download-artifact@v4
+        with:
+          name: basex-write-gate-original-seed-46
+          path: ${{ runner.temp }}/basex-srtc-original
+          run-id: 40528297097
+          github-token: ${{ github.token }}
+
+      - name: Select exactly the proved runner-only source
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD:verilog)" = 4e50365f59f38217b67c5126276873a29be737d5
+          test "$(git hash-object --no-filters .github/scripts/build.sh)" = 847665b375209d705de918d54f89cff194b074b1
+          test "$(git hash-object --no-filters .github/actions/prepare-build-image/action.yml)" = ac2a66fc24d4a15658b666cdc5f5db7964df4c3b
+          git diff --exit-code -- verilog .github/scripts/build.sh .github/actions/prepare-build-image/action.yml
+          test "$(git hash-object --no-filters verilog/sd2snes_base/address.v)" = 36ce9a5c17fc80b9ddda1d869f0d75a4fb52356c
+          test "$(git hash-object --no-filters verilog/sd2snes_base/main.ucf)" = e582e03059fbbcf21b4124e5dd7aa9ac8792fd6b
+          test "$(git hash-object --no-filters verilog/sd2snes_basex/sd2snes_basex.xise)" = 5338e8fa5fef0af0c526ff99563b17a0763ed34a
+          test ! -e verilog/sd2snes_basex/ucf.extra
+          proof="$RUNNER_TEMP/basex-srtc-decode-proof"
+          (cd "$proof" && sha256sum --check SHA256SUMS)
+          test -s "$proof/verified.txt"
+          test "$(sha256sum "$proof/candidate-address.v" | cut -d' ' -f1)" = ac63c6d75f29acd9a15d545ed9581a4884f1183170029a3bff5972b42eb1e35e
+          test "$(sha256sum "$proof/gold.v" | cut -d' ' -f1)" = f3094be8792d6b63d73907011f1fd13a980b22b592426f5272dcdca9c9ea028c
+          test "$(sha256sum "$proof/gate.v" | cut -d' ' -f1)" = 6816daa6da16ad702d756e22a7dd7c9943a2ee7463c17d1a094229459dd5b774
+          test "$(git hash-object --no-filters "$proof/candidate-address.v")" = 26a691206d49d536c3e06f08b8d920dc1932d041
+          for mode in binary xstate; do
+            test "$(sha256sum "$proof/gate/miter-$mode.json" | cut -d' ' -f1)" = 99d4bc92fa1d5956eab948847295fc931094f4d6c4415ccd38d3870e318f406a
+            grep -F 'SAT proof finished - no model found: SUCCESS!' "$proof/gate/proof-$mode.log"
+          done
+          for variant in bad-low-index bad-low-bit6 bad-bottom bad-middle bad-upper bad-bank bad-feature; do
+            test -s "$proof/$variant/miter-binary.json"
+            test -s "$proof/$variant/counterexample-binary.json"
+            grep -F 'SAT proof finished - model found: FAIL!' "$proof/$variant/proof-binary.log"
+          done
+          for variant in bad-x-address bad-x-feature; do
+            test -s "$proof/$variant/miter-binary.json"
+            test -s "$proof/$variant/miter-xstate.json"
+            test -s "$proof/$variant/counterexample-xstate.json"
+            grep -F 'SAT proof finished - no model found: SUCCESS!' "$proof/$variant/proof-binary.log"
+            grep -F 'SAT proof finished - model found: FAIL!' "$proof/$variant/proof-xstate.log"
+          done
+          cmp "$proof/original-address.v" verilog/sd2snes_base/address.v
+          cp "$proof/candidate-address.v" verilog/sd2snes_base/address.v
+          test "$(git diff --name-only -- verilog)" = verilog/sd2snes_base/address.v
+          {
+            printf 'Checkout: %s\nVerilog tree: %s\n' "$GITHUB_SHA" "$(git rev-parse HEAD:verilog)"
+            printf 'Proof run: 40734607663; candidate address blob: 26a691206d49d536c3e06f08b8d920dc1932d041\n'
+            printf 'Original project: 5338e8fa5fef0af0c526ff99563b17a0763ed34a; original UCF: e582e03059fbbcf21b4124e5dd7aa9ac8792fd6b\n'
+            printf 'Diagnostic target: XST Speed, timing-driven MAP Area, PAR high, seed 46. No timing requirements changed.\n'
+          } | tee "$RUNNER_TEMP/basex-srtc-decode-identity.txt"
+
+      - uses: ./.github/actions/prepare-build-image
+        with:
+          target: mk2
+
+      - name: Compile using strict native PAR and TRACE checks
+        id: compile
+        env:
+          ISE_CTABLE: '46'
+        run: |
+          set -euo pipefail
+          image_id=$(docker image inspect sd2snes-ci:mk2 --format '{{.Id}}')
+          printf 'ISE image ID: %s\n' "$image_id" | tee -a "$RUNNER_TEMP/basex-srtc-decode-identity.txt"
+          test "$image_id" = sha256:5e3bbb00649997abca8843b1d82d8529eda99a0f2868d37ad9777e0ad5fd50e8
+          container_name=sd2snes-basex-srtc-decode
+          bash .github/scripts/report-activity.sh "$container_name" &
+          activity_pid=$!
+          trap 'kill "$activity_pid" 2>/dev/null || true; wait "$activity_pid" 2>/dev/null || true' EXIT
+          docker run --rm --name "$container_name" --user 0:0 \
+            --mac-address 08:00:27:68:c9:35 --env ISE_CTABLE \
+            --volume "$GITHUB_WORKSPACE:/work" --workdir /work \
+            --entrypoint /bin/bash sd2snes-ci:mk2 .github/scripts/build.sh mk2 basex \
+            2>&1 | tee "$RUNNER_TEMP/basex-srtc-decode-build.log"
+
+      - name: Retain every post-build tracked Verilog difference and generated IP hash
+        if: always() && steps.compile.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          git diff --no-ext-diff --no-renames --binary -- verilog > "$RUNNER_TEMP/basex-srtc-decode-post.diff"
+          git diff --no-ext-diff --no-renames --name-only -- verilog | tee "$RUNNER_TEMP/basex-srtc-decode-post-paths.txt"
+          for path in verilog/sd2snes_base/address.v verilog/sd2snes_base/main.ucf verilog/sd2snes_basex/sd2snes_basex.xise; do
+            printf '%s %s\n' "$(git hash-object --no-filters "$path")" "$path"
+          done | tee "$RUNNER_TEMP/basex-srtc-decode-post-hashes.txt"
+          {
+            missing=0
+            for core in dac_buf msu_databuf snescmd_buf; do
+              file="verilog/sd2snes_base/ip/mk2/$core.ngc"
+              if [[ -s "$file" ]]; then sha256sum "$file"; else printf 'MISSING %s\n' "$file"; missing=1; fi
+            done
+            exit "$missing"
+          } | tee "$RUNNER_TEMP/basex-srtc-decode-ngc-hashes.txt"
+
+      - name: Verify candidate, project, constraints and all tracked inputs
+        if: always() && steps.compile.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          test "$(git hash-object --no-filters verilog/sd2snes_base/address.v)" = 26a691206d49d536c3e06f08b8d920dc1932d041
+          test "$(git hash-object --no-filters verilog/sd2snes_base/main.ucf)" = e582e03059fbbcf21b4124e5dd7aa9ac8792fd6b
+          test "$(git hash-object --no-filters verilog/sd2snes_basex/sd2snes_basex.xise)" = 5338e8fa5fef0af0c526ff99563b17a0763ed34a
+          test "$(git diff --name-only -- verilog)" = verilog/sd2snes_base/address.v
+          echo 'Only the proved address candidate differs among tracked Verilog inputs.'
+
+      - name: Verify actual synthesis, map and route options
+        if: always() && steps.compile.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          grep -Fx -- '-opt_mode Speed' verilog/sd2snes_basex/main.xst
+          python3 - "$RUNNER_TEMP/basex-srtc-decode-build.log" <<'PY'
+          import re
+          import shlex
+          import sys
+          from pathlib import Path
+          lines = Path(sys.argv[1]).read_text(errors="strict").splitlines()
+          for tool, expected in (
+              ("map", {"-logic_opt": "on", "-ol": "high", "-xe": "n", "-t": "46", "-register_duplication": "on", "-cm": "area"}),
+              ("par", {"-ol": "high", "-xe": "c", "-t": "46"}),
+          ):
+              commands = [line for line in lines if re.search(r"/" + tool + r"\s+-", line)]
+              if len(commands) != 1:
+                  raise SystemExit(f"Missing or ambiguous {tool} command")
+              args = shlex.split(commands[0].split(" || ", 1)[0].strip())
+              if tool == "map" and args.count("-timing") != 1:
+                  raise SystemExit("MAP is not explicitly timing-driven")
+              for flag, value in expected.items():
+                  if args.count(flag) != 1 or args.index(flag) + 1 >= len(args) or args[args.index(flag) + 1] != value:
+                      raise SystemExit(f"Unexpected {tool} option {flag}")
+              print(f"Verified {tool} command: {commands[0]}")
+          PY
+
+      - name: Compare PCF timing statements with the original report
+        if: always() && steps.compile.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          python3 - "$RUNNER_TEMP/basex-srtc-original" verilog/sd2snes_basex/main.pcf <<'PY'
+          import hashlib
+          import re
+          import sys
+          from pathlib import Path
+          originals = list(Path(sys.argv[1]).rglob('main.pcf'))
+          if len(originals) != 1:
+              raise SystemExit('Missing or ambiguous original PCF')
+          if hashlib.sha256(originals[0].read_bytes()).hexdigest() != 'fcc454491b6784f08a93ddfc802ab7c6a984d5dc8583b9e005d65255b25096fe':
+              raise SystemExit('Original PCF hash differs from the retained baseline report')
+          def timing(path):
+              lines = path.read_text().splitlines()
+              return [line.strip() for line in lines if re.match(r'^(SYSTEM_JITTER|TS_\S+\s*=)', line.strip())]
+          old, new = timing(originals[0]), timing(Path(sys.argv[2]))
+          if not old or old != new:
+              raise SystemExit(f'PCF timing statements differ: old={old!r}, new={new!r}')
+          print('\n'.join(new))
+          PY
+
+      - name: Inspect mapped S-RTC decoder evidence
+        if: always() && steps.compile.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          core=verilog/sd2snes_basex
+          grep -F 'Set property "LUT_MAP = yes" for unit <basex_srtc_low>.' "$core/main.syr"
+          grep -F 'Set property "LUT_MAP = yes" for unit <basex_srtc_join>.' "$core/main.syr"
+          test -s "$core/main_map.ncd"
+          sha256sum "$core/main_map.ncd" | tee "$RUNNER_TEMP/basex-srtc-decode-map-sha256.txt"
+          docker run --rm --user 0:0 --mac-address 08:00:27:68:c9:35 \
+            --volume "$GITHUB_WORKSPACE:/work" --workdir /work/verilog/sd2snes_basex \
+            --entrypoint /bin/bash sd2snes-ci:mk2 -c \
+            'set -euo pipefail; xdl -ncd2xdl -nopips main_map.ncd srtc-decode-audit.xdl'
+          sha256sum --check "$RUNNER_TEMP/basex-srtc-decode-map-sha256.txt"
+          python3 - "$core/srtc-decode-audit.xdl" <<'PY' | tee "$RUNNER_TEMP/basex-srtc-decode-xdl.txt"
+          import re
+          import sys
+          from pathlib import Path
+          text = Path(sys.argv[1]).read_text()
+          statements = re.findall(r'(?ms)^\s*(?:net|inst)\s+.*?;', text)
+          selected = [item for item in statements if re.search(r'srtc_low|srtc_join|srtc_enable', item)]
+          print('Named statements from mapped NCD only; connectivity and routed timing need manual review.')
+          if not selected or len(selected) > 120 or sum(len(item) for item in selected) > 1_000_000:
+              raise SystemExit('Missing or excessive mapped evidence; inspection inconclusive')
+          for item in selected:
+              print(item)
+          if not any('srtc_low' in item for item in selected) or not any('srtc_join' in item for item in selected):
+              raise SystemExit('Missing low or join mapping names; inspection inconclusive')
+          PY
+
+      - name: Confirm the native timing result
+        if: always() && steps.compile.outcome == 'success'
+        run: |
+          set -euo pipefail
+          grep -Eq 'Timing Score: 0 \(Setup: 0, Hold: 0' verilog/sd2snes_basex/main.par
+          grep -Eq 'Timing errors: 0[[:space:]]+Score: 0[[:space:]]+\(Setup/Max: 0, Hold: 0\)' verilog/sd2snes_basex/main.twr
+          echo 'Native PAR and TRACE explicitly report zero timing errors.'
+
+      - name: Upload small reports and source differences
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: basex-srtc-decode-seed-46-reports
+          path: |
+            ${{ runner.temp }}/basex-srtc-decode-identity.txt
+            ${{ runner.temp }}/basex-srtc-decode-build.log
+            ${{ runner.temp }}/basex-srtc-decode-post.diff
+            ${{ runner.temp }}/basex-srtc-decode-post-paths.txt
+            ${{ runner.temp }}/basex-srtc-decode-post-hashes.txt
+            ${{ runner.temp }}/basex-srtc-decode-ngc-hashes.txt
+            ${{ runner.temp }}/basex-srtc-decode-map-sha256.txt
+            ${{ runner.temp }}/basex-srtc-decode-xdl.txt
+            verilog/sd2snes_basex/main.xst
+            verilog/sd2snes_basex/main.prj
+            verilog/sd2snes_basex/main.pcf
+            verilog/sd2snes_basex/sd2snes_basex.xise
+            verilog/sd2snes_basex/*.syr
+            verilog/sd2snes_basex/*.par
+            verilog/sd2snes_basex/*.mrp
+            verilog/sd2snes_basex/*.psr
+            verilog/sd2snes_basex/*.twr
+            verilog/sd2snes_basex/*.bld
+            verilog/sd2snes_basex/*.unroutes
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Retain the mapped NCD separately on GitHub
+        if: always() && steps.compile.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: basex-srtc-decode-seed-46-mapped-ncd
+          path: verilog/sd2snes_basex/main_map.ncd
+          if-no-files-found: error
+          retention-days: 14

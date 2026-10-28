@@ -1,0 +1,188 @@
+name: Compare basex BS-X base-window decoder
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: basex-bsx-window-native-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  native:
+    name: Basex proved BS-X base-window decode, XST Speed MAP Area seed 46
+    runs-on: ubuntu-22.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: basex-bsx-window-proof
+          path: ${{ runner.temp }}/basex-bsx-window-proof
+          run-id: 40691403140
+          github-token: ${{ github.token }}
+
+      - name: Select only the independently reviewed candidate
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD:verilog)" = 4e50365f59f38217b67c5126276873a29be737d5
+          test "$(git hash-object --no-filters .github/scripts/build.sh)" = 847665b375209d705de918d54f89cff194b074b1
+          test "$(git hash-object --no-filters .github/actions/prepare-build-image/action.yml)" = ac2a66fc24d4a15658b666cdc5f5db7964df4c3b
+          git diff --exit-code -- verilog .github/scripts/build.sh .github/actions/prepare-build-image/action.yml
+          test "$(git hash-object --no-filters verilog/sd2snes_base/bsx.v)" = 3ca70f4901a5fefef1576bae144060462b4c4254
+          test "$(git hash-object --no-filters verilog/sd2snes_base/main.ucf)" = e582e03059fbbcf21b4124e5dd7aa9ac8792fd6b
+          test "$(git hash-object --no-filters verilog/sd2snes_basex/sd2snes_basex.xise)" = 5338e8fa5fef0af0c526ff99563b17a0763ed34a
+          test ! -e verilog/sd2snes_basex/ucf.extra
+          proof="$RUNNER_TEMP/basex-bsx-window-proof"
+          (cd "$proof" && sha256sum --check SHA256SUMS)
+          test -s "$proof/verified.txt"
+          test "$(sha256sum "$proof/candidate-bsx.v" | cut -d' ' -f1)" = 5b4d14cf7fa85d14473aef6e1a6f183cbbc8f5e1a27a342f743a4a83fb38c7dc
+          test "$(git hash-object --no-filters "$proof/candidate-bsx.v")" = f03c4d5b4d8d396e08d62261446e451613f9f223
+          cmp "$proof/original-bsx.v" verilog/sd2snes_base/bsx.v
+          cp "$proof/candidate-bsx.v" verilog/sd2snes_base/bsx.v
+          test "$(git diff --name-only -- verilog)" = verilog/sd2snes_base/bsx.v
+          {
+            printf 'Checkout: %s\nVerilog tree: %s\n' "$GITHUB_SHA" "$(git rev-parse HEAD:verilog)"
+            printf 'Proof run: 40691403140; candidate BS-X blob: f03c4d5b4d8d396e08d62261446e451613f9f223\n'
+            printf 'Original project: 5338e8fa5fef0af0c526ff99563b17a0763ed34a\nOriginal UCF: e582e03059fbbcf21b4124e5dd7aa9ac8792fd6b\n'
+            printf 'Diagnostic target: XST Speed, timing-driven MAP Area, PAR high, seed 46. No timing requirements changed.\n'
+          } | tee "$RUNNER_TEMP/basex-bsx-window-identity.txt"
+
+      - uses: ./.github/actions/prepare-build-image
+        with:
+          target: mk2
+
+      - name: Compile using strict native PAR and TRACE checks
+        id: compile
+        env:
+          ISE_CTABLE: '46'
+        run: |
+          set -euo pipefail
+          image_id=$(docker image inspect sd2snes-ci:mk2 --format '{{.Id}}')
+          printf 'ISE image ID: %s\n' "$image_id" | tee -a "$RUNNER_TEMP/basex-bsx-window-identity.txt"
+          test "$image_id" = sha256:5e3bbb00649997abca8843b1d82d8529eda99a0f2868d37ad9777e0ad5fd50e8
+          container_name=sd2snes-basex-bsx-window
+          bash .github/scripts/report-activity.sh "$container_name" &
+          activity_pid=$!
+          trap 'kill "$activity_pid" 2>/dev/null || true; wait "$activity_pid" 2>/dev/null || true' EXIT
+          docker run --rm --name "$container_name" --user 0:0 \
+            --mac-address 08:00:27:68:c9:35 --env ISE_CTABLE \
+            --volume "$GITHUB_WORKSPACE:/work" --workdir /work \
+            --entrypoint /bin/bash sd2snes-ci:mk2 .github/scripts/build.sh mk2 basex \
+            2>&1 | tee "$RUNNER_TEMP/basex-bsx-window-build.log"
+
+      - name: Retain every post-build tracked Verilog difference and generated IP hash
+        if: always() && steps.compile.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          git diff --no-ext-diff --no-renames --binary -- verilog > "$RUNNER_TEMP/basex-bsx-window-post.diff"
+          git diff --no-ext-diff --no-renames --name-only -- verilog | tee "$RUNNER_TEMP/basex-bsx-window-post-paths.txt"
+          for path in verilog/sd2snes_base/bsx.v verilog/sd2snes_base/main.ucf verilog/sd2snes_basex/sd2snes_basex.xise; do
+            printf '%s %s\n' "$(git hash-object --no-filters "$path")" "$path"
+          done | tee "$RUNNER_TEMP/basex-bsx-window-post-hashes.txt"
+          for core in dac_buf msu_databuf snescmd_buf; do
+            file="verilog/sd2snes_base/ip/mk2/$core.ngc"
+            if [[ -f "$file" ]]; then sha256sum "$file"; else printf 'MISSING %s\n' "$file"; fi
+          done | tee "$RUNNER_TEMP/basex-bsx-window-ngc-hashes.txt"
+
+      - name: Verify candidate, project, constraints and all tracked inputs
+        if: always() && steps.compile.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          test "$(git hash-object --no-filters verilog/sd2snes_base/bsx.v)" = f03c4d5b4d8d396e08d62261446e451613f9f223
+          test "$(git hash-object --no-filters verilog/sd2snes_base/main.ucf)" = e582e03059fbbcf21b4124e5dd7aa9ac8792fd6b
+          test "$(git hash-object --no-filters verilog/sd2snes_basex/sd2snes_basex.xise)" = 5338e8fa5fef0af0c526ff99563b17a0763ed34a
+          test "$(git diff --name-only -- verilog)" = verilog/sd2snes_base/bsx.v
+          echo 'Only the proved BS-X candidate differs among tracked Verilog inputs.'
+
+      - name: Verify actual synthesis, map and route options
+        if: always() && steps.compile.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          grep -Fx -- '-opt_mode Speed' verilog/sd2snes_basex/main.xst
+          python3 - "$RUNNER_TEMP/basex-bsx-window-build.log" <<'PY'
+          import re
+          import shlex
+          import sys
+          from pathlib import Path
+
+          lines = Path(sys.argv[1]).read_text(errors="strict").splitlines()
+          for tool, expected in (
+              ("map", {"-logic_opt": "on", "-ol": "high", "-xe": "n", "-t": "46", "-register_duplication": "on", "-cm": "area"}),
+              ("par", {"-ol": "high", "-xe": "c", "-t": "46"}),
+          ):
+              commands = [line for line in lines if re.search(r"/" + tool + r"\s+-", line)]
+              if len(commands) != 1:
+                  raise SystemExit(f"Missing or ambiguous {tool} command")
+              args = shlex.split(commands[0].split(" || ", 1)[0].strip())
+              if tool == "map" and args.count("-timing") != 1:
+                  raise SystemExit("MAP is not explicitly timing-driven")
+              for flag, value in expected.items():
+                  if args.count(flag) != 1 or args.index(flag) + 1 >= len(args) or args[args.index(flag) + 1] != value:
+                      raise SystemExit(f"Unexpected {tool} option {flag}")
+              print(f"Verified {tool} command: {commands[0]}")
+          PY
+
+      - name: Inspect mapped BS-X base-window decoder names
+        if: always() && steps.compile.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          core=verilog/sd2snes_basex
+          test -s "$core/main_map.ncd"
+          docker run --rm --user 0:0 --mac-address 08:00:27:68:c9:35 \
+            --volume "$GITHUB_WORKSPACE:/work" --workdir /work/verilog/sd2snes_basex \
+            --entrypoint /bin/bash sd2snes-ci:mk2 -c \
+            'set -euo pipefail; xdl -ncd2xdl -nopips main_map.ncd bsx-window-audit.xdl'
+          python3 - "$core/bsx-window-audit.xdl" <<'PY' | tee "$RUNNER_TEMP/basex-bsx-window-xdl.txt"
+          import re
+          import sys
+          from pathlib import Path
+
+          text = Path(sys.argv[1]).read_text()
+          statements = re.findall(r'(?ms)^\s*(?:net|inst)\s+.*?;', text)
+          selected = [item for item in statements if 'snes_bsx/' in item and 'base_enable' in item]
+          print('Mapped NCD decoder names only; routing and complete mapped effect require manual review.')
+          if not selected:
+              raise SystemExit('No named base-window decoder evidence; mapped effect inconclusive')
+          for item in selected:
+              print(item)
+          PY
+
+      - name: Confirm the native timing result
+        if: always() && steps.compile.outcome == 'success'
+        run: |
+          set -euo pipefail
+          grep -Eq 'Timing Score: 0 \(Setup: 0, Hold: 0' verilog/sd2snes_basex/main.par
+          grep -Eq 'Timing errors: 0[[:space:]]+Score: 0[[:space:]]+\(Setup/Max: 0, Hold: 0\)' verilog/sd2snes_basex/main.twr
+          echo 'Native PAR and TRACE explicitly report zero timing errors.'
+
+      - name: Upload reports, source differences and timing evidence without bitstreams
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: basex-bsx-window-seed-46
+          path: |
+            ${{ runner.temp }}/basex-bsx-window-identity.txt
+            ${{ runner.temp }}/basex-bsx-window-build.log
+            ${{ runner.temp }}/basex-bsx-window-post.diff
+            ${{ runner.temp }}/basex-bsx-window-post-paths.txt
+            ${{ runner.temp }}/basex-bsx-window-post-hashes.txt
+            ${{ runner.temp }}/basex-bsx-window-ngc-hashes.txt
+            ${{ runner.temp }}/basex-bsx-window-xdl.txt
+            verilog/sd2snes_basex/main.xst
+            verilog/sd2snes_basex/main.prj
+            verilog/sd2snes_basex/main.pcf
+            verilog/sd2snes_basex/sd2snes_basex.xise
+            verilog/sd2snes_basex/*.syr
+            verilog/sd2snes_basex/*.par
+            verilog/sd2snes_basex/*.mrp
+            verilog/sd2snes_basex/*.psr
+            verilog/sd2snes_basex/*.twr
+            verilog/sd2snes_basex/*.bld
+            verilog/sd2snes_basex/*.unroutes
+          if-no-files-found: error
+          retention-days: 14

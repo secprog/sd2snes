@@ -1,0 +1,298 @@
+name: Compare DSPx context address experiment
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: dsp-ctx-unshared-native-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  native:
+    name: DSPx proved context address, XST Speed MAP Area seed 68
+    runs-on: ubuntu-22.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download the independently inspected source-bound proof
+        uses: actions/download-artifact@v4
+        with:
+          name: dsp-ctx-unshared-proof
+          path: ${{ runner.temp }}/dsp-ctx-unshared-proof
+          run-id: 40753470062
+          github-token: ${{ github.token }}
+
+      - name: Download the original DSPx timing report for comparison
+        uses: actions/download-artifact@v4
+        with:
+          name: dsp-stack-original-seed-68
+          path: ${{ runner.temp }}/dsp-stack-read-original
+          run-id: 40524388250
+          github-token: ${{ github.token }}
+
+      - name: Select exactly the proved runner-only source
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD:verilog)" = 4e50365f59f38217b67c5126276873a29be737d5
+          test "$(git hash-object --no-filters .github/scripts/build.sh)" = 847665b375209d705de918d54f89cff194b074b1
+          test "$(git hash-object --no-filters .github/actions/prepare-build-image/action.yml)" = ac2a66fc24d4a15658b666cdc5f5db7964df4c3b
+          git diff --exit-code
+          git diff --cached --exit-code
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/ctx.v)" = fe297129d4e089b3c79d78eb0f9025c4276c93fd
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/main.v)" = cc6889c4f00f653b0df19184ec8c7d726df9d2c9
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/main.ucf)" = 4f34c4cf9e475ac171a216c3f15fff74918fd03c
+          test "$(git hash-object --no-filters verilog/sd2snes_dspx/sd2snes_dspx.xise)" = 2822b63c005bce73e8e7aaf332bcdbd983d1492d
+          test ! -e verilog/sd2snes_dspx/ucf.extra
+          proof="$RUNNER_TEMP/dsp-ctx-unshared-proof"
+          (cd "$proof" && sha256sum --check SHA256SUMS)
+          test -s "$proof/verified.txt"
+          grep -F 'Yosys 0.33 (git sha1 2584903a060)' "$proof/tool-version.txt"
+          test "$(sha256sum "$proof/candidate-ctx.v" | cut -d' ' -f1)" = ba7472bad8e6df3a0cce0a39314d70de529c4fd619368816d84409672ccbfa3f
+          test "$(git hash-object --no-filters "$proof/candidate-ctx.v")" = 3845aff7ba373716f24e6f6d9269d092aa37ddaf
+          test "$(sha256sum "$proof/gold.v" | cut -d' ' -f1)" = ad2cf28461db97acb41931537cf19ab3059659172f19de4bcc1f22527ba75303
+          test "$(sha256sum "$proof/gate.v" | cut -d' ' -f1)" = 078255837bf8b2bbc0caff6654a69f8aaa328ac3b38326637fa6bbbfacf06380
+          for mode in binary xstate; do
+            test "$(sha256sum "$proof/gate/miter-$mode.json" | cut -d' ' -f1)" = b3d9a340bba860fd0d223bde605138bc68cc40ea7c15424b08cab1f795086058
+            grep -F 'SAT proof finished - no model found: SUCCESS!' "$proof/gate/proof-$mode.log"
+          done
+          for variant in bad-priority bad-wram bad-vram bad-cgram bad-oam bad-ppu bad-cpu bad-misc bad-apu bad-write bad-hold bad-data-priority bad-word; do
+            test -s "$proof/$variant/miter-binary.json"
+            test -s "$proof/$variant/counterexample-binary.json"
+            grep -F 'SAT proof finished - model found: FAIL!' "$proof/$variant/proof-binary.log"
+          done
+          for variant in bad-x-address bad-x-word; do
+            test -s "$proof/$variant/miter-binary.json"
+            test -s "$proof/$variant/miter-xstate.json"
+            test -s "$proof/$variant/counterexample-xstate.json"
+            grep -F 'SAT proof finished - no model found: SUCCESS!' "$proof/$variant/proof-binary.log"
+            grep -F 'SAT proof finished - model found: FAIL!' "$proof/$variant/proof-xstate.log"
+          done
+          cmp "$proof/original-ctx.v" verilog/sd2snes_dsp/ctx.v
+          cp "$proof/candidate-ctx.v" verilog/sd2snes_dsp/ctx.v
+          test "$(git diff --name-only)" = verilog/sd2snes_dsp/ctx.v
+          git diff --cached --exit-code
+          {
+            printf 'Checkout: %s\nVerilog tree: %s\n' "$GITHUB_SHA" "$(git rev-parse HEAD:verilog)"
+            printf 'Proof run: 40753470062; candidate context blob: 3845aff7ba373716f24e6f6d9269d092aa37ddaf\n'
+            printf 'Original project: 2822b63c005bce73e8e7aaf332bcdbd983d1492d; original UCF: 4f34c4cf9e475ac171a216c3f15fff74918fd03c\n'
+            printf 'Diagnostic target: XST Speed, timing-driven MAP Area, PAR high, seed 68. No timing requirements changed.\n'
+          } | tee "$RUNNER_TEMP/dsp-ctx-unshared-identity.txt"
+
+      - uses: ./.github/actions/prepare-build-image
+        with:
+          target: mk2
+
+      - name: Compile with strict native PAR and TRACE checks
+        id: compile
+        env:
+          ISE_CTABLE: '68'
+        run: |
+          set -euo pipefail
+          image_id=$(docker image inspect sd2snes-ci:mk2 --format '{{.Id}}')
+          printf 'ISE image ID: %s\n' "$image_id" | tee -a "$RUNNER_TEMP/dsp-ctx-unshared-identity.txt"
+          test "$image_id" = sha256:5e3bbb00649997abca8843b1d82d8529eda99a0f2868d37ad9777e0ad5fd50e8
+          container_name=sd2snes-dsp-ctx-unshared
+          bash .github/scripts/report-activity.sh "$container_name" &
+          activity_pid=$!
+          trap 'kill "$activity_pid" 2>/dev/null || true; wait "$activity_pid" 2>/dev/null || true' EXIT
+          docker run --rm --name "$container_name" --user 0:0 \
+            --mac-address 08:00:27:68:c9:35 --env ISE_CTABLE \
+            --volume "$GITHUB_WORKSPACE:/work" --workdir /work \
+            --entrypoint /bin/bash sd2snes-ci:mk2 .github/scripts/build.sh mk2 dspx \
+            2>&1 | tee "$RUNNER_TEMP/dsp-ctx-unshared-build.log"
+
+      - name: Retain every tracked difference and generated IP hash
+        if: always() && steps.compile.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          git diff --no-ext-diff --no-renames --binary > "$RUNNER_TEMP/dsp-ctx-unshared-post.diff"
+          git diff --no-ext-diff --no-renames --name-only | tee "$RUNNER_TEMP/dsp-ctx-unshared-post-paths.txt"
+          git diff --cached --no-ext-diff --no-renames --binary > "$RUNNER_TEMP/dsp-ctx-unshared-post-staged.diff"
+          for path in verilog/sd2snes_dsp/ctx.v verilog/sd2snes_dsp/main.v verilog/sd2snes_dsp/main.ucf verilog/sd2snes_dspx/sd2snes_dspx.xise; do
+            printf '%s %s\n' "$(git hash-object --no-filters "$path")" "$path"
+          done | tee "$RUNNER_TEMP/dsp-ctx-unshared-post-hashes.txt"
+          {
+            missing=0
+            for core in dac_buf msu_databuf snescmd_buf upd77c25_datram upd77c25_datrom upd77c25_pgmrom; do
+              file="verilog/sd2snes_dsp/ip/mk2/$core.ngc"
+              if [[ -s "$file" ]]; then sha256sum "$file"; else printf 'MISSING %s\n' "$file"; missing=1; fi
+            done
+            exit "$missing"
+          } | tee "$RUNNER_TEMP/dsp-ctx-unshared-ngc-hashes.txt"
+
+      - name: Verify candidate, project, constraints and all tracked inputs
+        if: always() && steps.compile.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/ctx.v)" = 3845aff7ba373716f24e6f6d9269d092aa37ddaf
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/main.v)" = cc6889c4f00f653b0df19184ec8c7d726df9d2c9
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/main.ucf)" = 4f34c4cf9e475ac171a216c3f15fff74918fd03c
+          test "$(git hash-object --no-filters verilog/sd2snes_dspx/sd2snes_dspx.xise)" = 2822b63c005bce73e8e7aaf332bcdbd983d1492d
+          test "$(git diff --name-only)" = verilog/sd2snes_dsp/ctx.v
+          git diff --cached --exit-code
+          echo 'Only the proved context candidate differs among all tracked inputs.'
+
+      - name: Verify actual synthesis, map and route options
+        if: always() && steps.compile.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          grep -Fx -- '-opt_mode Speed' verilog/sd2snes_dspx/main.xst
+          grep -Fx -- '-define { MK2 DSP_COMP }' verilog/sd2snes_dspx/main.xst
+          grep -Fx -- '-register_balancing Yes' verilog/sd2snes_dspx/main.xst
+          grep -Fx -- '-resource_sharing Yes' verilog/sd2snes_dspx/main.xst
+          python3 - "$RUNNER_TEMP/dsp-ctx-unshared-build.log" <<'PY'
+          import re
+          import shlex
+          import sys
+          from pathlib import Path
+          lines = Path(sys.argv[1]).read_text(errors="strict").splitlines()
+          for tool, expected in (
+              ("map", {"-logic_opt": "on", "-ol": "high", "-xe": "n", "-t": "68", "-register_duplication": "on", "-cm": "area"}),
+              ("par", {"-ol": "high", "-xe": "c", "-t": "68"}),
+          ):
+              commands = [line for line in lines if re.search(r"/" + tool + r"\s+-", line)]
+              if len(commands) != 1:
+                  raise SystemExit(f"Missing or ambiguous {tool} command")
+              args = shlex.split(commands[0].split(" || ", 1)[0].strip())
+              if tool == "map" and args.count("-timing") != 1:
+                  raise SystemExit("MAP is not explicitly timing-driven")
+              for flag, value in expected.items():
+                  if args.count(flag) != 1 or args.index(flag) + 1 >= len(args) or args[args.index(flag) + 1] != value:
+                      raise SystemExit(f"Unexpected {tool} option {flag}")
+              print(f"Verified {tool} command: {commands[0]}")
+          PY
+
+      - name: Compare PCF period and jitter statements with the original run
+        if: always() && steps.compile.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          python3 - "$RUNNER_TEMP/dsp-stack-read-original" verilog/sd2snes_dspx/main.pcf <<'PY'
+          import hashlib
+          import re
+          import sys
+          from pathlib import Path
+          originals = list(Path(sys.argv[1]).rglob('main.pcf'))
+          if len(originals) != 1:
+              raise SystemExit('Missing or ambiguous original PCF')
+          if hashlib.sha256(originals[0].read_bytes()).hexdigest() != '849380275e2d1c6116bfae918abfa8b2d0f57317a049c7fd09905bffe4762c2b':
+              raise SystemExit('Original PCF hash differs from the retained baseline report')
+          def timing(path):
+              return [line.strip() for line in path.read_text().splitlines()
+                      if re.match(r'^(SYSTEM_JITTER|TS_\S+\s*=)', line.strip())]
+          old, new = timing(originals[0]), timing(Path(sys.argv[2]))
+          if not old or old != new or 'SYSTEM_JITTER = 480 ps;' not in new:
+              raise SystemExit(f'PCF timing statements differ: old={old!r}, new={new!r}')
+          print('\n'.join(new))
+          PY
+
+      - name: Inspect actual synthesis attribute
+        if: always() && steps.compile.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          core=verilog/sd2snes_dspx
+          python3 - "$core/main.syr" <<'PY' | tee "$RUNNER_TEMP/dsp-ctx-unshared-synthesis-evidence.txt"
+          import re
+          import sys
+          from pathlib import Path
+          lines = Path(sys.argv[1]).read_text().splitlines()
+          hits = [i for i, line in enumerate(lines)
+                  if re.search(r'resource[_ ]sharing\s*=\s*no', line, re.I)]
+          print('Resource-sharing attribute evidence with surrounding XST context:')
+          for i in hits:
+              for n in range(max(0, i-4), min(len(lines), i+5)):
+                  print(f'{n+1}: {lines[n]}')
+          if not any(re.search(r'dspx_ctx_addr_unshared|ctx_addr_unshared',
+                               '\n'.join(lines[max(0, i-4):min(len(lines), i+5)]), re.I)
+                     for i in hits):
+              raise SystemExit('No explicit helper-bound resource_sharing=no evidence; inconclusive')
+          print('Context arithmetic and register-balancing lines, if present:')
+          for i, line in enumerate(lines):
+              if re.search(r'dspx_ctx_addr_unshared|ctx_addr_unshared|SRAM_SNES_ADDR', line, re.I):
+                  print(f'{i+1}: {line}')
+              elif re.search(r'balanced|balancing', line, re.I) and 'snes_ctx/' in line:
+                  print(f'{i+1}: {line}')
+          print('Named synthesis evidence is not an independent sequential netlist or baseline equivalence proof.')
+          PY
+
+      - name: Inspect mapped context evidence
+        if: always() && steps.compile.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          core=verilog/sd2snes_dspx
+          test -s "$core/main_map.ncd"
+          sha256sum "$core/main_map.ncd" | tee "$RUNNER_TEMP/dsp-ctx-unshared-map-sha256.txt"
+          docker run --rm --user 0:0 --mac-address 08:00:27:68:c9:35 \
+            --volume "$GITHUB_WORKSPACE:/work" --workdir /work/verilog/sd2snes_dspx \
+            --entrypoint /bin/bash sd2snes-ci:mk2 -c \
+            'set -euo pipefail; xdl -ncd2xdl -nopips main_map.ncd ctx-unshared-audit.xdl'
+          sha256sum --check "$RUNNER_TEMP/dsp-ctx-unshared-map-sha256.txt"
+          python3 - "$core/ctx-unshared-audit.xdl" <<'PY' | tee "$RUNNER_TEMP/dsp-ctx-unshared-xdl.txt"
+          import re
+          import sys
+          from pathlib import Path
+          text = Path(sys.argv[1]).read_text()
+          statements = re.findall(r'(?ms)^\s*(?:net|inst)\s+.*?;', text)
+          selected = [item for item in statements
+                      if 'snes_ctx' in item and re.search(r'SRAM_SNES_ADDR|ctx_addr_unshared', item)]
+          print('Candidate mapped NCD names only; original mapping and routed timing are not established.')
+          if not selected or len(selected) > 200 or sum(len(item) for item in selected) > 1_500_000:
+              raise SystemExit('Missing or excessive context mapping evidence; inconclusive')
+          for item in selected:
+              print(item)
+          if not any(re.match(r'\s*inst\s', item) for item in selected):
+              raise SystemExit('No named context address instance; mapping inconclusive')
+          if not any(re.match(r'\s*net\s', item) for item in selected):
+              raise SystemExit('No named context address net; mapping inconclusive')
+          PY
+
+      - name: Confirm the native timing result
+        if: always() && steps.compile.outcome == 'success'
+        run: |
+          set -euo pipefail
+          grep -Eq 'Timing Score: 0 \(Setup: 0, Hold: 0' verilog/sd2snes_dspx/main.par
+          grep -Eq 'Timing errors: 0[[:space:]]+Score: 0[[:space:]]+\(Setup/Max: 0, Hold: 0\)' verilog/sd2snes_dspx/main.twr
+          echo 'Native PAR and TRACE explicitly report zero timing errors.'
+
+      - name: Upload small reports and source differences
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsp-ctx-unshared-seed-68-reports
+          path: |
+            ${{ runner.temp }}/dsp-ctx-unshared-identity.txt
+            ${{ runner.temp }}/dsp-ctx-unshared-build.log
+            ${{ runner.temp }}/dsp-ctx-unshared-post.diff
+            ${{ runner.temp }}/dsp-ctx-unshared-post-staged.diff
+            ${{ runner.temp }}/dsp-ctx-unshared-post-paths.txt
+            ${{ runner.temp }}/dsp-ctx-unshared-post-hashes.txt
+            ${{ runner.temp }}/dsp-ctx-unshared-ngc-hashes.txt
+            ${{ runner.temp }}/dsp-ctx-unshared-map-sha256.txt
+            ${{ runner.temp }}/dsp-ctx-unshared-synthesis-evidence.txt
+            ${{ runner.temp }}/dsp-ctx-unshared-xdl.txt
+            verilog/sd2snes_dspx/main.xst
+            verilog/sd2snes_dspx/main.prj
+            verilog/sd2snes_dspx/main.pcf
+            verilog/sd2snes_dspx/sd2snes_dspx.xise
+            verilog/sd2snes_dspx/*.syr
+            verilog/sd2snes_dspx/*.par
+            verilog/sd2snes_dspx/*.mrp
+            verilog/sd2snes_dspx/*.psr
+            verilog/sd2snes_dspx/*.twr
+            verilog/sd2snes_dspx/*.bld
+            verilog/sd2snes_dspx/*.unroutes
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Retain the mapped NCD separately on GitHub
+        if: always() && steps.compile.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsp-ctx-unshared-seed-68-mapped-ncd
+          path: verilog/sd2snes_dspx/main_map.ncd
+          if-no-files-found: error
+          retention-days: 14

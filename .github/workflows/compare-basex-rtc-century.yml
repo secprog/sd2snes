@@ -1,0 +1,261 @@
+name: Compare basex RTC century arithmetic
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: basex-rtc-century-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  prove:
+    name: Prove all RTC intermediate bits and reject mutations
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Prepare pinned original and runner-only candidate
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/prepare-basex-rtc-century-experiment.py \
+            verilog/sd2snes_base/rtc.v "$RUNNER_TEMP/rtc-century-proof"
+
+      - name: Install and identify formal tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends yosys
+          yosys -V | tee "$RUNNER_TEMP/rtc-century-proof/tool-version.txt"
+          grep -F 'Yosys 0.33 (git sha1 2584903a060)' "$RUNNER_TEMP/rtc-century-proof/tool-version.txt"
+
+      - name: Prove binary and X-valued expressions with negative controls
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/rtc-century-proof"
+          sha256sum --check SHA256SUMS
+          for variant in gate bad-year-shift bad-century-shift bad-width bad-sign bad-x; do
+            mkdir "$variant"
+            cp "$variant.v" "$variant/model.v"
+          done
+          for mode in binary xstate; do
+            if [[ "$mode" == binary ]]; then
+              variants=(gate bad-year-shift bad-century-shift bad-width bad-sign bad-x)
+              input_flags='-set-def-inputs'
+            else
+              variants=(bad-x gate)
+              input_flags=''
+            fi
+            for variant in "${variants[@]}"; do
+              cat > "$variant/prove-$mode.ys" <<YOSYS
+          read_verilog -sv -formal ../gold.v model.v
+          proc -ifx -noopt
+          miter -equiv -make_assert -make_outputs -make_outcmp gold gate miter
+          hierarchy -check -top miter
+          flatten -wb
+          hierarchy -check -top miter
+          opt_clean
+          check -assert
+          write_json miter-$mode.json
+          sat -verify -enable_undef $input_flags -prove-asserts -show-inputs -show-outputs -dump_json counterexample-$mode.json -timeout 180
+          YOSYS
+              result=0
+              (cd "$variant" && yosys -l "proof-$mode.log" -s "prove-$mode.ys") || result=$?
+              if [[ "$variant" == gate || ( "$variant" == bad-x && "$mode" == binary ) ]]; then
+                test "$result" -eq 0
+                grep -F 'SAT proof finished - no model found: SUCCESS!' "$variant/proof-$mode.log"
+              else
+                test "$result" -ne 0
+                grep -F 'SAT proof finished - model found: FAIL!' "$variant/proof-$mode.log"
+                test -s "$variant/counterexample-$mode.json"
+              fi
+            done
+          done
+          sha256sum --check SHA256SUMS
+          printf 'All 16 bits of the extracted RTC expression match for binary and Yosys X-valued inputs. Four binary mutants and a binary-equivalent X control produced counterexamples. This is a component proof, not a whole-FPGA or hardware proof.\n' \
+            | tee verified.txt >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload proof models, miter bindings and counterexamples
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: basex-rtc-century-proof
+          path: ${{ runner.temp }}/rtc-century-proof/
+          if-no-files-found: error
+          retention-days: 14
+
+  native:
+    name: Basex proved RTC arithmetic, XST Speed MAP Area seed 46
+    needs: prove
+    runs-on: ubuntu-22.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: basex-rtc-century-proof
+          path: ${{ runner.temp }}/rtc-century-proof
+
+      - name: Select only the proved runner-only candidate
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD:verilog)" = 4e50365f59f38217b67c5126276873a29be737d5
+          test "$(git hash-object --no-filters .github/scripts/build.sh)" = 847665b375209d705de918d54f89cff194b074b1
+          test "$(git hash-object --no-filters .github/actions/prepare-build-image/action.yml)" = ac2a66fc24d4a15658b666cdc5f5db7964df4c3b
+          git diff --exit-code -- verilog .github/scripts/build.sh .github/actions/prepare-build-image/action.yml
+          test "$(git hash-object --no-filters verilog/sd2snes_base/main.ucf)" = e582e03059fbbcf21b4124e5dd7aa9ac8792fd6b
+          test "$(git hash-object --no-filters verilog/sd2snes_basex/sd2snes_basex.xise)" = 5338e8fa5fef0af0c526ff99563b17a0763ed34a
+          test ! -e verilog/sd2snes_basex/ucf.extra
+          proof="$RUNNER_TEMP/rtc-century-proof"
+          (cd "$proof" && sha256sum --check SHA256SUMS)
+          test -s "$proof/verified.txt"
+          cmp "$proof/original-rtc.v" verilog/sd2snes_base/rtc.v
+          cp "$proof/candidate-rtc.v" verilog/sd2snes_base/rtc.v
+          candidate_blob=$(git hash-object --no-filters verilog/sd2snes_base/rtc.v)
+          printf '%s\n' "$candidate_blob" > "$RUNNER_TEMP/rtc-century-candidate.sha"
+          test "$(git diff --name-only -- verilog)" = verilog/sd2snes_base/rtc.v
+          {
+            printf 'Checkout: %s\nVerilog tree: %s\nCandidate RTC blob: %s\n' "$GITHUB_SHA" "$(git rev-parse HEAD:verilog)" "$candidate_blob"
+            printf 'Original project: 5338e8fa5fef0af0c526ff99563b17a0763ed34a\nOriginal UCF: e582e03059fbbcf21b4124e5dd7aa9ac8792fd6b\n'
+            printf 'Diagnostic target: XST Speed, timing-driven MAP Area, PAR high, seed 46. No timing requirements changed.\n'
+          } | tee "$RUNNER_TEMP/rtc-century-identity.txt"
+
+      - uses: ./.github/actions/prepare-build-image
+        with:
+          target: mk2
+
+      - name: Compile using strict native PAR and TRACE checks
+        id: compile
+        env:
+          ISE_CTABLE: '46'
+        run: |
+          set -euo pipefail
+          image_id=$(docker image inspect sd2snes-ci:mk2 --format '{{.Id}}')
+          printf 'ISE image ID: %s\n' "$image_id" | tee -a "$RUNNER_TEMP/rtc-century-identity.txt"
+          test "$image_id" = sha256:5e3bbb00649997abca8843b1d82d8529eda99a0f2868d37ad9777e0ad5fd50e8
+          container_name=sd2snes-basex-rtc-century
+          bash .github/scripts/report-activity.sh "$container_name" &
+          activity_pid=$!
+          trap 'kill "$activity_pid" 2>/dev/null || true; wait "$activity_pid" 2>/dev/null || true' EXIT
+          docker run --rm --name "$container_name" --user 0:0 \
+            --mac-address 08:00:27:68:c9:35 --env ISE_CTABLE \
+            --volume "$GITHUB_WORKSPACE:/work" --workdir /work \
+            --entrypoint /bin/bash sd2snes-ci:mk2 .github/scripts/build.sh mk2 basex \
+            2>&1 | tee "$RUNNER_TEMP/rtc-century-build.log"
+
+      - name: Retain every post-build tracked Verilog difference and generated IP hash
+        if: always() && steps.compile.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          git diff --no-ext-diff --no-renames --binary -- verilog > "$RUNNER_TEMP/rtc-century-post.diff"
+          git diff --no-ext-diff --no-renames --name-only -- verilog | tee "$RUNNER_TEMP/rtc-century-post-paths.txt"
+          for path in verilog/sd2snes_base/rtc.v verilog/sd2snes_base/main.ucf verilog/sd2snes_basex/sd2snes_basex.xise; do
+            printf '%s %s\n' "$(git hash-object --no-filters "$path")" "$path"
+          done | tee "$RUNNER_TEMP/rtc-century-post-hashes.txt"
+          for core in dac_buf msu_databuf snescmd_buf; do
+            file="verilog/sd2snes_base/ip/mk2/$core.ngc"
+            if [[ -f "$file" ]]; then sha256sum "$file"; else printf 'MISSING %s\n' "$file"; fi
+          done | tee "$RUNNER_TEMP/rtc-century-ngc-hashes.txt"
+
+      - name: Verify candidate, project, constraints and all tracked inputs
+        if: always() && steps.compile.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          test "$(git hash-object --no-filters verilog/sd2snes_base/rtc.v)" = "$(cat "$RUNNER_TEMP/rtc-century-candidate.sha")"
+          test "$(git hash-object --no-filters verilog/sd2snes_base/main.ucf)" = e582e03059fbbcf21b4124e5dd7aa9ac8792fd6b
+          test "$(git hash-object --no-filters verilog/sd2snes_basex/sd2snes_basex.xise)" = 5338e8fa5fef0af0c526ff99563b17a0763ed34a
+          test "$(git diff --name-only -- verilog)" = verilog/sd2snes_base/rtc.v
+          echo 'Only the proved RTC candidate differs among tracked Verilog inputs.'
+
+      - name: Verify actual synthesis, map and route options
+        if: always() && steps.compile.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          grep -Fx -- '-opt_mode Speed' verilog/sd2snes_basex/main.xst
+          python3 - "$RUNNER_TEMP/rtc-century-build.log" <<'PY'
+          import re
+          import shlex
+          import sys
+          from pathlib import Path
+
+          lines = Path(sys.argv[1]).read_text(errors="strict").splitlines()
+          for tool, expected in (
+              ("map", {"-logic_opt": "on", "-ol": "high", "-xe": "n", "-t": "46", "-register_duplication": "on", "-cm": "area"}),
+              ("par", {"-ol": "high", "-xe": "c", "-t": "46"}),
+          ):
+              commands = [line for line in lines if re.search(r"/" + tool + r"\s+-", line)]
+              if len(commands) != 1:
+                  raise SystemExit(f"Missing or ambiguous {tool} command")
+              args = shlex.split(commands[0].split(" || ", 1)[0].strip())
+              if tool == "map" and args.count("-timing") != 1:
+                  raise SystemExit("MAP is not explicitly timing-driven")
+              for flag, value in expected.items():
+                  if args.count(flag) != 1 or args.index(flag) + 1 >= len(args) or args[args.index(flag) + 1] != value:
+                      raise SystemExit(f"Unexpected {tool} option {flag}")
+              print(f"Verified {tool} command: {commands[0]}")
+          PY
+
+      - name: Inspect mapped RTC arithmetic names
+        if: always() && steps.compile.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          core=verilog/sd2snes_basex
+          test -s "$core/main_map.ncd"
+          docker run --rm --user 0:0 --mac-address 08:00:27:68:c9:35 \
+            --volume "$GITHUB_WORKSPACE:/work" --workdir /work/verilog/sd2snes_basex \
+            --entrypoint /bin/bash sd2snes-ci:mk2 -c \
+            'set -euo pipefail; xdl -ncd2xdl -nopips main_map.ncd rtc-century-audit.xdl'
+          python3 - "$core/rtc-century-audit.xdl" <<'PY' | tee "$RUNNER_TEMP/rtc-century-xdl.txt"
+          import re
+          import sys
+          from pathlib import Path
+
+          text = Path(sys.argv[1]).read_text()
+          statements = re.findall(r'(?ms)^\s*(?:net|inst)\s+.*?;', text)
+          selected = [item for item in statements if re.search(r'snes_rtc/[^"\n]*(?:dow_century_correction|dow_year_tmp)', item)]
+          print('Mapped NCD names only; source, sharing and routed effect require manual review.')
+          if not selected:
+              raise SystemExit('No named RTC arithmetic evidence; mapped effect inconclusive')
+          for item in selected:
+              print(item)
+          PY
+
+      - name: Confirm the native timing result
+        if: always() && steps.compile.outcome == 'success'
+        run: |
+          set -euo pipefail
+          grep -Eq 'Timing Score: 0 \(Setup: 0, Hold: 0' verilog/sd2snes_basex/main.par
+          grep -Eq 'Timing errors: 0[[:space:]]+Score: 0[[:space:]]+\(Setup/Max: 0, Hold: 0\)' verilog/sd2snes_basex/main.twr
+          echo 'Native PAR and TRACE explicitly report zero timing errors.'
+
+      - name: Upload reports, source differences and timing evidence without bitstreams
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: basex-rtc-century-seed-46
+          path: |
+            ${{ runner.temp }}/rtc-century-identity.txt
+            ${{ runner.temp }}/rtc-century-candidate.sha
+            ${{ runner.temp }}/rtc-century-build.log
+            ${{ runner.temp }}/rtc-century-post.diff
+            ${{ runner.temp }}/rtc-century-post-paths.txt
+            ${{ runner.temp }}/rtc-century-post-hashes.txt
+            ${{ runner.temp }}/rtc-century-ngc-hashes.txt
+            ${{ runner.temp }}/rtc-century-xdl.txt
+            verilog/sd2snes_basex/main.xst
+            verilog/sd2snes_basex/main.prj
+            verilog/sd2snes_basex/main.pcf
+            verilog/sd2snes_basex/sd2snes_basex.xise
+            verilog/sd2snes_basex/*.syr
+            verilog/sd2snes_basex/*.par
+            verilog/sd2snes_basex/*.mrp
+            verilog/sd2snes_basex/*.psr
+            verilog/sd2snes_basex/*.twr
+            verilog/sd2snes_basex/*.bld
+            verilog/sd2snes_basex/*.unroutes
+          if-no-files-found: error
+          retention-days: 14

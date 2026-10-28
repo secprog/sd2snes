@@ -1,0 +1,258 @@
+name: Compare DSPx event-write decoder
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: dsp-event-write-native-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  native:
+    name: DSPx event-write candidate, XST Speed MAP Area seed 68
+    runs-on: ubuntu-22.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download the independently inspected source-bound proof
+        uses: actions/download-artifact@v4
+        with:
+          name: dsp-event-write-proof
+          path: ${{ runner.temp }}/dsp-event-write-proof
+          repository: ${{ github.repository }}
+          run-id: 40710193946
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download the original DSPx timing report for comparison
+        uses: actions/download-artifact@v4
+        with:
+          name: dsp-stack-original-seed-68
+          path: ${{ runner.temp }}/dsp-event-original
+          repository: ${{ github.repository }}
+          run-id: 40524388250
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Select exactly the proved runner-only source
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD:verilog)" = 4e50365f59f38217b67c5126276873a29be737d5
+          test "$(git hash-object --no-filters .github/scripts/build.sh)" = 847665b375209d705de918d54f89cff194b074b1
+          test "$(git hash-object --no-filters .github/actions/prepare-build-image/action.yml)" = ac2a66fc24d4a15658b666cdc5f5db7964df4c3b
+          git diff --exit-code -- verilog .github/scripts/build.sh .github/actions/prepare-build-image/action.yml
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/main.v)" = cc6889c4f00f653b0df19184ec8c7d726df9d2c9
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/address.v)" = 45b2d274419eb5b1db0315ffb91b3862bb61a506
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/main.ucf)" = 4f34c4cf9e475ac171a216c3f15fff74918fd03c
+          test "$(git hash-object --no-filters verilog/sd2snes_dspx/sd2snes_dspx.xise)" = 2822b63c005bce73e8e7aaf332bcdbd983d1492d
+          test ! -e verilog/sd2snes_dspx/ucf.extra
+          proof="$RUNNER_TEMP/dsp-event-write-proof"
+          (cd "$proof" && sha256sum --check SHA256SUMS)
+          test -s "$proof/verified.txt"
+          for dir in aligned-binary aligned-xstate quiet-binary quiet-xstate pipeline-binary pipeline-xstate old-simple-binary bad-x-binary pipe-bad-x-binary; do
+            test -s "$proof/$dir/miter.json"
+            grep -F 'SAT proof finished - no model found: SUCCESS!' "$proof/$dir/proof.log"
+          done
+          for mode in binary xstate; do
+            for signal in first_relation_ok next_relation_ok initial_quiet first_quiet; do
+              dir="$proof/pipeline-truth-$signal-$mode"
+              test -s "$dir/model.json"
+              grep -F "Import proof-constraint: \\$signal = 1'1" "$dir/proof.log"
+              grep -F 'SAT proof finished - no model found: SUCCESS!' "$dir/proof.log"
+            done
+          done
+          for dir in bad-cc-bank-binary bad-pf-bank-binary bad-offset-binary bad-priority-binary bad-unlock-binary bad-strobe-binary old-simple-xstate bad-x-xstate quiet-bad-binary unaligned-binary pipe-bad-early-binary pipe-bad-local-binary pipe-bad-init-binary pipe-bad-x-xstate; do
+            test -s "$proof/$dir/miter.json"
+            test -s "$proof/$dir/counterexample.json"
+            grep -F 'SAT proof finished - model found: FAIL!' "$proof/$dir/proof.log"
+          done
+          cmp "$proof/original-main.v" verilog/sd2snes_dsp/main.v
+          cmp "$proof/original-address.v" verilog/sd2snes_dsp/address.v
+          test "$(git hash-object --no-filters "$proof/candidate-main.v")" = 30bb558c2f3b6cfd1d4394b708391fba3c586256
+          test "$(git hash-object --no-filters "$proof/candidate-address.v")" = 8c82a555961d07e33cdb8f31dbda4bd0438ac84d
+          cp "$proof/candidate-main.v" verilog/sd2snes_dsp/main.v
+          cp "$proof/candidate-address.v" verilog/sd2snes_dsp/address.v
+          expected=$(printf '%s\n' verilog/sd2snes_dsp/address.v verilog/sd2snes_dsp/main.v)
+          test "$(git diff --name-only -- verilog)" = "$expected"
+          {
+            printf 'Checkout: %s\nVerilog tree: %s\n' "$GITHUB_SHA" "$(git rev-parse HEAD:verilog)"
+            printf 'Proof run: 40710193946, candidate main: 30bb558c2f3b6cfd1d4394b708391fba3c586256, candidate address: 8c82a555961d07e33cdb8f31dbda4bd0438ac84d\n'
+            printf 'Original project: 2822b63c005bce73e8e7aaf332bcdbd983d1492d, original UCF: 4f34c4cf9e475ac171a216c3f15fff74918fd03c\n'
+            printf 'Diagnostic target: XST Speed, timing-driven MAP Area, PAR high, seed 68. No timing requirements changed.\n'
+          } | tee "$RUNNER_TEMP/dsp-event-write-identity.txt"
+
+      - uses: ./.github/actions/prepare-build-image
+        with:
+          target: mk2
+
+      - name: Compile with strict native PAR and TRACE checks
+        id: compile
+        env:
+          ISE_CTABLE: '68'
+        run: |
+          set -euo pipefail
+          image_id=$(docker image inspect sd2snes-ci:mk2 --format '{{.Id}}')
+          printf 'ISE image ID: %s\n' "$image_id" | tee -a "$RUNNER_TEMP/dsp-event-write-identity.txt"
+          test "$image_id" = sha256:5e3bbb00649997abca8843b1d82d8529eda99a0f2868d37ad9777e0ad5fd50e8
+          container_name=sd2snes-dsp-event-write
+          bash .github/scripts/report-activity.sh "$container_name" &
+          activity_pid=$!
+          trap 'kill "$activity_pid" 2>/dev/null || true; wait "$activity_pid" 2>/dev/null || true' EXIT
+          docker run --rm --name "$container_name" --user 0:0 \
+            --mac-address 08:00:27:68:c9:35 --env ISE_CTABLE \
+            --volume "$GITHUB_WORKSPACE:/work" --workdir /work \
+            --entrypoint /bin/bash sd2snes-ci:mk2 .github/scripts/build.sh mk2 dspx \
+            2>&1 | tee "$RUNNER_TEMP/dsp-event-write-build.log"
+
+      - name: Retain every tracked difference and generated IP hash
+        if: always() && steps.compile.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          git diff --no-ext-diff --no-renames --binary -- verilog > "$RUNNER_TEMP/dsp-event-write-post.diff"
+          git diff --no-ext-diff --no-renames --name-only -- verilog | tee "$RUNNER_TEMP/dsp-event-write-post-paths.txt"
+          for path in verilog/sd2snes_dsp/main.v verilog/sd2snes_dsp/address.v verilog/sd2snes_dsp/main.ucf verilog/sd2snes_dspx/sd2snes_dspx.xise; do
+            printf '%s %s\n' "$(git hash-object --no-filters "$path")" "$path"
+          done | tee "$RUNNER_TEMP/dsp-event-write-post-hashes.txt"
+          {
+            missing=0
+            for core in dac_buf msu_databuf snescmd_buf upd77c25_datram upd77c25_datrom upd77c25_pgmrom; do
+              file="verilog/sd2snes_dsp/ip/mk2/$core.ngc"
+              if [[ -s "$file" ]]; then sha256sum "$file"; else printf 'MISSING %s\n' "$file"; missing=1; fi
+            done
+            exit "$missing"
+          } | tee "$RUNNER_TEMP/dsp-event-write-ngc-hashes.txt"
+
+      - name: Verify candidate, project, constraints and all tracked inputs
+        if: always() && steps.compile.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/main.v)" = 30bb558c2f3b6cfd1d4394b708391fba3c586256
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/address.v)" = 8c82a555961d07e33cdb8f31dbda4bd0438ac84d
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/main.ucf)" = 4f34c4cf9e475ac171a216c3f15fff74918fd03c
+          test "$(git hash-object --no-filters verilog/sd2snes_dspx/sd2snes_dspx.xise)" = 2822b63c005bce73e8e7aaf332bcdbd983d1492d
+          expected=$(printf '%s\n' verilog/sd2snes_dsp/address.v verilog/sd2snes_dsp/main.v)
+          test "$(git diff --name-only -- verilog)" = "$expected"
+          echo 'Only the two proved candidates differ among tracked Verilog inputs.'
+
+      - name: Verify actual synthesis, map and route options
+        if: always() && steps.compile.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          grep -Fx -- '-opt_mode Speed' verilog/sd2snes_dspx/main.xst
+          python3 - "$RUNNER_TEMP/dsp-event-write-build.log" <<'PY'
+          import re
+          import shlex
+          import sys
+          from pathlib import Path
+          lines = Path(sys.argv[1]).read_text(errors="strict").splitlines()
+          for tool, expected in (
+              ("map", {"-logic_opt": "on", "-ol": "high", "-xe": "n", "-t": "68", "-register_duplication": "on", "-cm": "area"}),
+              ("par", {"-ol": "high", "-xe": "c", "-t": "68"}),
+          ):
+              commands = [line for line in lines if re.search(r"/" + tool + r"\s+-", line)]
+              if len(commands) != 1:
+                  raise SystemExit(f"Missing or ambiguous {tool} command")
+              args = shlex.split(commands[0].split(" || ", 1)[0].strip())
+              if tool == "map" and args.count("-timing") != 1:
+                  raise SystemExit("MAP is not explicitly timing-driven")
+              for flag, value in expected.items():
+                  if args.count(flag) != 1 or args.index(flag) + 1 >= len(args) or args[args.index(flag) + 1] != value:
+                      raise SystemExit(f"Unexpected {tool} option {flag}")
+              print(f"Verified {tool} command: {commands[0]}")
+          PY
+
+      - name: Compare all PCF period and jitter statements to the original run
+        if: always() && steps.compile.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          python3 - "$RUNNER_TEMP/dsp-event-original" verilog/sd2snes_dspx/main.pcf <<'PY'
+          import hashlib
+          import re
+          import sys
+          from pathlib import Path
+          originals = list(Path(sys.argv[1]).rglob('main.pcf'))
+          if len(originals) != 1:
+              raise SystemExit('Missing or ambiguous original PCF')
+          if hashlib.sha256(originals[0].read_bytes()).hexdigest() != '849380275e2d1c6116bfae918abfa8b2d0f57317a049c7fd09905bffe4762c2b':
+              raise SystemExit('Original PCF hash differs from the retained baseline report')
+          def timing(path):
+              lines = path.read_text().splitlines()
+              return [line.strip() for line in lines if re.match(r'^(SYSTEM_JITTER|TS_\S+\s*=)', line.strip())]
+          old, new = timing(originals[0]), timing(Path(sys.argv[2]))
+          if not old or old != new or 'SYSTEM_JITTER = 480 ps;' not in new:
+              raise SystemExit(f'PCF timing statements differ: old={old!r}, new={new!r}')
+          print('\n'.join(new))
+          PY
+
+      - name: Inspect mapped event-decoder evidence
+        if: always() && steps.compile.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          core=verilog/sd2snes_dspx
+          test -s "$core/main_map.ncd"
+          docker run --rm --user 0:0 --mac-address 08:00:27:68:c9:35 \
+            --volume "$GITHUB_WORKSPACE:/work" --workdir /work/verilog/sd2snes_dspx \
+            --entrypoint /bin/bash sd2snes-ci:mk2 -c \
+            'set -euo pipefail; xdl -ncd2xdl -nopips main_map.ncd dsp-event-write-audit.xdl'
+          python3 - "$core/dsp-event-write-audit.xdl" <<'PY' | tee "$RUNNER_TEMP/dsp-event-write-xdl.txt"
+          import re
+          import sys
+          from pathlib import Path
+          text = Path(sys.argv[1]).read_text()
+          statements = re.findall(r'(?ms)^\s*(?:net|inst)\s+.*?;', text)
+          selected = [item for item in statements if re.search(r'cc_wr_hit_fast|cc_sel|cc_tm_sec', item)]
+          print('Mapped NCD names only; actual effect and routed timing need independent review.')
+          if not selected:
+              raise SystemExit('No mapped event-decoder evidence; result is inconclusive')
+          for item in selected:
+              print(item)
+          if not any('cc_wr_hit_fast' in item for item in selected):
+              raise SystemExit('No named fast decoder in mapped XDL; mapping is inconclusive')
+          PY
+
+      - name: Confirm the native timing result
+        if: always() && steps.compile.outcome == 'success'
+        run: |
+          set -euo pipefail
+          grep -Eq 'Timing Score: 0 \(Setup: 0, Hold: 0' verilog/sd2snes_dspx/main.par
+          grep -Eq 'Timing errors: 0[[:space:]]+Score: 0[[:space:]]+\(Setup/Max: 0, Hold: 0\)' verilog/sd2snes_dspx/main.twr
+          echo 'Native PAR and TRACE explicitly report zero timing errors.'
+
+      - name: Upload small reports and source differences
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsp-event-write-seed-68-reports
+          path: |
+            ${{ runner.temp }}/dsp-event-write-identity.txt
+            ${{ runner.temp }}/dsp-event-write-build.log
+            ${{ runner.temp }}/dsp-event-write-post.diff
+            ${{ runner.temp }}/dsp-event-write-post-paths.txt
+            ${{ runner.temp }}/dsp-event-write-post-hashes.txt
+            ${{ runner.temp }}/dsp-event-write-ngc-hashes.txt
+            ${{ runner.temp }}/dsp-event-write-xdl.txt
+            verilog/sd2snes_dspx/main.xst
+            verilog/sd2snes_dspx/main.prj
+            verilog/sd2snes_dspx/main.pcf
+            verilog/sd2snes_dspx/sd2snes_dspx.xise
+            verilog/sd2snes_dspx/*.syr
+            verilog/sd2snes_dspx/*.par
+            verilog/sd2snes_dspx/*.mrp
+            verilog/sd2snes_dspx/*.psr
+            verilog/sd2snes_dspx/*.twr
+            verilog/sd2snes_dspx/*.bld
+            verilog/sd2snes_dspx/*.unroutes
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Retain the mapped NCD separately on GitHub
+        if: always() && steps.compile.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsp-event-write-seed-68-mapped-ncd
+          path: verilog/sd2snes_dspx/main_map.ncd
+          if-no-files-found: error
+          retention-days: 14

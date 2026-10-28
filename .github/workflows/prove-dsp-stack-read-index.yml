@@ -1,0 +1,116 @@
+name: Prove DSPx stack read-index experiment
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dsp-stack-read-index-proof-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  prove:
+    name: Prove stack transitions and both reads with binary and X-state inputs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Prepare pinned original and runner-only candidate
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD:verilog)" = 4e50365f59f38217b67c5126276873a29be737d5
+          git diff --exit-code -- verilog
+          python3 .github/scripts/prepare-dsp-stack-read-index-proof.py \
+            verilog/sd2snes_dsp/upd77c25.v "$RUNNER_TEMP/stack-read-index-proof"
+
+      - name: Install and identify the formal tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends yosys
+          yosys -V | tee "$RUNNER_TEMP/stack-read-index-proof/tool-version.txt"
+          grep -F 'Yosys 0.33 (git sha1 2584903a060)' "$RUNNER_TEMP/stack-read-index-proof/tool-version.txt"
+
+      - name: Audit every state bit and prepare the strict transition models
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/stack-read-index-proof"
+          sha256sum --check SHA256SUMS
+          variants=(gold gate bad-read-offset bad-read-slice bad-lane bad-data bad-freeze bad-return bad-x-simple bad-x-high bad-x-low bad-x-write-guard bad-x-write-data)
+          for variant in "${variants[@]}"; do
+            mkdir "$variant"
+            cp "$variant.v" "$variant/model.v"
+            (
+              cd "$variant"
+              # Keep X distinctions through proc and memory lowering. In
+              # particular, do not run opt_expr or the general memory pipeline.
+              yosys -l preparation.log -p 'read_verilog -sv -formal model.v; hierarchy -check -top stack_model; flatten; proc -ifx -noopt; check -assert; memory_memx; memory_collect; memory_map; dffunmap; setundef -undriven -undef; opt_clean; check -assert; write_json state.json'
+              model_name=gate
+              if [[ "$variant" == gold ]]; then model_name=gold; fi
+              python3 "$GITHUB_WORKSPACE/.github/scripts/cut-dsp-stack-case-state.py" \
+                state.json transition.json "$model_name" | tee state-audit.log
+              yosys -l state-view.log -p "read_json transition.json; hierarchy -check -top $model_name; sat -verify -enable_undef -prove state_view_ok 1 -show-inputs -show state_view_ok -timeout 120"
+              grep -F 'SAT proof finished - no model found: SUCCESS!' state-view.log
+              if [[ "$variant" == gold ]]; then
+                result=0
+                yosys -l state-view-mutant.log -p 'read_json state-view-mutant.json; hierarchy -check -top gold; sat -verify -enable_undef -set-def-inputs -prove state_view_ok 1 -show-inputs -show state_view_ok -dump_json state-view-mutant-counterexample.json -timeout 120' || result=$?
+                test "$result" -ne 0
+                grep -F 'SAT proof finished - model found: FAIL!' state-view-mutant.log
+                test -s state-view-mutant-counterexample.json
+              fi
+            )
+          done
+
+      - name: Prove binary and X-state boundaries and reject real mutations
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/stack-read-index-proof"
+          for mode in binary xstate; do
+            if [[ "$mode" == binary ]]; then
+              variants=(gate bad-read-offset bad-read-slice bad-lane bad-data bad-freeze bad-return bad-x-simple bad-x-high bad-x-low bad-x-write-guard bad-x-write-data)
+              input_flags='-set-def-inputs'
+            else
+              variants=(bad-x-simple bad-x-high bad-x-low bad-x-write-guard bad-x-write-data gate)
+              input_flags=''
+            fi
+            for variant in "${variants[@]}"; do
+              cat > "$variant/prove-$mode.ys" <<YOSYS
+          read_json ../gold/transition.json
+          read_json transition.json
+          miter -equiv -make_assert -make_outputs -make_outcmp gold gate miter
+          hierarchy -check -top miter
+          flatten -wb
+          hierarchy -check -top miter
+          opt_clean
+          check -assert
+          write_json miter-$mode.json
+          sat -verify -enable_undef $input_flags -prove-asserts -show-inputs -show-outputs -dump_json counterexample-$mode.json -timeout 300
+          YOSYS
+              result=0
+              (cd "$variant" && yosys -l "proof-$mode.log" -s "prove-$mode.ys") || result=$?
+              test -s "$variant/miter-$mode.json"
+              if [[ "$variant" == gate || ( "$variant" == bad-x-* && "$mode" == binary ) ]]; then
+                test "$result" -eq 0
+                grep -F 'SAT proof finished - no model found: SUCCESS!' "$variant/proof-$mode.log"
+              else
+                test "$result" -ne 0
+                grep -F 'SAT proof finished - model found: FAIL!' "$variant/proof-$mode.log"
+                test -s "$variant/counterexample-$mode.json"
+              fi
+            done
+          done
+          sha256sum --check SHA256SUMS
+          printf 'All 176 stack transitions and both reads match in the binary and Yosys-X component models; six binary mutants and five binary-equivalent X controls produced counterexamples. This is not a whole-FPGA, timing or hardware proof.\n' \
+            | tee verified.txt >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload exact proof sources, miters, audits and counterexamples
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsp-stack-read-index-proof
+          path: ${{ runner.temp }}/stack-read-index-proof/
+          if-no-files-found: error
+          retention-days: 14

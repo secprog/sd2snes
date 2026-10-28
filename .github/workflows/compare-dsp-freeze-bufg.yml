@@ -1,0 +1,258 @@
+name: Compare DSPx freeze global-buffer experiment
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: dsp-freeze-bufg-native-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  inspector-guard:
+    name: Check the mapped-buffer inspector against synthetic controls
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - run: python3 .github/scripts/inspect-dsp-freeze-bufg.py --self-check
+
+  native:
+    name: DSPx proved freeze buffer, original Speed and Area seed 68
+    needs: inspector-guard
+    runs-on: ubuntu-22.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download the independently reviewed proof
+        uses: actions/download-artifact@v4
+        with:
+          name: dsp-freeze-bufg-proof
+          path: ${{ runner.temp }}/dsp-freeze-bufg-proof
+          run-id: 40772985239
+          github-token: ${{ github.token }}
+
+      - name: Download the original timing report
+        uses: actions/download-artifact@v4
+        with:
+          name: dsp-stack-original-seed-68
+          path: ${{ runner.temp }}/dsp-freeze-bufg-original
+          run-id: 40524388250
+          github-token: ${{ github.token }}
+
+      - name: Select exactly the proved runner-only source
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD:verilog)" = 4e50365f59f38217b67c5126276873a29be737d5
+          test "$(git hash-object --no-filters .github/scripts/build.sh)" = 847665b375209d705de918d54f89cff194b074b1
+          test "$(git hash-object --no-filters .github/actions/prepare-build-image/action.yml)" = ac2a66fc24d4a15658b666cdc5f5db7964df4c3b
+          git diff --exit-code
+          git diff --cached --exit-code
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/upd77c25.v)" = ba14f5b6dd198fbb5645f005fb3784890beec2c4
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/main.v)" = cc6889c4f00f653b0df19184ec8c7d726df9d2c9
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/main.ucf)" = 4f34c4cf9e475ac171a216c3f15fff74918fd03c
+          test "$(git hash-object --no-filters verilog/sd2snes_dspx/sd2snes_dspx.xise)" = 2822b63c005bce73e8e7aaf332bcdbd983d1492d
+          test ! -e verilog/sd2snes_dspx/ucf.extra
+          proof="$RUNNER_TEMP/dsp-freeze-bufg-proof"
+          (cd "$proof" && sha256sum --check SHA256SUMS)
+          test -s "$proof/verified.txt"
+          test -s "$proof/action-verified.txt"
+          grep -F 'Yosys 0.33 (git sha1 2584903a060)' "$proof/tool-version.txt"
+          test "$(sha256sum "$proof/candidate-upd77c25.v" | cut -d' ' -f1)" = 4d399d2531f33368d9eee16864ad7f5436002a507d8fac680ff3821a9cf092f3
+          test "$(git hash-object --no-filters "$proof/candidate-upd77c25.v")" = eef02c2873b96c257d271e297dfbe965d2d4ea4e
+          test "$(sha256sum "$proof/gold.v" | cut -d' ' -f1)" = cf3cae1c50e7a7e87b1cf2ae8aad607c805d22dc07f18427846eac3da6dc6e20
+          test "$(sha256sum "$proof/gate.v" | cut -d' ' -f1)" = 47097a8c2325d903df5054ab556bc2475ddd3b19b9cf9e1592a767a9a66449fc
+          for mode in binary xstate; do
+            test "$(sha256sum "$proof/gate/miter-$mode.json" | cut -d' ' -f1)" = 4d9d644444275b9731d2336cab73e6f545a7fdfa8e84a891bf72997cfa7a7ac0
+            grep -F 'SAT proof finished - no model found: SUCCESS!' "$proof/gate/proof-$mode.log"
+          done
+          for variant in bad-invert bad-stuck bad-run0 bad-run1 bad-run2 bad-run3 bad-restore0 bad-restore1 bad-restore2 bad-restore3; do
+            test -s "$proof/$variant/counterexample-binary.json"
+            grep -F 'SAT proof finished - model found: FAIL!' "$proof/$variant/proof-binary.log"
+          done
+          grep -F 'SAT proof finished - no model found: SUCCESS!' "$proof/bad-x-buffer/proof-binary.log"
+          grep -F 'SAT proof finished - model found: FAIL!' "$proof/bad-x-buffer/proof-xstate.log"
+          test -s "$proof/bad-x-buffer/counterexample-xstate.json"
+          for variant in bad-invert bad-stuck bad-run0 bad-run1 bad-run2 bad-run3 bad-restore0 bad-restore1 bad-restore2 bad-restore3 bad-x-buffer; do
+            test -s "$proof/$variant/counterexample-action.json"
+            test -s "$proof/$variant/miter-action.json"
+            grep -F -- '-set in_RST 1 -set cmp_action 0' "$proof/$variant/prove-action.ys"
+            grep -F 'SAT proof finished - model found: FAIL!' "$proof/$variant/proof-action.log"
+          done
+          cmp "$proof/original-upd77c25.v" verilog/sd2snes_dsp/upd77c25.v
+          cp "$proof/candidate-upd77c25.v" verilog/sd2snes_dsp/upd77c25.v
+          test "$(git diff --name-only)" = verilog/sd2snes_dsp/upd77c25.v
+          git diff --cached --exit-code
+          {
+            printf 'Checkout: %s\nVerilog tree: %s\n' "$GITHUB_SHA" "$(git rev-parse HEAD:verilog)"
+            printf 'Proof run 40772985239; candidate blob eef02c2873b96c257d271e297dfbe965d2d4ea4e\n'
+            printf 'Original XST Speed, timing-driven MAP Area -xe n, PAR -xe c, seed 68; UCF unchanged.\n'
+          } | tee "$RUNNER_TEMP/dsp-freeze-bufg-identity.txt"
+
+      - uses: ./.github/actions/prepare-build-image
+        with:
+          target: mk2
+
+      - name: Compile with strict native PAR and TRACE checks
+        id: compile
+        env:
+          ISE_CTABLE: '68'
+        run: |
+          set -euo pipefail
+          image_id=$(docker image inspect sd2snes-ci:mk2 --format '{{.Id}}')
+          printf 'ISE image ID: %s\n' "$image_id" | tee -a "$RUNNER_TEMP/dsp-freeze-bufg-identity.txt"
+          test "$image_id" = sha256:5e3bbb00649997abca8843b1d82d8529eda99a0f2868d37ad9777e0ad5fd50e8
+          container_name=sd2snes-dsp-freeze-bufg
+          bash .github/scripts/report-activity.sh "$container_name" &
+          activity_pid=$!
+          trap 'kill "$activity_pid" 2>/dev/null || true; wait "$activity_pid" 2>/dev/null || true' EXIT
+          docker run --rm --name "$container_name" --user 0:0 \
+            --mac-address 08:00:27:68:c9:35 --env ISE_CTABLE \
+            --volume "$GITHUB_WORKSPACE:/work" --workdir /work \
+            --entrypoint /bin/bash sd2snes-ci:mk2 .github/scripts/build.sh mk2 dspx \
+            2>&1 | tee "$RUNNER_TEMP/dsp-freeze-bufg-build.log"
+
+      - name: Retain every tracked difference and generated IP hash
+        if: always() && steps.compile.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          git diff --no-ext-diff --no-renames --binary > "$RUNNER_TEMP/dsp-freeze-bufg-post.diff"
+          git diff --no-ext-diff --no-renames --name-only | tee "$RUNNER_TEMP/dsp-freeze-bufg-post-paths.txt"
+          git diff --cached --no-ext-diff --no-renames --binary > "$RUNNER_TEMP/dsp-freeze-bufg-post-staged.diff"
+          for path in verilog/sd2snes_dsp/upd77c25.v verilog/sd2snes_dsp/main.v verilog/sd2snes_dsp/main.ucf verilog/sd2snes_dspx/sd2snes_dspx.xise; do
+            printf '%s %s\n' "$(git hash-object --no-filters "$path")" "$path"
+          done | tee "$RUNNER_TEMP/dsp-freeze-bufg-post-hashes.txt"
+          {
+            missing=0
+            for core in dac_buf msu_databuf snescmd_buf upd77c25_datram upd77c25_datrom upd77c25_pgmrom; do
+              file="verilog/sd2snes_dsp/ip/mk2/$core.ngc"
+              if [[ -s "$file" ]]; then sha256sum "$file"; else printf 'MISSING %s\n' "$file"; missing=1; fi
+            done
+            exit "$missing"
+          } | tee "$RUNNER_TEMP/dsp-freeze-bufg-ngc-hashes.txt"
+
+      - name: Verify candidate, project, constraints and all tracked inputs
+        if: always() && steps.compile.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/upd77c25.v)" = eef02c2873b96c257d271e297dfbe965d2d4ea4e
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/main.v)" = cc6889c4f00f653b0df19184ec8c7d726df9d2c9
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/main.ucf)" = 4f34c4cf9e475ac171a216c3f15fff74918fd03c
+          test "$(git hash-object --no-filters verilog/sd2snes_dspx/sd2snes_dspx.xise)" = 2822b63c005bce73e8e7aaf332bcdbd983d1492d
+          test "$(git diff --name-only)" = verilog/sd2snes_dsp/upd77c25.v
+          git diff --cached --exit-code
+          echo 'Only the proved candidate differs among all tracked inputs.'
+
+      - name: Verify actual synthesis, map and route options
+        if: always() && steps.compile.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          grep -Fx -- '-opt_mode Speed' verilog/sd2snes_dspx/main.xst
+          grep -Fx -- '-define { MK2 DSP_COMP }' verilog/sd2snes_dspx/main.xst
+          grep -Fx -- '-register_balancing Yes' verilog/sd2snes_dspx/main.xst
+          grep -Fx -- '-resource_sharing Yes' verilog/sd2snes_dspx/main.xst
+          python3 - "$RUNNER_TEMP/dsp-freeze-bufg-build.log" <<'PY'
+          import re, shlex, sys
+          from pathlib import Path
+          lines = Path(sys.argv[1]).read_text(errors='strict').splitlines()
+          for tool, expected in (
+              ('map', {'-logic_opt':'on','-ol':'high','-xe':'n','-t':'68','-register_duplication':'on','-cm':'area'}),
+              ('par', {'-ol':'high','-xe':'c','-t':'68'}),
+          ):
+              commands = [line for line in lines if re.search(r'/' + tool + r'\s+-', line)]
+              if len(commands) != 1:
+                  raise SystemExit(f'Missing or ambiguous {tool} command')
+              args = shlex.split(commands[0].split(' || ', 1)[0].strip())
+              if tool == 'map' and args.count('-timing') != 1:
+                  raise SystemExit('MAP is not explicitly timing-driven')
+              for flag, value in expected.items():
+                  if args.count(flag) != 1 or args.index(flag) + 1 >= len(args) or args[args.index(flag) + 1] != value:
+                      raise SystemExit(f'Unexpected {tool} option {flag}')
+              print(f'Verified {tool} command: {commands[0]}')
+          PY
+
+      - name: Compare PCF period and jitter statements with the original run
+        if: always() && steps.compile.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          python3 - "$RUNNER_TEMP/dsp-freeze-bufg-original" verilog/sd2snes_dspx/main.pcf <<'PY'
+          import hashlib, re, sys
+          from pathlib import Path
+          originals = list(Path(sys.argv[1]).rglob('main.pcf'))
+          if len(originals) != 1 or hashlib.sha256(originals[0].read_bytes()).hexdigest() != '849380275e2d1c6116bfae918abfa8b2d0f57317a049c7fd09905bffe4762c2b':
+              raise SystemExit('Missing, ambiguous or changed original PCF')
+          def timing(path):
+              return [line.strip() for line in path.read_text().splitlines()
+                      if re.match(r'^(SYSTEM_JITTER|TS_\S+\s*=)', line.strip())]
+          old, new = timing(originals[0]), timing(Path(sys.argv[2]))
+          if not old or old != new or 'SYSTEM_JITTER = 480 ps;' not in new:
+              raise SystemExit(f'PCF timing statements differ: old={old!r}, new={new!r}')
+          print('\n'.join(new))
+          PY
+
+      - name: Inspect the candidate mapped freeze buffer
+        if: always() && steps.compile.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          core=verilog/sd2snes_dspx
+          test -s "$core/main_map.ncd"
+          sha256sum "$core/main_map.ncd" | tee "$RUNNER_TEMP/dsp-freeze-bufg-map-sha256.txt"
+          docker run --rm --user 0:0 --mac-address 08:00:27:68:c9:35 \
+            --volume "$GITHUB_WORKSPACE:/work" --workdir /work/verilog/sd2snes_dspx \
+            --entrypoint /bin/bash sd2snes-ci:mk2 -c \
+            'set -euo pipefail; xdl -ncd2xdl -nopips main_map.ncd freeze-bufg-audit.xdl'
+          sha256sum --check "$RUNNER_TEMP/dsp-freeze-bufg-map-sha256.txt"
+          python3 .github/scripts/inspect-dsp-freeze-bufg.py "$core/freeze-bufg-audit.xdl" \
+            | tee "$RUNNER_TEMP/dsp-freeze-bufg-xdl.txt"
+          grep -inE 'dspx_freeze_bufg|ss_frozen.*balanced|balanced.*ss_frozen' "$core/main.syr" \
+            | tee "$RUNNER_TEMP/dsp-freeze-bufg-synthesis.txt"
+
+      - name: Confirm the native timing result
+        if: always() && steps.compile.outcome == 'success'
+        run: |
+          set -euo pipefail
+          grep -Eq 'Timing Score: 0 \(Setup: 0, Hold: 0' verilog/sd2snes_dspx/main.par
+          grep -Eq 'Timing errors: 0[[:space:]]+Score: 0[[:space:]]+\(Setup/Max: 0, Hold: 0\)' verilog/sd2snes_dspx/main.twr
+          echo 'Native PAR and TRACE explicitly report zero timing errors; inspect path coverage separately.'
+
+      - name: Upload small reports and source differences
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsp-freeze-bufg-seed-68-reports
+          path: |
+            ${{ runner.temp }}/dsp-freeze-bufg-identity.txt
+            ${{ runner.temp }}/dsp-freeze-bufg-build.log
+            ${{ runner.temp }}/dsp-freeze-bufg-post.diff
+            ${{ runner.temp }}/dsp-freeze-bufg-post-staged.diff
+            ${{ runner.temp }}/dsp-freeze-bufg-post-paths.txt
+            ${{ runner.temp }}/dsp-freeze-bufg-post-hashes.txt
+            ${{ runner.temp }}/dsp-freeze-bufg-ngc-hashes.txt
+            ${{ runner.temp }}/dsp-freeze-bufg-map-sha256.txt
+            ${{ runner.temp }}/dsp-freeze-bufg-synthesis.txt
+            ${{ runner.temp }}/dsp-freeze-bufg-xdl.txt
+            verilog/sd2snes_dspx/main.xst
+            verilog/sd2snes_dspx/main.prj
+            verilog/sd2snes_dspx/main.pcf
+            verilog/sd2snes_dspx/sd2snes_dspx.xise
+            verilog/sd2snes_dspx/*.syr
+            verilog/sd2snes_dspx/*.par
+            verilog/sd2snes_dspx/*.mrp
+            verilog/sd2snes_dspx/*.psr
+            verilog/sd2snes_dspx/*.twr
+            verilog/sd2snes_dspx/*.bld
+            verilog/sd2snes_dspx/*.unroutes
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Retain the mapped NCD separately on GitHub
+        if: always() && steps.compile.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsp-freeze-bufg-seed-68-mapped-ncd
+          path: verilog/sd2snes_dspx/main_map.ncd
+          if-no-files-found: error
+          retention-days: 14

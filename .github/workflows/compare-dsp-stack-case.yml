@@ -48,8 +48,17 @@ jobs:
               yosys -l preparation.log -p 'read_verilog -sv -formal model.v; hierarchy -check -top stack_model; flatten; proc -ifx -noopt; check -assert; memory_memx; memory_collect; memory_map; dffunmap; setundef -undriven -undef; opt_clean; check -assert; write_json state.json'
               model_name=gate
               if [[ "$variant" == gold ]]; then model_name=gold; fi
-              python3 "$GITHUB_WORKSPACE/.github/scripts/cut-dsp-stack-state.py" \
+              python3 "$GITHUB_WORKSPACE/.github/scripts/cut-dsp-stack-case-state.py" \
                 state.json transition.json "$model_name" | tee state-audit.log
+              yosys -l state-view.log -p "read_json transition.json; hierarchy -check -top $model_name; sat -verify -enable_undef -prove state_view_ok 1 -show-inputs -show state_view_ok -timeout 120"
+              grep -F 'SAT proof finished - no model found: SUCCESS!' state-view.log
+              if [[ "$variant" == gold ]]; then
+                result=0
+                yosys -l state-view-mutant.log -p 'read_json state-view-mutant.json; hierarchy -check -top gold; sat -verify -enable_undef -set-def-inputs -prove state_view_ok 1 -show-inputs -show state_view_ok -dump_json state-view-mutant-counterexample.json -timeout 120' || result=$?
+                test "$result" -ne 0
+                grep -F 'SAT proof finished - model found: FAIL!' state-view-mutant.log
+                test -s state-view-mutant-counterexample.json
+              fi
             )
           done
 

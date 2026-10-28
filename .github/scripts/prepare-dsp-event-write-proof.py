@@ -245,7 +245,7 @@ def main():
     mutations = {
         "bad-cc-bank": ("? (SNES_ADDR[23:20] == 4'hE)", "? (SNES_ADDR[23:20] == 4'hF)"),
         "bad-pf-bank": ("== 4'h2) | (SNES_ADDR[23:20] == 4'hA", "== 4'h3) | (SNES_ADDR[23:20] == 4'hA"),
-        "bad-offset": ("& (SNES_ADDR[15:13] == 3'b011))\n                : 1'b0);\nwire cc_wr_hit", "& (SNES_ADDR[15:13] == 3'b010))\n                : 1'b0);\nwire cc_wr_hit"),
+        "bad-offset": ("& (SNES_ADDR[15:13] == 3'b011))\n                : 1'b0);\nwire cc_wr_hit =", "& (SNES_ADDR[15:13] == 3'b010))\n                : 1'b0);\nwire cc_wr_hit ="),
         "bad-priority": ("wire cc_wr_hit_fast = ~cc_unlocked\n              & (EV_CC92", "wire cc_wr_hit_fast = ~cc_unlocked\n              & (EV_PF94"),
         "bad-unlock": ("wire cc_wr_hit_fast = ~cc_unlocked", "wire cc_wr_hit_fast = 1'b1"),
         "bad-strobe": ("assign write_enable = SNES_WR_end & cc_wr_hit;", "assign write_enable = ~SNES_WR_end & cc_wr_hit;"),

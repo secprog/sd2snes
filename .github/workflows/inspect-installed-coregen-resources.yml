@@ -1,0 +1,92 @@
+name: Inspect installed CoreGen support resources
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: installed-coregen-resources-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    name: Read pinned CoreGen launcher and support-file inventory
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Pin original source and image preparation
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD:verilog)" = 4e50365f59f38217b67c5126276873a29be737d5
+          test "$(git hash-object --no-filters .github/actions/prepare-build-image/action.yml)" = ac2a66fc24d4a15658b666cdc5f5db7964df4c3b
+          test "$(git hash-object --no-filters verilog/common.mk)" = 1dd382cd82f2fdd56391dc8245d0782a6b356402
+          git diff --exit-code
+          git diff --cached --exit-code
+
+      - uses: ./.github/actions/prepare-build-image
+        with:
+          target: mk2
+
+      - name: Inventory support resources without opening a project or invoking CoreGen
+        run: |
+          set -euo pipefail
+          image=$(docker image inspect sd2snes-ci:mk2 --format '{{.Id}}')
+          test "$image" = sha256:5e3bbb00649997abca8843b1d82d8529eda99a0f2868d37ad9777e0ad5fd50e8
+          report="$RUNNER_TEMP/coregen-resources"
+          mkdir -p "$report"
+          printf 'Checkout: %s\nISE image: %s\n' "$GITHUB_SHA" "$image" | tee "$report/identity.txt"
+          docker run --rm --read-only --network none --user 0:0 \
+            --volume "$report:/output" --workdir /output \
+            --entrypoint /bin/bash sd2snes-ci:mk2 -c '
+              set -euo pipefail
+              root=/opt/Xilinx/14.7/ISE_DS/ISE
+              launcher="$root/bin/lin64/coregen"
+              test -f "$launcher"
+              resolved=$(readlink -f "$launcher")
+              case "$resolved" in "$root/"*) ;; *) echo "Launcher resolves outside the pinned ISE tree" >&2; exit 1 ;; esac
+              echo "40933f8897391e7cf16b0c3cfad27f37ce45ce4b8444e4d7c142e2b8eb460202  $launcher" | sha256sum --check
+              sha256sum "$launcher" > /output/launcher.sha256
+              stat --format="%F %s bytes %n" "$launcher" > /output/launcher-kind.txt
+              readlink -f "$launcher" >> /output/launcher-kind.txt
+              # Read only a bounded text launcher, never binary contents.
+              if LC_ALL=C grep -Iq . "$launcher"; then
+                test "$(stat -L --format=%s "$launcher")" -le 262144
+                cat "$launcher" > /output/launcher.txt
+              else
+                printf "%s\n" "Launcher is binary; contents not exported." > /output/launcher.txt
+              fi
+              # Locate actual directories before choosing any resource to inspect.
+              # Do not follow symlinks or read licenses, user preferences, projects,
+              # IP configurations, Java archives, or arbitrary vendor source.
+              find "$root" -maxdepth 2 -type d -printf "%p\n" | LC_ALL=C sort > /output/directories.txt
+              test "$(wc -l < /output/directories.txt)" -le 1000
+              find "$root" -maxdepth 4 -type f \
+                \( -iname "*coregen*" -o -iname "cgn_*" -o -iname "*.prf" \) \
+                -printf "%s bytes %p\n" | LC_ALL=C sort > /output/support-files.txt
+              test "$(wc -l < /output/support-files.txt)" -le 2000
+              test "$(wc -c < /output/directories.txt)" -le 262144
+              test "$(wc -c < /output/support-files.txt)" -le 524288
+              printf "%s\n" "Read-only support-file discovery only. CoreGen was not invoked; no project/configuration input was mounted. No no-write capability, input equivalence, FPGA implementation or timing result established." > /output/limits.txt
+              cat /output/launcher-kind.txt /output/launcher.txt /output/directories.txt /output/support-files.txt /output/limits.txt
+            ' 2>&1 | tee "$report/inspection.log"
+          test "$(du -sb "$report" | cut -f1)" -le 2000000
+
+      - name: Require unchanged tracked and staged files
+        if: always()
+        run: |
+          set -euo pipefail
+          git diff --exit-code
+          git diff --cached --exit-code
+
+      - name: Retain small text discovery reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: installed-coregen-support-resources
+          path: ${{ runner.temp }}/coregen-resources/
+          if-no-files-found: error
+          retention-days: 14

@@ -28,13 +28,20 @@ SELECT = """assign cc_sel = ~cc_unlocked
                    |(SNES_ADDR[23:20] == 4'h9) | (SNES_ADDR[23:20] == 4'hA))
                   & (SNES_ADDR[15:13] == 3'b011))
                 : 1'b0);"""
-FAST = """assign cc_wr_hit_fast = ~cc_unlocked
+FAST_SIMPLE = """assign cc_wr_hit_fast = ~cc_unlocked
               & (EV_CC92
                 ? (SNES_ADDR[23:20] == 4'hE)
                 : EV_PF94
                 ? (((SNES_ADDR[23:20] == 4'h2) | (SNES_ADDR[23:20] == 4'hA))
                   & (SNES_ADDR[15:13] == 3'b011))
                 : 1'b0);"""
+# Retain the X-valued contribution of the status-bank term.  It is zero for
+# binary address bits, but must not be dropped from the component X proof.
+FAST = FAST_SIMPLE.replace(
+    "                : 1'b0);",
+    "                : 1'b0)\n              | (cc_sel & SNES_ADDR[21] & ~SNES_ADDR[21]);",
+    1,
+)
 GUARD_OPEN = "`ifdef MK2\n`ifdef DSP_COMP\n`ifndef DSP_LEAN\n"
 GUARD_CLOSE = "`endif\n`endif\n`endif\n"
 PORT = "  output cc_sel,            // event cart select/status register window\n"
@@ -112,7 +119,7 @@ def configured(text, initial):
     return "".join(output)
 
 
-def boundary_model(name, variant, alignment):
+def boundary_model(name, variant, alignment, fast_assignment=FAST):
     # In aligned mode main's bit is the same actual 3-valued address bit.
     # Quiet mode leaves the two address states independent and forces only
     # the startup strobe to its separately proved value of zero.
@@ -120,7 +127,7 @@ def boundary_model(name, variant, alignment):
         raise SystemExit("Unknown projection")
     main_bit = "SNES_ADDR[21]" if alignment == "aligned" else "main_addr21"
     strobe = "1'b0" if alignment == "quiet" else "write_strobe"
-    fast = FAST.replace("assign cc_wr_hit_fast", "wire cc_wr_hit_fast", 1)
+    fast = fast_assignment.replace("assign cc_wr_hit_fast", "wire cc_wr_hit_fast", 1)
     hit = "cc_sel & main_addr_bit" if variant == "gold" else "cc_wr_hit_fast"
     return f"""module {name}(
   input [23:0] address_bits, input main_addr21, input [15:0] featurebits,
@@ -175,6 +182,9 @@ def main():
     if len(sys.argv) != 3:
         raise SystemExit("usage: prepare-dsp-event-write-proof.py SOURCE_DIR OUTPUT_DIR")
     source_dir, output = map(Path, sys.argv[1:])
+    unique(FAST_SIMPLE, "                : 1'b0);")
+    if FAST == FAST_SIMPLE:
+        raise SystemExit("X-sensitive status-bank correction was not added")
     main_source = read_pinned(source_dir / "main.v")
     address = read_pinned(source_dir / "address.v")
     for fragment in (PORT, UNLOCK, SELECT, LOCAL_ADDR, "  FEAT_CC92 = 14,",
@@ -245,7 +255,7 @@ def main():
     mutations = {
         "bad-cc-bank": ("? (SNES_ADDR[23:20] == 4'hE)", "? (SNES_ADDR[23:20] == 4'hF)"),
         "bad-pf-bank": ("== 4'h2) | (SNES_ADDR[23:20] == 4'hA", "== 4'h3) | (SNES_ADDR[23:20] == 4'hA"),
-        "bad-offset": ("& (SNES_ADDR[15:13] == 3'b011))\n                : 1'b0);\nwire cc_wr_hit =", "& (SNES_ADDR[15:13] == 3'b010))\n                : 1'b0);\nwire cc_wr_hit ="),
+        "bad-offset": ("& (SNES_ADDR[15:13] == 3'b011))\n                : 1'b0)\n              | (cc_sel", "& (SNES_ADDR[15:13] == 3'b010))\n                : 1'b0)\n              | (cc_sel"),
         "bad-priority": ("wire cc_wr_hit_fast = ~cc_unlocked\n              & (EV_CC92", "wire cc_wr_hit_fast = ~cc_unlocked\n              & (EV_PF94"),
         "bad-unlock": ("wire cc_wr_hit_fast = ~cc_unlocked", "wire cc_wr_hit_fast = 1'b1"),
         "bad-strobe": ("assign write_enable = SNES_WR_end & cc_wr_hit;", "assign write_enable = ~SNES_WR_end & cc_wr_hit;"),
@@ -266,6 +276,7 @@ def main():
         "original-main.v": main_source, "candidate-main.v": new_main,
         "original-address.v": address, "candidate-address.v": new_address,
         "gold.v": gold, "gate.v": gate,
+        "old-simple.v": boundary_model("gate", "gate", "aligned", FAST_SIMPLE),
         "quiet-gold.v": boundary_model("gold", "gold", "quiet"),
         "quiet-gate.v": quiet_gate,
         "unaligned-gold.v": boundary_model("gold", "gold", "unaligned"),

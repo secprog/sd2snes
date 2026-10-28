@@ -100,6 +100,8 @@ jobs:
           for variant in bad-cc-bank bad-pf-bank bad-offset bad-priority bad-unlock bad-strobe; do
             prove_case "$variant" gold.v "$variant.v" binary fail
           done
+          prove_case old-simple gold.v old-simple.v binary pass
+          prove_case old-simple gold.v old-simple.v xstate fail
           prove_case bad-x gold.v bad-x.v binary pass
           prove_case bad-x gold.v bad-x.v xstate fail
           prove_case quiet-bad quiet-gold.v quiet-bad.v binary fail

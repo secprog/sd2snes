@@ -125,7 +125,7 @@ def inspect(path):
         centers.update((target_site[1:], driver_site[1:]))
     # Include complete statements, never clipped fanout lists. Packed companion
     # logic is deliberately visible; do not infer an exact logical cone from it.
-    for depth in range(4):
+    for depth in range(2):
         chosen_instances.update(frontier)
         following = set()
         for name, statement in nets.items():
@@ -136,21 +136,36 @@ def inspect(path):
                 following.update(comp for kind, comp, _ in pins if kind == "outpin" and comp in instances)
         print(f"Physical predecessor layer {depth}: {len(frontier)} components")
         frontier = following - chosen_instances
-    # Preserve every output net of the included components, so full fanout is
-    # available even where a net is not a predecessor of a selected target.
-    for name, statement in nets.items():
-        if any(kind == "outpin" and comp in chosen_instances for kind, comp, _ in xdl.net_pins(statement)):
-            chosen_nets.add(name)
     n46 = [name for name in nets if name == "snes_cheat/N46"]
     print(f"Exact snes_cheat/N46 names in this different mapped design: {n46!r}; names do not prove baseline correspondence")
+    if len(n46) != 1:
+        raise ValueError("The observed candidate's N46 net is missing or ambiguous")
     chosen_nets.update(n46)
+    # The earlier four-layer traversal pulled in packed companion logic and
+    # exceeded the unchanged bounds. Inspect this observed net directly instead:
+    # its complete driver/load statements, plus every physical driver input net.
+    pins = xdl.net_pins(nets[n46[0]])
+    drivers = [(comp, pin) for kind, comp, pin in pins if kind == "outpin"]
+    if len(drivers) != 1 or drivers[0][0] not in instances:
+        raise ValueError("N46 driver missing or ambiguous")
+    n46_comp = drivers[0][0]
+    site(instances[n46_comp])
+    chosen_instances.update(comp for _, comp, _ in pins if comp in instances)
+    for name, statement in nets.items():
+        if any(kind == "inpin" and comp == n46_comp and pin in xdl.INPUT_PINS
+               for kind, comp, pin in xdl.net_pins(statement)):
+            chosen_nets.add(name)
+            chosen_instances.update(comp for kind, comp, _ in xdl.net_pins(statement)
+                                    if kind == "outpin" and comp in instances)
+    print(f"N46 driver={drivers[0]}; all physical loads={[(comp, pin) for kind, comp, pin in pins if kind == 'inpin']!r}")
     occupied = placed_slices(instances)
     for name, (comp, x, y) in sorted(occupied.items()):
         if any(abs(x - cx) <= 2 and abs(y - cy) <= 2 for cx, cy in centers):
             print(f"Nearby occupied mapped slice: {name} COMP={comp}")
             chosen_instances.add(comp)
     print("Neighborhood lists existing occupied sites within +/-2 slice coordinates only; omitted sites are NOT established legal/free capacity.")
-    print("Four-layer traversal follows physical pins including packed companion logic; it is NOT an exhaustive logical cone or a routed-placement claim.")
+    print("Two-layer CE traversal plus the observed N46 driver's inputs follows physical pins including packed companion logic; it is NOT an exhaustive logical cone or a routed-placement claim.")
+    print(f"Requested excerpt: {len(chosen_instances)} entire instances, {len(chosen_nets)} entire nets")
     if len(chosen_instances) > 400 or len(chosen_nets) > 700:
         raise ValueError("Excerpt exceeds bounds; no truncation accepted")
     records = [instances[name] for name in sorted(chosen_instances)] + [nets[name] for name in sorted(chosen_nets)]

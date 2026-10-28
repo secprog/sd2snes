@@ -1,0 +1,49 @@
+name: Inspect retained MkII CoreGen byte differences
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  inspect:
+    name: ${{ matrix.core }} retained NGC byte offsets
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - core: basex
+            artifact: '12821237169'
+          - core: dspx
+            artifact: '12820779060'
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ matrix.artifact }}
+          run-id: '40698939687'
+          github-token: ${{ github.token }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/coregen-retained
+      - name: Check sample identity and report byte offsets
+        env:
+          CORE: ${{ matrix.core }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/coregen-byte-report"
+          python3 .github/scripts/inspect-mk2-coregen-retained.py "$CORE" "$RUNNER_TEMP/coregen-retained" \
+            | tee "$RUNNER_TEMP/coregen-byte-report/identity.txt"
+          python3 .github/scripts/summarize-mk2-coregen-bytes.py "$CORE" "$RUNNER_TEMP/coregen-retained" \
+            | tee "$RUNNER_TEMP/coregen-byte-report/offsets.txt"
+      - name: Upload text report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mk2-${{ matrix.core }}-coregen-byte-offsets
+          path: ${{ runner.temp }}/coregen-byte-report/
+          if-no-files-found: error
+          retention-days: 14

@@ -1,0 +1,126 @@
+name: Prove DSPx event-write decoder experiment
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dsp-event-write-proof-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  prove:
+    name: Prove event-write boundary and startup address relation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Prepare pinned runner-only source and proof projections
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD:verilog)" = 4e50365f59f38217b67c5126276873a29be737d5
+          git diff --exit-code -- verilog
+          python3 .github/scripts/prepare-dsp-event-write-proof.py \
+            verilog/sd2snes_dsp "$RUNNER_TEMP/dsp-event-write-proof"
+
+      - name: Install and identify formal tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends yosys
+          yosys -V | tee "$RUNNER_TEMP/dsp-event-write-proof/tool-version.txt"
+          grep -F 'Yosys 0.33 (git sha1 2584903a060)' "$RUNNER_TEMP/dsp-event-write-proof/tool-version.txt"
+
+      - name: Check boundary, startup and actual negative controls
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/dsp-event-write-proof"
+          sha256sum --check SHA256SUMS
+          prove_case() {
+            local case_name="$1" gold_file="$2" gate_file="$3" mode="$4" expected="$5"
+            local dir="$case_name-$mode" input_flags='' result=0
+            if [[ "$mode" == binary ]]; then input_flags='-set-def-inputs'; fi
+            mkdir "$dir"
+            cp "$gold_file" "$dir/gold.v"
+            cp "$gate_file" "$dir/gate.v"
+            cat > "$dir/prove.ys" <<YOSYS
+          read_verilog -sv -formal gold.v gate.v
+          proc -ifx -noopt
+          miter -equiv -make_assert -make_outputs -make_outcmp gold gate miter
+          hierarchy -check -top miter
+          flatten -wb
+          hierarchy -check -top miter
+          opt_clean
+          check -assert
+          write_json miter.json
+          sat -verify -enable_undef $input_flags -prove-asserts -show-inputs -show-outputs -dump_json counterexample.json -timeout 180
+          YOSYS
+            (cd "$dir" && yosys -l proof.log -s prove.ys) || result=$?
+            if [[ "$expected" == pass ]]; then
+              test "$result" -eq 0
+              grep -F 'SAT proof finished - no model found: SUCCESS!' "$dir/proof.log"
+            else
+              test "$result" -ne 0
+              grep -F 'SAT proof finished - model found: FAIL!' "$dir/proof.log"
+              test -s "$dir/counterexample.json"
+            fi
+          }
+
+          prove_pipeline_truth() {
+            local signal="$1" mode="$2" input_flags='' result=0
+            local dir="pipeline-truth-$signal-$mode"
+            if [[ "$mode" == binary ]]; then input_flags='-set-def-inputs'; fi
+            mkdir "$dir"
+            cp pipe-gold.v "$dir/model.v"
+            cat > "$dir/prove.ys" <<YOSYS
+          read_verilog -sv -formal model.v
+          proc -ifx -noopt
+          hierarchy -check -top gold
+          opt_clean
+          check -assert
+          write_json model.json
+          sat -verify -enable_undef $input_flags -prove $signal 1 -show-inputs -show-outputs -dump_json counterexample.json -timeout 180
+          YOSYS
+            (cd "$dir" && yosys -l proof.log -s prove.ys) || result=$?
+            test "$result" -eq 0
+            grep -F 'SAT proof finished - no model found: SUCCESS!' "$dir/proof.log"
+          }
+
+          for mode in binary xstate; do
+            prove_case aligned gold.v gate.v "$mode" pass
+            prove_case quiet quiet-gold.v quiet-gate.v "$mode" pass
+            prove_case pipeline pipe-gold.v pipe-gate.v "$mode" pass
+            for signal in first_relation_ok next_relation_ok initial_quiet first_quiet; do
+              prove_pipeline_truth "$signal" "$mode"
+            done
+          done
+          for variant in bad-cc-bank bad-pf-bank bad-offset bad-priority bad-unlock bad-strobe; do
+            prove_case "$variant" gold.v "$variant.v" binary fail
+          done
+          prove_case bad-x gold.v bad-x.v binary pass
+          prove_case bad-x gold.v bad-x.v xstate fail
+          prove_case quiet-bad quiet-gold.v quiet-bad.v binary fail
+          prove_case unaligned unaligned-gold.v unaligned-gate.v binary fail
+          for variant in pipe-bad-early pipe-bad-local pipe-bad-init; do
+            prove_case "$variant" pipe-gold.v "$variant.v" binary fail
+          done
+          prove_case pipe-bad-x pipe-gold.v pipe-bad-x.v binary pass
+          prove_case pipe-bad-x pipe-gold.v pipe-bad-x.v xstate fail
+          sha256sum --check SHA256SUMS
+          git -C "$GITHUB_WORKSPACE" diff --exit-code -- verilog
+          printf '%s\n' \
+            'The projected write enables agree under the proved address relation and during independently modelled quiet startup; actual controls failed as required.' \
+            'This is a source-bound component proof only, not a native FPGA timing, whole-FPGA, Z/electrical, or hardware result.' \
+            | tee verified.txt >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Retain sources, projections, miter JSON and counterexamples
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsp-event-write-proof
+          path: ${{ runner.temp }}/dsp-event-write-proof/
+          if-no-files-found: error
+          retention-days: 14

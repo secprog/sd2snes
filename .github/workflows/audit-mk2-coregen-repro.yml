@@ -1,0 +1,57 @@
+name: Audit MkII CoreGen output reproducibility
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mk2-coregen-repro-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    name: ${{ matrix.core }} paired CoreGen input and output audit
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - core: basex
+            source: sd2snes_base
+            project_blob: 5338e8fa5fef0af0c526ff99563b17a0763ed34a
+            ucf_blob: e582e03059fbbcf21b4124e5dd7aa9ac8792fd6b
+          - core: dspx
+            source: sd2snes_dsp
+            project_blob: 2822b63c005bce73e8e7aaf332bcdbd983d1492d
+            ucf_blob: 4f34c4cf9e475ac171a216c3f15fff74918fd03c
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/prepare-build-image
+        with:
+          target: mk2
+      - name: Compare fresh and rewritten tracked inputs on the hosted runner
+        env:
+          CORE: ${{ matrix.core }}
+          SOURCE: ${{ matrix.source }}
+          PROJECT_BLOB: ${{ matrix.project_blob }}
+          UCF_BLOB: ${{ matrix.ucf_blob }}
+        run: bash .github/scripts/audit-mk2-coregen-repro.sh
+      - name: Upload generated netlists and exact audit inputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mk2-${{ matrix.core }}-coregen-repro
+          path: |
+            ${{ runner.temp }}/coregen-repro/identity.txt
+            ${{ runner.temp }}/coregen-repro/*.json
+            ${{ runner.temp }}/coregen-repro/*-tracked-changes.txt
+            ${{ runner.temp }}/coregen-repro/*-coregen.log
+            ${{ runner.temp }}/coregen-repro/*-inputs/
+            ${{ runner.temp }}/coregen-repro/*-outputs/
+            ${{ runner.temp }}/coregen-repro/netlist-comparison.txt
+            ${{ runner.temp }}/coregen-repro/comparison-control.txt
+          if-no-files-found: error
+          retention-days: 14

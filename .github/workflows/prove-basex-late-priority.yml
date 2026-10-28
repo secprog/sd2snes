@@ -1,0 +1,126 @@
+name: Prove basex late command-priority feasibility
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: basex-late-priority-proof-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  prove:
+    name: Prove all192 programming transitions with binary and X controls
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install and identify hosted proof tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends yosys iverilog
+          mkdir -p "$RUNNER_TEMP/basex-late-priority-proof"
+          yosys -V | tee "$RUNNER_TEMP/basex-late-priority-proof/tool-version.txt"
+          grep -F 'Yosys 0.33 (git sha1 2584903a060)' "$RUNNER_TEMP/basex-late-priority-proof/tool-version.txt"
+          iverilog -V > "$RUNNER_TEMP/basex-late-priority-proof/iverilog-version.txt" 2>&1
+
+      - name: Prepare source-bound feasibility models without changing the checkout
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD:verilog)" = 4e50365f59f38217b67c5126276873a29be737d5
+          test "$(git hash-object --no-filters .github/scripts/prepare-basex-write-gate-experiment.py)" = 7d1385cd2997280f0224d024b204b8d94262a1ca
+          git diff --exit-code
+          git diff --cached --exit-code
+          python3 .github/scripts/prepare-basex-late-priority-proof.py \
+            verilog/sd2snes_base/cheat.v "$RUNNER_TEMP/basex-late-priority-proof"
+
+      - name: Audit every state bit and prove the observation ordering
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/basex-late-priority-proof"
+          sha256sum --check SHA256SUMS
+          variants=(gold gate bad-data bad-unlock bad-exe bad-enable bad-strobe bad-reset bad-pgm bad-index bad-x-command bad-x-select bad-x-data)
+          for variant in "${variants[@]}"; do
+            mkdir "$variant"
+            cp "$variant.v" "$variant/model.v"
+            (
+              cd "$variant"
+              yosys -l preparation.log -p 'read_verilog -sv -formal model.v; hierarchy -check -top cheat_programming_model; flatten; proc -ifx -noopt; check -assert; memory_memx; memory_collect; memory_map; dffunmap; setundef -undriven -undef; opt_clean; check -assert; write_json state.json'
+              model_name=gate
+              if [[ "$variant" == gold ]]; then model_name=gold; fi
+              python3 "$GITHUB_WORKSPACE/.github/scripts/cut-basex-late-priority-state.py" \
+                state.json transition.json "$model_name" | tee state-audit.log
+              yosys -l state-view.log -p "read_json transition.json; hierarchy -check -top $model_name; sat -verify -enable_undef -prove state_view_ok 1 -show-inputs -show state_view_ok -timeout 180"
+              grep -F 'SAT proof finished - no model found: SUCCESS!' state-view.log
+              if [[ "$variant" == gold ]]; then
+                result=0
+                yosys -l state-view-mutant.log -p 'read_json state-view-mutant.json; hierarchy -check -top gold; sat -verify -enable_undef -set-def-inputs -prove state_view_ok 1 -show-inputs -show state_view_ok -dump_json state-view-mutant-counterexample.json -timeout 180' || result=$?
+                test "$result" -ne 0
+                grep -F 'SAT proof finished - model found: FAIL!' state-view-mutant.log
+                test -s state-view-mutant-counterexample.json
+              fi
+            )
+          done
+
+      - name: Prove strict transitions and require real binary and X counterexamples
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/basex-late-priority-proof"
+          for mode in binary xstate; do
+            if [[ "$mode" == binary ]]; then
+              variants=(gate bad-data bad-unlock bad-exe bad-enable bad-strobe bad-reset bad-pgm bad-index bad-x-command bad-x-select bad-x-data)
+              input_flags='-set-def-inputs'
+            else
+              variants=(bad-x-command bad-x-select bad-x-data gate)
+              input_flags=''
+            fi
+            for variant in "${variants[@]}"; do
+              cat > "$variant/prove-$mode.ys" <<YOSYS
+          read_json ../gold/transition.json
+          read_json transition.json
+          miter -equiv -make_assert -make_outputs -make_outcmp gold gate miter
+          hierarchy -check -top miter
+          flatten -wb
+          hierarchy -check -top miter
+          opt_clean
+          check -assert
+          write_json miter-$mode.json
+          sat -verify -enable_undef $input_flags -prove-asserts -show-inputs -show-outputs -dump_json counterexample-$mode.json -timeout 300
+          YOSYS
+              result=0
+              (cd "$variant" && yosys -l "proof-$mode.log" -s "prove-$mode.ys") || result=$?
+              test -s "$variant/miter-$mode.json"
+              if [[ "$variant" == gate || ( "$variant" == bad-x-* && "$mode" == binary ) ]]; then
+                test "$result" -eq 0
+                grep -F 'SAT proof finished - no model found: SUCCESS!' "$variant/proof-$mode.log"
+              else
+                test "$result" -ne 0
+                grep -F 'SAT proof finished - model found: FAIL!' "$variant/proof-$mode.log"
+                test -s "$variant/counterexample-$mode.json"
+              fi
+            done
+          done
+          sha256sum --check SHA256SUMS
+          printf 'All192 array transitions match for common binary and unrestricted Yosys-X state/inputs; eight binary and three binary-equivalent X mutations produced real counterexamples. Independent miter review is still required. No native mapping/timing, CoreGen integrity or hardware result.\n' \
+            | tee verified.txt >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Require untouched tracked and staged inputs
+        if: always()
+        run: |
+          git diff --exit-code
+          git diff --cached --exit-code
+
+      - name: Retain feasibility models, audits, miters and actual counterexamples
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: basex-late-priority-proof
+          path: ${{ runner.temp }}/basex-late-priority-proof/
+          if-no-files-found: error
+          retention-days: 14

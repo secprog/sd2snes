@@ -138,6 +138,36 @@ jobs:
           sha256sum --check SHA256SUMS
           printf 'The source-projected BUFG identity and four run/restore guard priorities match for binary and Yosys-X inputs; all binary and X-sensitive mutations produced counterexamples. This is not FPGA timing, post-synthesis sequential equivalence or hardware proof.\n' | tee verified.txt >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Require actual branch-action counterexamples
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/dsp-freeze-bufg-proof"
+          variants=(bad-invert bad-stuck bad-run0 bad-run1 bad-run2 bad-run3 bad-restore0 bad-restore1 bad-restore2 bad-restore3 bad-x-buffer)
+          for variant in "${variants[@]}"; do
+            input_flags='-set-def-inputs'
+            [[ "$variant" == bad-x-buffer ]] && input_flags=''
+            cat > "$variant/prove-action.ys" <<YOSYS
+          read_verilog -sv -formal ../gold.v model.v
+          proc -ifx -noopt
+          miter -equiv -make_assert -make_outputs -make_outcmp gold gate miter
+          hierarchy -check -top miter
+          flatten -wb
+          hierarchy -check -top miter
+          opt_clean
+          check -assert
+          write_json miter-action.json
+          sat -verify -enable_undef $input_flags -set in_RST 1 -set cmp_action 0 -prove-asserts -show-inputs -show-outputs -dump_json counterexample-action.json -timeout 300
+          YOSYS
+            result=0
+            (cd "$variant" && yosys -l proof-action.log -s prove-action.ys) || result=$?
+            test "$result" -ne 0
+            grep -F 'SAT proof finished - model found: FAIL!' "$variant/proof-action.log"
+            test -s "$variant/miter-action.json"
+            test -s "$variant/counterexample-action.json"
+          done
+          sha256sum --check SHA256SUMS
+          printf 'All ten binary mutants and the X-sensitive mutant also changed an actual modeled branch action with RST asserted.\n' | tee action-verified.txt >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload proof sources, preprocessed inputs, miters and counterexamples
         if: always()
         uses: actions/upload-artifact@v4

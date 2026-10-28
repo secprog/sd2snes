@@ -1,0 +1,92 @@
+name: Prove DSPx context address experiment
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dsp-ctx-unshared-proof-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  prove:
+    name: Prove context address and write boundary with negative controls
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Prepare pinned original and runner-only candidate
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD:verilog)" = 4e50365f59f38217b67c5126276873a29be737d5
+          git diff --exit-code -- verilog
+          python3 .github/scripts/prepare-dsp-ctx-unshared-proof.py \
+            verilog/sd2snes_dsp/ctx.v verilog/sd2snes_dsp/main.v "$RUNNER_TEMP/dsp-ctx-unshared-proof"
+
+      - name: Install and identify the formal tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends yosys
+          yosys -V | tee "$RUNNER_TEMP/dsp-ctx-unshared-proof/tool-version.txt"
+          grep -F 'Yosys 0.33 (git sha1 2584903a060)' "$RUNNER_TEMP/dsp-ctx-unshared-proof/tool-version.txt"
+
+      - name: Prove binary and X-state boundaries and reject real mutations
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/dsp-ctx-unshared-proof"
+          sha256sum --check SHA256SUMS
+          all_variants=(gate bad-priority bad-wram bad-vram bad-cgram bad-oam bad-ppu bad-cpu bad-misc bad-apu bad-write bad-hold bad-data-priority bad-word bad-x-address bad-x-word)
+          for variant in "${all_variants[@]}"; do
+            mkdir "$variant"
+            cp "$variant.v" "$variant/model.v"
+          done
+          for mode in binary xstate; do
+            if [[ "$mode" == binary ]]; then
+              variants=("${all_variants[@]}")
+              input_flags='-set-def-inputs'
+            else
+              variants=(bad-x-address bad-x-word gate)
+              input_flags=''
+            fi
+            for variant in "${variants[@]}"; do
+              cat > "$variant/prove-$mode.ys" <<YOSYS
+          read_verilog -sv -formal ../gold.v model.v
+          proc -ifx -noopt
+          miter -equiv -make_assert -make_outputs -make_outcmp gold gate miter
+          hierarchy -check -top miter
+          flatten -wb
+          hierarchy -check -top miter
+          opt_clean
+          check -assert
+          write_json miter-$mode.json
+          sat -verify -enable_undef $input_flags -prove-asserts -show-inputs -show-outputs -dump_json counterexample-$mode.json -timeout 300
+          YOSYS
+              result=0
+              (cd "$variant" && yosys -l "proof-$mode.log" -s "prove-$mode.ys") || result=$?
+              test -s "$variant/miter-$mode.json"
+              if [[ "$variant" == gate || ( "$variant" == bad-x-* && "$mode" == binary ) ]]; then
+                test "$result" -eq 0
+                grep -F 'SAT proof finished - no model found: SUCCESS!' "$variant/proof-$mode.log"
+              else
+                test "$result" -ne 0
+                grep -F 'SAT proof finished - model found: FAIL!' "$variant/proof-$mode.log"
+                test -s "$variant/counterexample-$mode.json"
+              fi
+            done
+          done
+          sha256sum --check SHA256SUMS
+          printf 'The source-projected context address and captured-write boundary match for common binary and Yosys-X inputs. Thirteen binary mutants and two binary-equivalent X controls produced counterexamples. This is a component proof, not FPGA timing or hardware validation.\n' \
+            | tee verified.txt >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload exact proof sources, miters and counterexamples
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsp-ctx-unshared-proof
+          path: ${{ runner.temp }}/dsp-ctx-unshared-proof/
+          if-no-files-found: error
+          retention-days: 14

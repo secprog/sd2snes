@@ -1,0 +1,88 @@
+name: Prove basex BS-X base-window decoder
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: basex-bsx-window-proof-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  prove:
+    name: Prove the BS-X base-window output and reject mutations
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Prepare pinned original and runner-only candidate
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/prepare-basex-bsx-window-experiment.py \
+            verilog/sd2snes_base/bsx.v "$RUNNER_TEMP/basex-bsx-window-proof"
+
+      - name: Install and identify formal tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends yosys
+          yosys -V | tee "$RUNNER_TEMP/basex-bsx-window-proof/tool-version.txt"
+          grep -F 'Yosys 0.33 (git sha1 2584903a060)' "$RUNNER_TEMP/basex-bsx-window-proof/tool-version.txt"
+
+      - name: Prove binary and X-valued expressions with negative controls
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/basex-bsx-window-proof"
+          sha256sum --check SHA256SUMS
+          for variant in gate bad-low bad-high bad-address-width bad-feature bad-cart bad-bank bad-x; do
+            mkdir "$variant"
+            cp "$variant.v" "$variant/model.v"
+          done
+          for mode in binary xstate; do
+            if [[ "$mode" == binary ]]; then
+              variants=(gate bad-low bad-high bad-address-width bad-feature bad-cart bad-bank bad-x)
+              input_flags='-set-def-inputs'
+            else
+              variants=(bad-x gate)
+              input_flags=''
+            fi
+            for variant in "${variants[@]}"; do
+              cat > "$variant/prove-$mode.ys" <<YOSYS
+          read_verilog -sv -formal ../gold.v model.v
+          proc -ifx -noopt
+          miter -equiv -make_assert -make_outputs -make_outcmp gold gate miter
+          hierarchy -check -top miter
+          flatten -wb
+          hierarchy -check -top miter
+          opt_clean
+          check -assert
+          write_json miter-$mode.json
+          sat -verify -enable_undef $input_flags -prove-asserts -show-inputs -show-outputs -dump_json counterexample-$mode.json -timeout 180
+          YOSYS
+              result=0
+              (cd "$variant" && yosys -l "proof-$mode.log" -s "prove-$mode.ys") || result=$?
+              if [[ "$variant" == gate || ( "$variant" == bad-x && "$mode" == binary ) ]]; then
+                test "$result" -eq 0
+                grep -F 'SAT proof finished - no model found: SUCCESS!' "$variant/proof-$mode.log"
+              else
+                test "$result" -ne 0
+                grep -F 'SAT proof finished - model found: FAIL!' "$variant/proof-$mode.log"
+                test -s "$variant/counterexample-$mode.json"
+              fi
+            done
+          done
+          sha256sum --check SHA256SUMS
+          printf 'The extracted BS-X base-window output matches for binary and Yosys X-valued inputs. Six binary mutants and a binary-equivalent X control produced counterexamples. This is a component proof, not a whole-FPGA or hardware proof.\n' \
+            | tee verified.txt >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload proof models, miter bindings and counterexamples
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: basex-bsx-window-proof
+          path: ${{ runner.temp }}/basex-bsx-window-proof/
+          if-no-files-found: error
+          retention-days: 14

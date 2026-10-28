@@ -75,6 +75,52 @@ jobs:
             ' 2>&1 | tee "$report/inspection.log"
           test "$(du -sb "$report" | cut -f1)" -le 2000000
 
+      - name: Read generation and save references in the observed frontend scripts
+        run: |
+          set -euo pipefail
+          image=$(docker image inspect sd2snes-ci:mk2 --format '{{.Id}}')
+          test "$image" = sha256:5e3bbb00649997abca8843b1d82d8529eda99a0f2868d37ad9777e0ad5fd50e8
+          report="$RUNNER_TEMP/coregen-resources"
+          # These exact paths and sizes were observed in successful read-only
+          # run 40784478599, artifact 12859121540. Read text; never source it.
+          docker run --rm --read-only --network none --user 0:0 \
+            --volume "$report:/output" --workdir /output \
+            --entrypoint /bin/bash sd2snes-ci:mk2 -c '
+              set -euo pipefail
+              root=/opt/Xilinx/14.7/ISE_DS/ISE
+              sources=(
+                "coregen/3rdParty/coregenOutputs.tcl:14855"
+                "coregen/tcl/IPModel/CoregenGenerateIPModelFactory.tcl:10000"
+                "coregen/tcl/IPModel/CoregenIPModelFactory.tcl:1616"
+                "data/projnav/scripts/dpm_coregenTasks.tcl:94402"
+              )
+              mkdir /output/frontend
+              for item in "${sources[@]}"; do
+                relative=${item%:*}
+                expected=${item##*:}
+                input="$root/$relative"
+                test -f "$input" && test ! -L "$input"
+                test "$(stat --format=%s "$input")" = "$expected"
+                LC_ALL=C grep -Iq . "$input"
+                name=$(basename "$input")
+                sha256sum "$input" | tee -a /output/frontend/source-hashes.sha256
+                result=0
+                LC_ALL=C grep -n -i -C 4 -E "xco|xise|cgc|save|writ|regenerat|overwrit|read.?only|batch|generat" "$input" > "/output/frontend/$name.matches.txt" || result=$?
+                case "$result" in
+                  0) ;;
+                  1) printf "%s\n" "No matching references in $relative" > "/output/frontend/$name.matches.txt" ;;
+                  *) exit "$result" ;;
+                esac
+                test "$(wc -c < "/output/frontend/$name.matches.txt")" -le 150000
+                printf "BEGIN source references: %s\n" "$relative"
+                cat "/output/frontend/$name.matches.txt"
+                printf "END source references: %s\n" "$relative"
+              done
+              sha256sum --check /output/frontend/source-hashes.sha256
+              printf "%s\n" "Bounded source references only. Scripts were not executed. A save or generation reference is not proof that our batch invocation uses it. No preserve-input mechanism or complete option search is established by these excerpts." | tee /output/frontend/limits.txt
+            ' 2>&1 | tee "$report/frontend.log"
+          test "$(du -sb "$report" | cut -f1)" -le 2000000
+
       - name: Require unchanged tracked and staged files
         if: always()
         run: |

@@ -1,0 +1,47 @@
+name: Check DSPx placement inspector
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  check:
+    name: Check COMP/BEL binding using captured and synthetic fixtures
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          artifact-ids: '12765496911'
+          run-id: '40560123719'
+          github-token: ${{ github.token }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/placement-probe
+      - uses: actions/download-artifact@v4
+        with:
+          artifact-ids: '12816227379'
+          run-id: '40686214507'
+          github-token: ${{ github.token }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/stack-ce
+      - name: Check captured reports and synthetic parser controls
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/check-dsp-placement-inspector.py \
+            .github/scripts/inspect-dsp-placement-probe.py \
+            "$RUNNER_TEMP/placement-probe/sd2snes/sd2snes/verilog/sd2snes_dspx/main.pcf" \
+            "$RUNNER_TEMP/stack-ce/_temp/stack-ce-xdl.txt" \
+            | tee "$RUNNER_TEMP/dsp-placement-inspector-guard.log"
+          printf '%s\n' 'Synthetic parser checks are not FPGA placement or timing evidence.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload guard output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsp-placement-inspector-guard
+          path: ${{ runner.temp }}/dsp-placement-inspector-guard.log
+          if-no-files-found: warn
+          retention-days: 14

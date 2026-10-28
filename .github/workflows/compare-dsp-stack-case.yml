@@ -14,7 +14,7 @@ jobs:
   prove:
     name: Prove stack transitions and both reads, including X-state controls
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v6
 
@@ -37,12 +37,15 @@ jobs:
           set -euo pipefail
           cd "$RUNNER_TEMP/stack-case-proof"
           sha256sum --check SHA256SUMS
-          for variant in gold gate bad-address bad-lane bad-data bad-freeze bad-return bad-x; do
+          for variant in gold gate bad-address bad-lane bad-data bad-freeze bad-return bad-x bad-x-data; do
             mkdir "$variant"
             cp "$variant.v" "$variant/model.v"
             (
               cd "$variant"
-              yosys -l preparation.log -p 'read_verilog -sv -formal model.v; hierarchy -check -top stack_model; flatten; proc; check -assert; memory -nowiden -memx; dffunmap; opt_expr -keepdc; setundef -undriven -undef; opt_clean; check -assert; write_json state.json'
+              # Yosys 0.33 opt_expr can fold a | ~a even with -keepdc.
+              # Preserve those X distinctions and use Verilog if/case behavior;
+              # avoid the general memory optimization pipeline for this proof.
+              yosys -l preparation.log -p 'read_verilog -sv -formal model.v; hierarchy -check -top stack_model; flatten; proc -ifx -noopt; check -assert; memory_memx; memory_collect; memory_map; dffunmap; setundef -undriven -undef; opt_clean; check -assert; write_json state.json'
               model_name=gate
               if [[ "$variant" == gold ]]; then model_name=gold; fi
               python3 "$GITHUB_WORKSPACE/.github/scripts/cut-dsp-stack-state.py" \
@@ -56,25 +59,27 @@ jobs:
           cd "$RUNNER_TEMP/stack-case-proof"
           for mode in binary xstate; do
             if [[ "$mode" == binary ]]; then
-              variants=(gate bad-address bad-lane bad-data bad-freeze bad-return bad-x)
+              variants=(gate bad-address bad-lane bad-data bad-freeze bad-return bad-x bad-x-data)
               input_flags='-set-def-inputs'
             else
-              variants=(gate bad-x)
+              variants=(bad-x bad-x-data gate)
               input_flags=''
             fi
             for variant in "${variants[@]}"; do
               cat > "$variant/prove-$mode.ys" <<YOSYS
           read_json ../gold/transition.json
           read_json transition.json
-          miter -equiv -make_assert -make_outputs -make_outcmp -flatten gold gate miter
+          miter -equiv -make_assert -make_outputs -make_outcmp gold gate miter
+          hierarchy -check -top miter
+          flatten -wb
           hierarchy -check -top miter
           opt_clean
           check -assert
-          sat -verify -enable_undef $input_flags -prove-asserts -show-inputs -show-outputs -dump_json counterexample-$mode.json -timeout 180
+          sat -verify -enable_undef $input_flags -prove-asserts -show-inputs -show-outputs -dump_json counterexample-$mode.json -timeout 300
           YOSYS
               result=0
               (cd "$variant" && yosys -l "proof-$mode.log" -s "prove-$mode.ys") || result=$?
-              if [[ "$variant" == gate || ( "$variant" == bad-x && "$mode" == binary ) ]]; then
+              if [[ "$variant" == gate || ( "$variant" == bad-x* && "$mode" == binary ) ]]; then
                 test "$result" -eq 0
                 grep -F 'SAT proof finished - no model found: SUCCESS!' "$variant/proof-$mode.log"
               else
@@ -85,7 +90,7 @@ jobs:
             done
           done
           sha256sum --check SHA256SUMS
-          printf 'All 176 stack transitions and both reads match under the binary and Yosys X-valued component models; five binary mutants and the X-sensitive control produced counterexamples. This is not a whole-FPGA or hardware proof.\n' \
+          printf 'All 176 stack transitions and both reads match under the binary and Yosys X-valued component models; five binary mutants and both X-sensitive controls produced counterexamples. This is not a whole-FPGA or hardware proof.\n' \
             | tee verified.txt >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload exact proof sources, audits and counterexamples

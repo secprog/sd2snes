@@ -105,8 +105,13 @@ def main():
         "bad-data": (gate, "stack[0][7:0] <= ss_wd;", "stack[0][7:0] <= ss_wd ^ 8'h01;"),
         "bad-freeze": (gate, "if(RST & ~ss_frozen)", "if(RST)"),
         "bad-return": (gate, PROOF_RETURN, "stack[regs_sp-4'd1]"),
-        # Binary-equivalent control which becomes X-sensitive when data is X.
+        # Binary-equivalent controls which expose X differences in a guard and
+        # in a data value respectively. Neither is part of the native source.
         "bad-x": (gate, "if(ss_wr) begin", "if(ss_wr & (ss_wd[0] | ~ss_wd[0])) begin"),
+        "bad-x-data": (
+            gate, "stack[0][7:0] <= ss_wd;",
+            "stack[0][7:0] <= ss_wd & {8{(pc[1] & pc[0]) | (~pc[1] & pc[0]) | ~pc[0]}};",
+        ),
     }
     files = {
         "original-upd77c25.v": original,
@@ -131,7 +136,7 @@ def main():
         )), encoding="utf-8",
     )
     print(f"Pinned DSP blob {blob}; original source recovered and four non-MkII configurations audited.")
-    print("Prepared the original guards, all 176 stack bits, both reads and six negative controls.")
+    print("Prepared the original guards, all 176 stack bits, both reads and seven negative controls.")
     print("Native push, return, clock, range and write-enable expressions are unchanged.")
 
 

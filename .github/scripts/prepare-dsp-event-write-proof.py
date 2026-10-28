@@ -211,12 +211,12 @@ def main():
         raise SystemExit("Fast hit name already exists")
 
     new_address = address.replace(PORT, PORT + PORT_ADD, 1)
-    new_address = new_address.replace(SELECT, SELECT + "\n" + GUARD_OPEN + FAST + "\n" + GUARD_CLOSE, 1)
+    new_address = new_address.replace(SELECT + "\n", SELECT + "\n" + GUARD_OPEN + FAST + "\n" + GUARD_CLOSE, 1)
     new_main = main_source.replace(DECL, DECL + DECL_ADD, 1)
     new_main = new_main.replace(CONNECT, CONNECT + CONNECT_ADD, 1)
     new_main = new_main.replace(HIT, HIT_REPLACEMENT, 1)
     if new_address.replace(PORT + PORT_ADD, PORT, 1).replace(
-        SELECT + "\n" + GUARD_OPEN + FAST + "\n" + GUARD_CLOSE, SELECT, 1
+        SELECT + "\n" + GUARD_OPEN + FAST + "\n" + GUARD_CLOSE, SELECT + "\n", 1
     ) != address:
         raise SystemExit("Address source recovery failed")
     if new_main.replace(DECL + DECL_ADD, DECL, 1).replace(
@@ -226,9 +226,13 @@ def main():
     for defines in (set(), {"MK2"}, {"MK3"}, {"MK3", "DSP_COMP"},
                     {"DSP_LEAN"}, {"MK3", "DSP_LEAN"}, {"MK2", "DSP_COMP", "DSP_LEAN"},
                     {"MK2", "MK2_DEBUG"}):
-        for old, new in ((main_source, new_main), (address, new_address)):
-            if configured(old, defines) != configured(new, defines):
-                raise SystemExit(f"Non-target source changed: {sorted(defines)}")
+        for name, old, new in (("main", main_source, new_main), ("address", address, new_address)):
+            old_selected, new_selected = configured(old, defines), configured(new, defines)
+            if old_selected != new_selected:
+                print("".join(difflib.unified_diff(old_selected.splitlines(True),
+                                                   new_selected.splitlines(True),
+                                                   f"original-{name}", f"candidate-{name}")))
+                raise SystemExit(f"Non-target {name} source changed: {sorted(defines)}")
     target_main = configured(new_main, {"MK2", "DSP_COMP"})
     target_address = configured(new_address, {"MK2", "DSP_COMP"})
     for token in ("  .cc_wr_hit_fast(cc_wr_hit_fast),", "wire cc_wr_hit = cc_wr_hit_fast;"):

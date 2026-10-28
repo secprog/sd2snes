@@ -1,0 +1,130 @@
+name: Inspect retained DSPx mapped design
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: dsp-retained-map-inspection-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  guard:
+    name: Check bounded XDL extractor using synthetic fixtures
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - name: Run extractor fixture checks
+        run: python3 .github/scripts/inspect-dsp-retained-map.py --self-check
+
+  inspect:
+    name: Inspect retained failed event-write mapped NCD
+    needs: guard
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Verify original source and inspection toolchain
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD:verilog)" = 4e50365f59f38217b67c5126276873a29be737d5
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/upd77c25.v)" = ba14f5b6dd198fbb5645f005fb3784890beec2c4
+          test "$(git hash-object --no-filters .github/actions/prepare-build-image/action.yml)" = ac2a66fc24d4a15658b666cdc5f5db7964df4c3b
+          git diff --exit-code -- verilog .github/actions/prepare-build-image/action.yml
+
+      - name: Download and verify the exact retained artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = secprog/sd2snes
+          mkdir -p "$RUNNER_TEMP/retained-map" "$RUNNER_TEMP/map-inspection"
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/12830604478" > "$RUNNER_TEMP/map-inspection/artifact-meta.json"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/40711206719/jobs?per_page=100" > "$RUNNER_TEMP/map-inspection/jobs.json"
+          python3 - "$RUNNER_TEMP/map-inspection" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          root = Path(sys.argv[1])
+          artifact = json.loads((root / 'artifact-meta.json').read_text())
+          run = artifact['workflow_run']
+          assert artifact['id'] == 12830604478
+          assert artifact['name'] == 'dsp-event-write-seed-68-mapped-ncd'
+          assert artifact['digest'] == 'sha256:245442f47e0b4bbfa9a1c017101dcb5d178b2d185d332f9b484eed3f739243bf'
+          assert artifact['expired'] is False
+          assert run['id'] == 40711206719
+          assert run['head_sha'] == 'eafced771a9f6489bbd25bcb6226d42ed49c005b'
+          assert run['repository_id'] == run['head_repository_id']
+          jobs = json.loads((root / 'jobs.json').read_text())['jobs']
+          job, = [j for j in jobs if j['id'] == 122896671098]
+          assert job['status'] == 'completed' and job['conclusion'] == 'failure'
+          steps = {s['name']: s['conclusion'] for s in job['steps']}
+          assert steps['Select exactly the proved runner-only source'] == 'success'
+          assert steps['Compile with strict native PAR and TRACE checks'] == 'failure'
+          assert steps['Verify candidate, project, constraints and all tracked inputs'] == 'failure'
+          assert steps['Retain the mapped NCD separately on GitHub'] == 'success'
+          print('Verified original artifact metadata and failed diagnostic job identity')
+          PY
+          curl --fail --silent --show-error --location --retry 2 --connect-timeout 15 --max-time 180 \
+            --header "Authorization: Bearer $GH_TOKEN" --header 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/12830604478/zip" \
+            --output "$RUNNER_TEMP/retained-map.zip"
+          echo "245442f47e0b4bbfa9a1c017101dcb5d178b2d185d332f9b484eed3f739243bf  $RUNNER_TEMP/retained-map.zip" | sha256sum --check
+          python3 - "$RUNNER_TEMP/retained-map.zip" "$RUNNER_TEMP/retained-map/main_map.ncd" <<'PY'
+          import shutil
+          import sys
+          import zipfile
+          from pathlib import Path
+          with zipfile.ZipFile(sys.argv[1]) as archive:
+              files = [item for item in archive.infolist() if not item.is_dir()]
+              if len(files) != 1 or files[0].filename != 'main_map.ncd':
+                  raise SystemExit(f'Unexpected mapped artifact entries: {[item.filename for item in files]}')
+              with archive.open(files[0]) as source, Path(sys.argv[2]).open('wb') as target:
+                  shutil.copyfileobj(source, target)
+          if Path(sys.argv[2]).stat().st_size == 0:
+              raise SystemExit('Retained mapped NCD is empty')
+          PY
+          sha256sum "$RUNNER_TEMP/retained-map/main_map.ncd" | tee "$RUNNER_TEMP/map-inspection/ncd-before.sha256"
+
+      - uses: ./.github/actions/prepare-build-image
+        with:
+          target: mk2
+
+      - name: Convert retained NCD and inspect bounded stack CE neighborhoods
+        run: |
+          set -euo pipefail
+          image=$(docker image inspect sd2snes-ci:mk2 --format '{{.Id}}')
+          test "$image" = sha256:5e3bbb00649997abca8843b1d82d8529eda99a0f2868d37ad9777e0ad5fd50e8
+          printf 'ISE image: %s\nArtifact: 12830604478, run: 40711206719, job: 122896671098\n' "$image" | tee "$RUNNER_TEMP/map-inspection/identity.txt"
+          docker run --rm --user 0:0 --mac-address 08:00:27:68:c9:35 \
+            --volume "$RUNNER_TEMP/retained-map:/input:ro" \
+            --volume "$RUNNER_TEMP/map-inspection:/output" --workdir /output \
+            --entrypoint /bin/bash sd2snes-ci:mk2 -c \
+            'set -euo pipefail; xdl -ncd2xdl -nopips /input/main_map.ncd /output/main_map.xdl; test -s /output/main_map.xdl' \
+            2>&1 | tee "$RUNNER_TEMP/map-inspection/xdl-conversion.log"
+          sha256sum --check "$RUNNER_TEMP/map-inspection/ncd-before.sha256"
+          sha256sum "$RUNNER_TEMP/map-inspection/main_map.xdl" | tee "$RUNNER_TEMP/map-inspection/xdl.sha256"
+          python3 .github/scripts/inspect-dsp-retained-map.py "$RUNNER_TEMP/map-inspection/main_map.xdl" \
+            | tee "$RUNNER_TEMP/map-inspection/stack-neighborhoods.txt"
+          printf '%s\n' 'Inspection of a previously failing candidate only; no FPGA build, timing pass or baseline-map conclusion.' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload small inspection reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsp-retained-map-inspection
+          path: |
+            ${{ runner.temp }}/map-inspection/artifact-meta.json
+            ${{ runner.temp }}/map-inspection/jobs.json
+            ${{ runner.temp }}/map-inspection/ncd-before.sha256
+            ${{ runner.temp }}/map-inspection/identity.txt
+            ${{ runner.temp }}/map-inspection/xdl-conversion.log
+            ${{ runner.temp }}/map-inspection/xdl.sha256
+            ${{ runner.temp }}/map-inspection/stack-neighborhoods.txt
+          if-no-files-found: error
+          retention-days: 14

@@ -1,0 +1,113 @@
+name: Inspect retained MkII CoreGen samples
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: mk2-coregen-retained-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    name: ${{ matrix.core }} retained CoreGen sample inspection
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - core: basex
+            artifact: '12821237169'
+            ips: 'dac_buf msu_databuf snescmd_buf'
+          - core: dspx
+            artifact: '12820779060'
+            ips: 'dac_buf msu_databuf snescmd_buf upd77c25_datram upd77c25_datrom upd77c25_pgmrom'
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ matrix.artifact }}
+          run-id: '40698939687'
+          github-token: ${{ github.token }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/coregen-retained
+      - name: Independently check retained manifests, inputs and NGC hashes
+        env:
+          CORE: ${{ matrix.core }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/coregen-inspection"
+          python3 .github/scripts/inspect-mk2-coregen-retained.py "$CORE" "$RUNNER_TEMP/coregen-retained" \
+            | tee "$RUNNER_TEMP/coregen-inspection/evidence.txt"
+      - uses: ./.github/actions/prepare-build-image
+        with:
+          target: mk2
+      - name: Convert each exact retained NGC to EDIF for inspection
+        env:
+          IPS: ${{ matrix.ips }}
+        run: |
+          set -euo pipefail
+          image=$(docker image inspect sd2snes-ci:mk2 --format '{{.Id}}')
+          test "$image" = sha256:5e3bbb00649997abca8843b1d82d8529eda99a0f2868d37ad9777e0ad5fd50e8
+          echo "ISE image: $image" | tee "$RUNNER_TEMP/coregen-inspection/identity.txt"
+          for sample in a1 a1_repeat a2 b; do
+            for ip in $IPS; do
+              source_sample="$sample"
+              if [[ "$sample" == a1_repeat ]]; then source_sample=a1; fi
+              input="$RUNNER_TEMP/coregen-retained/$source_sample-outputs/$ip.ngc"
+              output="$RUNNER_TEMP/coregen-inspection/$sample/$ip"
+              test -s "$input"
+              mkdir -p "$output"
+              docker run --rm --user 0:0 --volume "$input:/input.ngc:ro" \
+                --volume "$output:/work" --workdir /work --entrypoint /bin/bash sd2snes-ci:mk2 -c '
+                  set -euo pipefail
+                  command -v ngc2edif
+                  ngc2edif /input.ngc output.edf
+                  test -s output.edf
+                ' 2>&1 | tee "$output/convert.log"
+              test -s "$output/output.edf"
+              LC_ALL=C grep -iq '(edif' "$output/output.edf"
+              sha256sum "$input" "$output/output.edf" | tee -a "$RUNNER_TEMP/coregen-inspection/hashes.txt"
+            done
+          done
+          for ip in $IPS; do
+            for sample in a1_repeat a2 b; do
+              left="$RUNNER_TEMP/coregen-inspection/a1/$ip/output.edf"
+              right="$RUNNER_TEMP/coregen-inspection/$sample/$ip/output.edf"
+              set +e
+              diff -u "$left" "$right" > "$RUNNER_TEMP/coregen-inspection/$ip-a1-vs-$sample.diff"
+              result=$?
+              set -e
+              case "$result" in
+                0) echo "$ip A1/$sample EDIF: byte-identical" ;;
+                1) echo "$ip A1/$sample EDIF: different bytes" ;;
+                *) echo "EDIF comparison failed for $ip A1/$sample" >&2; exit "$result" ;;
+              esac | tee -a "$RUNNER_TEMP/coregen-inspection/comparisons.txt"
+            done
+            # Exercise the byte comparator with the actual output, including a
+            # changed-file negative control, without changing the evidence.
+            original="$RUNNER_TEMP/coregen-inspection/a1/$ip/output.edf"
+            diff -u "$original" "$original" > /dev/null
+            cp "$original" "$RUNNER_TEMP/coregen-inspection/negative.edf"
+            printf '\001' >> "$RUNNER_TEMP/coregen-inspection/negative.edf"
+            set +e
+            diff -u "$original" "$RUNNER_TEMP/coregen-inspection/negative.edf" > /dev/null
+            control_result=$?
+            set -e
+            test "$control_result" = 1
+            rm "$RUNNER_TEMP/coregen-inspection/negative.edf"
+            echo "$ip EDIF comparator accepted identical and rejected changed bytes" | tee -a "$RUNNER_TEMP/coregen-inspection/comparisons.txt"
+          done
+          printf '%s\n' 'EDIF is an inspection export, not proof of complete NGC, FPGA timing or hardware equivalence.' | tee -a "$RUNNER_TEMP/coregen-inspection/comparisons.txt"
+      - name: Upload inspection evidence and EDIF exports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mk2-${{ matrix.core }}-coregen-retained-inspection
+          path: ${{ runner.temp }}/coregen-inspection/
+          if-no-files-found: error
+          retention-days: 14

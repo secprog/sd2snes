@@ -1,0 +1,294 @@
+name: Compare DSPx stack clock-enable mapping
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dsp-stack-ce-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  prove:
+    name: Prove stack transitions and both reads, including X-state controls
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Prepare pinned original and runner-only candidate
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/prepare-dsp-stack-ce-experiment.py \
+            verilog/sd2snes_dsp/upd77c25.v "$RUNNER_TEMP/stack-ce-proof"
+
+      - name: Install and identify the formal tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends yosys
+          yosys -V | tee "$RUNNER_TEMP/stack-ce-proof/tool-version.txt"
+          grep -F 'Yosys 0.33 (git sha1 2584903a060)' "$RUNNER_TEMP/stack-ce-proof/tool-version.txt"
+
+      - name: Audit every state bit and prepare the strict transition models
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/stack-ce-proof"
+          sha256sum --check SHA256SUMS
+          for variant in gold gate bad-address bad-lane bad-data bad-freeze bad-return bad-x bad-x-data; do
+            mkdir "$variant"
+            cp "$variant.v" "$variant/model.v"
+            (
+              cd "$variant"
+              # Yosys 0.33 opt_expr can fold a | ~a even with -keepdc.
+              # Preserve those X distinctions and use Verilog if/case behavior;
+              # avoid the general memory optimization pipeline for this proof.
+              yosys -l preparation.log -p 'read_verilog -sv -formal model.v; hierarchy -check -top stack_model; flatten; proc -ifx -noopt; check -assert; memory_memx; memory_collect; memory_map; dffunmap; setundef -undriven -undef; opt_clean; check -assert; write_json state.json'
+              model_name=gate
+              if [[ "$variant" == gold ]]; then model_name=gold; fi
+              python3 "$GITHUB_WORKSPACE/.github/scripts/cut-dsp-stack-case-state.py" \
+                state.json transition.json "$model_name" | tee state-audit.log
+              yosys -l state-view.log -p "read_json transition.json; hierarchy -check -top $model_name; sat -verify -enable_undef -prove state_view_ok 1 -show-inputs -show state_view_ok -timeout 120"
+              grep -F 'SAT proof finished - no model found: SUCCESS!' state-view.log
+              if [[ "$variant" == gold ]]; then
+                result=0
+                yosys -l state-view-mutant.log -p 'read_json state-view-mutant.json; hierarchy -check -top gold; sat -verify -enable_undef -set-def-inputs -prove state_view_ok 1 -show-inputs -show state_view_ok -dump_json state-view-mutant-counterexample.json -timeout 120' || result=$?
+                test "$result" -ne 0
+                grep -F 'SAT proof finished - model found: FAIL!' state-view-mutant.log
+                test -s state-view-mutant-counterexample.json
+              fi
+            )
+          done
+
+      - name: Prove binary and X-state boundaries and reject real mutations
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/stack-ce-proof"
+          for mode in binary xstate; do
+            if [[ "$mode" == binary ]]; then
+              variants=(gate bad-address bad-lane bad-data bad-freeze bad-return bad-x bad-x-data)
+              input_flags='-set-def-inputs'
+            else
+              variants=(bad-x bad-x-data gate)
+              input_flags=''
+            fi
+            for variant in "${variants[@]}"; do
+              cat > "$variant/prove-$mode.ys" <<YOSYS
+          read_json ../gold/transition.json
+          read_json transition.json
+          miter -equiv -make_assert -make_outputs -make_outcmp gold gate miter
+          hierarchy -check -top miter
+          flatten -wb
+          hierarchy -check -top miter
+          opt_clean
+          check -assert
+          sat -verify -enable_undef $input_flags -prove-asserts -show-inputs -show-outputs -dump_json counterexample-$mode.json -timeout 300
+          YOSYS
+              result=0
+              (cd "$variant" && yosys -l "proof-$mode.log" -s "prove-$mode.ys") || result=$?
+              if [[ "$variant" == gate || ( "$variant" == bad-x* && "$mode" == binary ) ]]; then
+                test "$result" -eq 0
+                grep -F 'SAT proof finished - no model found: SUCCESS!' "$variant/proof-$mode.log"
+              else
+                test "$result" -ne 0
+                grep -F 'SAT proof finished - model found: FAIL!' "$variant/proof-$mode.log"
+                test -s "$variant/counterexample-$mode.json"
+              fi
+            done
+          done
+          sha256sum --check SHA256SUMS
+          printf 'All 176 stack transitions and both reads match under the binary and Yosys X-valued component models; five binary mutants and both X-sensitive controls produced counterexamples. This is not a whole-FPGA or hardware proof.\n' \
+            | tee verified.txt >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload exact proof sources, audits and counterexamples
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsp-stack-ce-proof
+          path: ${{ runner.temp }}/stack-ce-proof/
+          if-no-files-found: error
+          retention-days: 14
+
+  native:
+    name: DSPx proved stack clock-enable mapping, XST Speed MAP Area seed 68
+    needs: prove
+    runs-on: ubuntu-22.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dsp-stack-ce-proof
+          path: ${{ runner.temp }}/stack-ce-proof
+
+      - name: Select only the proved runner-only candidate
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD:verilog)" = 4e50365f59f38217b67c5126276873a29be737d5
+          test "$(git hash-object --no-filters .github/scripts/build.sh)" = 847665b375209d705de918d54f89cff194b074b1
+          test "$(git hash-object --no-filters .github/actions/prepare-build-image/action.yml)" = ac2a66fc24d4a15658b666cdc5f5db7964df4c3b
+          git diff --exit-code -- verilog .github/scripts/build.sh .github/actions/prepare-build-image/action.yml
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/main.ucf)" = 4f34c4cf9e475ac171a216c3f15fff74918fd03c
+          test "$(git hash-object --no-filters verilog/sd2snes_dspx/sd2snes_dspx.xise)" = 2822b63c005bce73e8e7aaf332bcdbd983d1492d
+          test ! -e verilog/sd2snes_dspx/ucf.extra
+          proof="$RUNNER_TEMP/stack-ce-proof"
+          (cd "$proof" && sha256sum --check SHA256SUMS)
+          test -s "$proof/verified.txt"
+          cmp "$proof/original-upd77c25.v" verilog/sd2snes_dsp/upd77c25.v
+          cp "$proof/candidate-upd77c25.v" verilog/sd2snes_dsp/upd77c25.v
+          candidate_blob=$(git hash-object --no-filters verilog/sd2snes_dsp/upd77c25.v)
+          printf '%s\n' "$candidate_blob" > "$RUNNER_TEMP/stack-ce-candidate.sha"
+          test "$(git diff --name-only -- verilog)" = verilog/sd2snes_dsp/upd77c25.v
+          {
+            printf 'Checkout: %s\nVerilog tree: %s\nCandidate DSP blob: %s\n' "$GITHUB_SHA" "$(git rev-parse HEAD:verilog)" "$candidate_blob"
+            printf 'Original project: 2822b63c005bce73e8e7aaf332bcdbd983d1492d\nOriginal UCF: 4f34c4cf9e475ac171a216c3f15fff74918fd03c\n'
+            printf 'Diagnostic target: XST Speed, timing-driven MAP Area, PAR high, seed 68. No timing requirements changed.\n'
+          } | tee "$RUNNER_TEMP/stack-ce-identity.txt"
+
+      - uses: ./.github/actions/prepare-build-image
+        with:
+          target: mk2
+
+      - name: Compile using the strict native PAR and TRACE checks
+        id: compile
+        env:
+          ISE_CTABLE: '68'
+        run: |
+          set -euo pipefail
+          image_id=$(docker image inspect sd2snes-ci:mk2 --format '{{.Id}}')
+          printf 'ISE image ID: %s\n' "$image_id" | tee -a "$RUNNER_TEMP/stack-ce-identity.txt"
+          test "$image_id" = sha256:5e3bbb00649997abca8843b1d82d8529eda99a0f2868d37ad9777e0ad5fd50e8
+          container_name=sd2snes-dsp-stack-ce
+          bash .github/scripts/report-activity.sh "$container_name" &
+          activity_pid=$!
+          trap 'kill "$activity_pid" 2>/dev/null || true; wait "$activity_pid" 2>/dev/null || true' EXIT
+          docker run --rm --name "$container_name" --user 0:0 \
+            --mac-address 08:00:27:68:c9:35 --env ISE_CTABLE \
+            --volume "$GITHUB_WORKSPACE:/work" --workdir /work \
+            --entrypoint /bin/bash sd2snes-ci:mk2 .github/scripts/build.sh mk2 dspx \
+            2>&1 | tee "$RUNNER_TEMP/stack-ce-build.log"
+
+      - name: Retain every post-build tracked Verilog difference
+        if: always() && steps.compile.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          git diff --no-ext-diff --no-renames --binary -- verilog > "$RUNNER_TEMP/stack-ce-post.diff"
+          git diff --no-ext-diff --no-renames --name-only -- verilog | tee "$RUNNER_TEMP/stack-ce-post-paths.txt"
+          for path in verilog/sd2snes_dsp/upd77c25.v verilog/sd2snes_dsp/main.ucf verilog/sd2snes_dspx/sd2snes_dspx.xise; do
+            printf '%s %s\n' "$(git hash-object --no-filters "$path")" "$path"
+          done | tee "$RUNNER_TEMP/stack-ce-post-hashes.txt"
+          for core in dac_buf msu_databuf snescmd_buf upd77c25_datram upd77c25_datrom upd77c25_pgmrom; do
+            file="verilog/sd2snes_dsp/ip/mk2/$core.ngc"
+            if [[ -f "$file" ]]; then sha256sum "$file"; else printf 'MISSING %s\n' "$file"; fi
+          done | tee "$RUNNER_TEMP/stack-ce-ngc-hashes.txt"
+
+      - name: Verify candidate, project, constraints and all tracked inputs
+        if: always() && steps.compile.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/upd77c25.v)" = "$(cat "$RUNNER_TEMP/stack-ce-candidate.sha")"
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/main.ucf)" = 4f34c4cf9e475ac171a216c3f15fff74918fd03c
+          test "$(git hash-object --no-filters verilog/sd2snes_dspx/sd2snes_dspx.xise)" = 2822b63c005bce73e8e7aaf332bcdbd983d1492d
+          test "$(git diff --name-only -- verilog)" = verilog/sd2snes_dsp/upd77c25.v
+          echo 'Only the proved DSP candidate differs among tracked Verilog inputs.'
+
+      - name: Verify actual synthesis, map and route options
+        if: always() && steps.compile.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          grep -Ex -- '-opt_mode Speed' verilog/sd2snes_dspx/main.xst
+          python3 - "$RUNNER_TEMP/stack-ce-build.log" <<'PY'
+          import re
+          import shlex
+          import sys
+          from pathlib import Path
+
+          lines = Path(sys.argv[1]).read_text(errors="strict").splitlines()
+          for tool, expected in (
+              ("map", {"-logic_opt": "on", "-ol": "high", "-xe": "n", "-t": "68", "-register_duplication": "on", "-cm": "area"}),
+              ("par", {"-ol": "high", "-xe": "c", "-t": "68"}),
+          ):
+              commands = [line for line in lines if re.search(r"/" + tool + r"\s+-", line)]
+              if len(commands) != 1:
+                  raise SystemExit(f"Missing or ambiguous {tool} command")
+              args = shlex.split(commands[0].split(" || ", 1)[0].strip())
+              if tool == "map" and args.count("-timing") != 1:
+                  raise SystemExit("MAP is not explicitly timing-driven")
+              for flag, value in expected.items():
+                  if args.count(flag) != 1 or args.index(flag) + 1 >= len(args) or args[args.index(flag) + 1] != value:
+                      raise SystemExit(f"Unexpected {tool} option {flag}")
+              print(f"Verified {tool} command: {commands[0]}")
+          PY
+
+      - name: Inspect actual mapped stack clock enables
+        if: always() && steps.compile.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          core=verilog/sd2snes_dspx
+          test -s "$core/main_map.ncd"
+          docker run --rm --user 0:0 --mac-address 08:00:27:68:c9:35 \
+            --volume "$GITHUB_WORKSPACE:/work" --workdir /work/verilog/sd2snes_dspx \
+            --entrypoint /bin/bash sd2snes-ci:mk2 -c \
+            'set -euo pipefail; xdl -ncd2xdl -nopips main_map.ncd stack-ce-audit.xdl'
+          python3 - "$core/stack-ce-audit.xdl" "$core/main.syr" <<'PY' | tee "$RUNNER_TEMP/stack-ce-xdl.txt"
+          import re
+          import sys
+          from pathlib import Path
+
+          text = Path(sys.argv[1]).read_text()
+          report = Path(sys.argv[2]).read_text()
+          statements = re.findall(r'(?ms)^\s*inst\s+.*?;', text)
+          print('Mapped NCD evidence only; routed placement and other registers require review.')
+          ok = True
+          for suffix in ('3', '6'):
+              target = f'snes_dspx/stack<9>_{suffix}'
+              hits = [item for item in statements if re.search(r'FF[XY]:' + re.escape(target) + r':#FF', item)]
+              print(f'{target}: {len(hits)} matching mapped instances')
+              for item in hits:
+                  print(item)
+              if len(hits) != 1 or 'CEINV::#OFF' not in hits[0]:
+                  ok = False
+          recognized = 'Set property "use_clock_enable = no" for signal <stack>.' in report
+          print(f'XST reports stack attribute: {recognized}')
+          if not recognized or not ok:
+              raise SystemExit('Targeted mapping not established; inspection inconclusive')
+          PY
+
+      - name: Confirm the native timing result
+        if: always() && steps.compile.outcome == 'success'
+        run: |
+          set -euo pipefail
+          grep -Eq 'Timing Score: 0 \(Setup: 0, Hold: 0' verilog/sd2snes_dspx/main.par
+          grep -Eq 'Timing errors: 0[[:space:]]+Score: 0[[:space:]]+\(Setup/Max: 0, Hold: 0\)' verilog/sd2snes_dspx/main.twr
+          echo 'Native PAR and TRACE explicitly report zero timing errors.'
+
+      - name: Upload reports, source differences and timing evidence without bitstreams
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsp-stack-ce-seed-68
+          path: |
+            ${{ runner.temp }}/stack-ce-identity.txt
+            ${{ runner.temp }}/stack-ce-candidate.sha
+            ${{ runner.temp }}/stack-ce-build.log
+            ${{ runner.temp }}/stack-ce-post.diff
+            ${{ runner.temp }}/stack-ce-post-paths.txt
+            ${{ runner.temp }}/stack-ce-post-hashes.txt
+            ${{ runner.temp }}/stack-ce-ngc-hashes.txt
+            ${{ runner.temp }}/stack-ce-xdl.txt
+            verilog/sd2snes_dspx/main.xst
+            verilog/sd2snes_dspx/main.prj
+            verilog/sd2snes_dspx/main.pcf
+            verilog/sd2snes_dspx/sd2snes_dspx.xise
+            verilog/sd2snes_dspx/*.syr
+            verilog/sd2snes_dspx/*.par
+            verilog/sd2snes_dspx/*.mrp
+            verilog/sd2snes_dspx/*.psr
+            verilog/sd2snes_dspx/*.twr
+            verilog/sd2snes_dspx/*.bld
+            verilog/sd2snes_dspx/*.unroutes
+          if-no-files-found: error
+          retention-days: 14

@@ -1,0 +1,145 @@
+name: Audit MkII CoreGen tracked-file rewrites
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mk2-coregen-rewrites-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    name: ${{ matrix.core }} CoreGen input and output audit
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - core: basex
+            source: sd2snes_base
+            project_blob: 5338e8fa5fef0af0c526ff99563b17a0763ed34a
+            ucf_blob: e582e03059fbbcf21b4124e5dd7aa9ac8792fd6b
+          - core: dspx
+            source: sd2snes_dsp
+            project_blob: 2822b63c005bce73e8e7aaf332bcdbd983d1492d
+            ucf_blob: 4f34c4cf9e475ac171a216c3f15fff74918fd03c
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Pin the input tree, project, constraints and image action
+        env:
+          CORE: ${{ matrix.core }}
+          SOURCE: ${{ matrix.source }}
+          PROJECT_BLOB: ${{ matrix.project_blob }}
+          UCF_BLOB: ${{ matrix.ucf_blob }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/coregen-audit"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD:verilog)" = 4e50365f59f38217b67c5126276873a29be737d5
+          test "$(git hash-object --no-filters .github/actions/prepare-build-image/action.yml)" = ac2a66fc24d4a15658b666cdc5f5db7964df4c3b
+          git diff --exit-code -- verilog .github/actions/prepare-build-image/action.yml
+          git diff --cached --exit-code -- verilog .github/actions/prepare-build-image/action.yml
+          project="verilog/sd2snes_$CORE/sd2snes_$CORE.xise"
+          ucf="verilog/$SOURCE/main.ucf"
+          test "$(git hash-object --no-filters "$project")" = "$PROJECT_BLOB"
+          test "$(git hash-object --no-filters "$ucf")" = "$UCF_BLOB"
+          git ls-files -s -- verilog > "$RUNNER_TEMP/coregen-audit/pre-index.txt"
+          {
+            printf 'Checkout: %s\nCore: %s\nVerilog tree: %s\n' "$GITHUB_SHA" "$CORE" "$(git rev-parse HEAD:verilog)"
+            printf 'Original project blob: %s\nOriginal UCF blob: %s\n' "$PROJECT_BLOB" "$UCF_BLOB"
+            printf 'Regenerate only these core netlists using the existing make recipe; no FPGA timing result is produced.\n'
+          } | tee "$RUNNER_TEMP/coregen-audit/identity.txt"
+
+      - uses: ./.github/actions/prepare-build-image
+        with:
+          target: mk2
+
+      - name: Regenerate only the required MkII CoreGen IP on the hosted runner
+        id: generate
+        env:
+          CORE: ${{ matrix.core }}
+          SOURCE: ${{ matrix.source }}
+        run: |
+          set -euo pipefail
+          image_id=$(docker image inspect sd2snes-ci:mk2 --format '{{.Id}}')
+          printf 'ISE image ID: %s\n' "$image_id" | tee -a "$RUNNER_TEMP/coregen-audit/identity.txt"
+          test "$image_id" = sha256:5e3bbb00649997abca8843b1d82d8529eda99a0f2868d37ad9777e0ad5fd50e8
+          git diff --exit-code -- verilog
+          docker run --rm --user 0:0 --mac-address 08:00:27:68:c9:35 --env CORE \
+            --volume "$GITHUB_WORKSPACE:/work" --workdir "/work/verilog/sd2snes_$CORE" \
+            --entrypoint /bin/bash sd2snes-ci:mk2 -c '
+              set -euo pipefail
+              case "$CORE" in
+                basex) source=sd2snes_base; ips=(dac_buf msu_databuf snescmd_buf) ;;
+                dspx) source=sd2snes_dsp; ips=(dac_buf msu_databuf snescmd_buf upd77c25_datram upd77c25_datrom upd77c25_pgmrom) ;;
+                *) exit 2 ;;
+              esac
+              dir="../$source/ip/mk2"
+              test -f "$dir/coregen.cgc"
+              targets=()
+              for ip in "${ips[@]}"; do
+                test -f "$dir/$ip.xco"
+                test ! -e "$dir/$ip.ngc"
+                targets+=("$dir/$ip.ngc")
+              done
+              make -j2 HOST=LINUX XILINX_ENV= "${targets[@]}"
+              for ip in "${ips[@]}"; do
+                test -s "$dir/$ip.ngc"
+                sha256sum "$dir/$ip.ngc"
+              done
+            ' 2>&1 | tee "$RUNNER_TEMP/coregen-audit/coregen.log"
+          case "$CORE" in
+            basex) ips=(dac_buf msu_databuf snescmd_buf) ;;
+            dspx) ips=(dac_buf msu_databuf snescmd_buf upd77c25_datram upd77c25_datrom upd77c25_pgmrom) ;;
+            *) exit 2 ;;
+          esac
+          for ip in "${ips[@]}"; do
+            expected="coregen -p ../$SOURCE/ip/mk2 -b ../$SOURCE/ip/mk2/$ip.xco -r"
+            count=$(grep -F -c -- "$expected" "$RUNNER_TEMP/coregen-audit/coregen.log" || true)
+            test "$count" = 1
+            printf 'Verified recipe command: %s\n' "$expected"
+          done
+
+      - name: Record every tracked Verilog change, even if generation fails
+        if: always() && steps.generate.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          audit="$RUNNER_TEMP/coregen-audit"
+          mkdir -p "$audit"
+          git diff --no-ext-diff --no-renames --binary -- verilog > "$audit/tracked.diff"
+          git diff --no-ext-diff --no-renames --name-only -- verilog > "$audit/changed-paths.txt"
+          git diff --no-ext-diff --no-renames --numstat -- verilog > "$audit/numstat.txt"
+          git diff --no-ext-diff --no-renames --name-only -z -- verilog > "$audit/changed-paths.nul"
+          git status --short --untracked-files=all -- verilog > "$audit/status.txt"
+          {
+            while IFS= read -r -d '' path; do
+              printf '%s\n' "$path"
+              if git cat-file -e "HEAD:$path" 2>/dev/null; then
+                printf '  initial Git blob: %s\n' "$(git rev-parse "HEAD:$path")"
+              else
+                printf '  initial Git blob: absent\n'
+              fi
+              if test -f "$path"; then
+                printf '  final Git blob: %s\n' "$(git hash-object --no-filters "$path")"
+                sha256sum "$path"
+              else
+                printf '  final file: absent\n'
+              fi
+            done < "$audit/changed-paths.nul"
+          } > "$audit/changed-hashes.txt"
+          cat "$audit/changed-paths.txt"
+          printf 'Tracked-file diff retained for review; no rewrite is classified as harmless.\n'
+
+      - name: Upload the audit without generated netlists or bitstreams
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mk2-${{ matrix.core }}-coregen-rewrites
+          path: ${{ runner.temp }}/coregen-audit
+          if-no-files-found: error
+          retention-days: 14

@@ -1,0 +1,175 @@
+name: Inspect basex retained DMA control mapping
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: basex-dma-retained-map-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    name: Read-only DMA evidence from rejected basex candidate
+    runs-on: ubuntu-22.04
+    timeout-minutes: 35
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Pin source, inspector and all original tracked inputs
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD:verilog)" = 01ce8b6b4509a5a72e0ad739e06bf19e548a2fc1
+          test "$(git hash-object --no-filters verilog/common.mk)" = c6b13825f8b7942711d3ae9723ce4fc83fdaa3cc
+          test "$(git hash-object --no-filters verilog/sd2snes_base/dma.v)" = 00dde5ec7e35baf936df5b696a0a7501039ebc84
+          test "$(git hash-object --no-filters verilog/sd2snes_base/main.v)" = 2bd168af3e0254a6c985ff7cd5b0413afafab0a9
+          test "$(git hash-object --no-filters verilog/sd2snes_base/address.v)" = 36ce9a5c17fc80b9ddda1d869f0d75a4fb52356c
+          test "$(git hash-object --no-filters verilog/sd2snes_base/cheat.v)" = dfc2f4fe2dc21fdd07da735fa1cd57a7aa6f4f3f
+          test "$(git hash-object --no-filters .github/workflows/compare-basex-late-priority.yml)" = 4686a33e07344f124454865c38ebad594ae75fd1
+          test "$(git hash-object --no-filters .github/scripts/inspect-dsp-retained-map.py)" = 2b3b867372717b5729e26cb4880cb1af0b01a965
+          test "$(git hash-object --no-filters .github/scripts/inspect-basex-dma-map.py)" = bfd80bb13725d4c030b2c3e26f71287035cb93de
+          test "$(git hash-object --no-filters .github/actions/prepare-build-image/action.yml)" = ac2a66fc24d4a15658b666cdc5f5db7964df4c3b
+          git diff --exit-code
+          git diff --cached --exit-code
+          report="$RUNNER_TEMP/basex-dma-retained-map"
+          mkdir -p "$report" "$RUNNER_TEMP/basex-dma-retained-input"
+          git ls-files -z | xargs -0 sha256sum > "$report/tracked-before.sha256"
+          git ls-files -s > "$report/index-before.txt"
+          printf 'Checkout: %s\nVerilog tree: %s\n' "$GITHUB_SHA" "$(git rev-parse HEAD:verilog)" > "$report/identity.txt"
+          printf '%s\n' 'Basis: original Area46 TRACE has cmd_data_r_4 to DMA pending at -0.763ns; rejected late-priority TRACE has SNES_ADDR13 to shadow_dst11 at -3.239ns. Existing raw excerpt covers cheat gates, not these DMA CE drivers. Inspect retained failed mapping only; no synthesis/routing/retry or source candidate.' >> "$report/identity.txt"
+
+      - name: Exercise exact FF and physical driver controls on hosted runner
+        run: python3 .github/scripts/inspect-basex-dma-map.py --self-check
+
+      - name: Verify and download the exact rejected candidate mapped NCD
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = secprog/sd2snes
+          report="$RUNNER_TEMP/basex-dma-retained-map"
+          gh api repos/secprog/sd2snes/actions/artifacts/12892758359 > "$report/artifact-meta.json"
+          gh api 'repos/secprog/sd2snes/actions/runs/40860299285/jobs?per_page=100' > "$report/jobs.json"
+          python3 - "$report" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          root = Path(sys.argv[1])
+          artifact = json.loads((root / 'artifact-meta.json').read_text())
+          expected = {'id': 12892758359, 'name': 'basex-late-priority-seed-46-mapped-ncd',
+                      'expired': False, 'size_in_bytes': 900051,
+                      'digest': 'sha256:d4c1b76f5bf2c7f31e607d4bdfbff8d5ddb3f489c77611bdaf328151c5bd1fea'}
+          if any(artifact.get(key) != value for key, value in expected.items()):
+              raise SystemExit('Retained artifact identity differs')
+          run = artifact['workflow_run']
+          if (run['id'] != 40860299285 or run['head_sha'] != 'cea284a82564a8f97a169394958eade59d74dd59'
+                  or run['repository_id'] != 1433388489 or run['head_repository_id'] != 1433388489):
+              raise SystemExit('Retained failed run identity differs')
+          payload = json.loads((root / 'jobs.json').read_text())
+          if payload['total_count'] != 1 or len(payload['jobs']) != 1:
+              raise SystemExit('Unexpected failed-run job inventory')
+          job = payload['jobs'][0]
+          if (job['id'] != 123401539527 or job['head_sha'] != run['head_sha']
+                  or job['status'] != 'completed' or job['conclusion'] != 'failure'):
+              raise SystemExit('Expected rejected native job missing')
+          steps = {step['name']: step['conclusion'] for step in job['steps']}
+          for name, outcome in (
+              ('Select exactly the proved runner-only source', 'success'),
+              ('Compile using strict native PAR and TRACE checks', 'failure'),
+              ('Verify candidate, project, constraints and all tracked inputs', 'failure'),
+              ('Verify actual synthesis, map and route options', 'success'),
+              ('Compare PCF timing statements with the original report', 'success'),
+              ('Inspect actual mapped late-priority statements', 'success'),
+              ('Retain the mapped NCD separately on GitHub', 'success'),
+          ):
+              if steps.get(name) != outcome:
+                  raise SystemExit(f'Unexpected original step result: {name}')
+          print('Exact failed native/input-integrity run verified. Its rejection remains unchanged.')
+          PY
+          gh api repos/secprog/sd2snes/actions/artifacts/12892758359/zip > "$RUNNER_TEMP/basex-dma-retained.zip"
+          printf 'd4c1b76f5bf2c7f31e607d4bdfbff8d5ddb3f489c77611bdaf328151c5bd1fea  %s\n' "$RUNNER_TEMP/basex-dma-retained.zip" | sha256sum --check
+          python3 - "$RUNNER_TEMP/basex-dma-retained.zip" "$RUNNER_TEMP/basex-dma-retained-input/main_map.ncd" <<'PY'
+          import hashlib
+          import sys
+          import zipfile
+          from pathlib import Path
+          source = Path(sys.argv[1])
+          if source.stat().st_size != 900051:
+              raise SystemExit('Unexpected ZIP byte count')
+          with zipfile.ZipFile(source) as archive:
+              entries = archive.infolist()
+              if (len(entries) != 1 or entries[0].filename != 'main_map.ncd'
+                      or not 0 < entries[0].file_size <= 16_000_000):
+                  raise SystemExit('Unexpected or unsafe complete mapped artifact inventory')
+              data = archive.read(entries[0])
+          if hashlib.sha256(data).hexdigest() != 'f419a361f26efc8bb2bcf353ef930ce9f9276bb5f1a22b14461d55799f4c4422':
+              raise SystemExit('Retained raw mapped NCD hash differs')
+          Path(sys.argv[2]).write_bytes(data)
+          print(f'Exact original retained mapped NCD verified: {len(data)} bytes')
+          PY
+          sha256sum "$RUNNER_TEMP/basex-dma-retained-input/main_map.ncd" > "$report/ncd-before.sha256"
+
+      - uses: ./.github/actions/prepare-build-image
+        with:
+          target: mk2
+
+      - name: Convert retained NCD read-only and retain bounded DMA raw statements
+        run: |
+          set -euo pipefail
+          report="$RUNNER_TEMP/basex-dma-retained-map"
+          image="$(docker image inspect sd2snes-ci:mk2 --format '{{.Id}}')"
+          test "$image" = sha256:5e3bbb00649997abca8843b1d82d8529eda99a0f2868d37ad9777e0ad5fd50e8
+          printf 'ISE image: %s\nRetained run 40860299285/job123401539527/artifact12892758359\n' "$image" | tee -a "$report/identity.txt"
+          docker run --rm --read-only --network none --user 0:0 \
+            --tmpfs /tmp:rw,exec,size=256m --mac-address 08:00:27:68:c9:35 \
+            --volume "$RUNNER_TEMP/basex-dma-retained-input/main_map.ncd:/input/main_map.ncd:ro" \
+            --volume "$report:/output" --workdir /tmp \
+            --entrypoint /bin/bash sd2snes-ci:mk2 -c \
+            'set -euo pipefail; xdl -ncd2xdl -nopips /input/main_map.ncd /output/main_map.xdl; test -s /output/main_map.xdl' \
+            2>&1 | tee "$report/xdl-conversion.log"
+          sha256sum --check "$report/ncd-before.sha256"
+          sha256sum "$report/main_map.xdl" > "$report/xdl.sha256"
+          python3 .github/scripts/inspect-basex-dma-map.py "$report/main_map.xdl" | tee "$report/dma-raw.txt"
+
+      - name: Retain final all-tracked and staged evidence even after inspection failure
+        if: always()
+        run: |
+          set -euo pipefail
+          report="$RUNNER_TEMP/basex-dma-retained-map"
+          mkdir -p "$report"
+          git ls-files -z | xargs -0 sha256sum > "$report/tracked-after.sha256"
+          git ls-files -s > "$report/index-after.txt"
+          git diff --no-ext-diff --no-renames --binary > "$report/post.diff"
+          git diff --cached --no-ext-diff --no-renames --binary > "$report/post-staged.diff"
+
+      - name: Require unchanged source, index and original retained NCD
+        if: always()
+        run: |
+          set -euo pipefail
+          report="$RUNNER_TEMP/basex-dma-retained-map"
+          cmp "$report/tracked-before.sha256" "$report/tracked-after.sha256"
+          cmp "$report/index-before.txt" "$report/index-after.txt"
+          sha256sum --check "$report/tracked-before.sha256" > "$report/tracked-final-check.txt"
+          sha256sum --check "$report/ncd-before.sha256"
+          git diff --exit-code
+          git diff --cached --exit-code
+          printf '%s\n' 'Read-only inspection only. No candidate, IP generation, synthesis/MAP/PAR/TRACE, timing pass, input restoration or waiver.' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload complete bounded reports only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: basex-retained-dma-map-reports
+          path: |
+            ${{ runner.temp }}/basex-dma-retained-map/*.json
+            ${{ runner.temp }}/basex-dma-retained-map/*.sha256
+            ${{ runner.temp }}/basex-dma-retained-map/*.txt
+            ${{ runner.temp }}/basex-dma-retained-map/*.diff
+            ${{ runner.temp }}/basex-dma-retained-map/*.log
+          if-no-files-found: error
+          retention-days: 14

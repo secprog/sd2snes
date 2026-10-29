@@ -1,0 +1,201 @@
+name: Inspect failed DSPx stack permit mapping
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: dsp-stack-late-permit-map-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    name: Read exact failed stack permit mapped NCD
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Verify original sources and pinned inspection inputs
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = secprog/sd2snes
+          test "$(git rev-parse HEAD:verilog)" = 4e50365f59f38217b67c5126276873a29be737d5
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/upd77c25.v)" = ba14f5b6dd198fbb5645f005fb3784890beec2c4
+          test "$(git hash-object --no-filters verilog/common.mk)" = 1dd382cd82f2fdd56391dc8245d0782a6b356402
+          test "$(git hash-object --no-filters .github/scripts/build.sh)" = 847665b375209d705de918d54f89cff194b074b1
+          test "$(git hash-object --no-filters .github/actions/prepare-build-image/action.yml)" = ac2a66fc24d4a15658b666cdc5f5db7964df4c3b
+          test "$(git hash-object --no-filters .github/scripts/inspect-dsp-retained-map.py)" = 2b3b867372717b5729e26cb4880cb1af0b01a965
+          test "$(git hash-object --no-filters .github/workflows/compare-dsp-stack-late-permit.yml)" = 752f385b5931df6b7eb5a837396e27fdfc07e32f
+          git diff --exit-code
+          git diff --cached --exit-code
+          mkdir -p "$RUNNER_TEMP/stack-permit-input" "$RUNNER_TEMP/stack-permit-map"
+          printf 'Checkout: %s\nOriginal Verilog tree: %s\n' "$(git rev-parse HEAD)" "$(git rev-parse HEAD:verilog)" > "$RUNNER_TEMP/stack-permit-map/identity.txt"
+
+      - name: Verify completed failed run and exact mapped artifact provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          reports="$RUNNER_TEMP/stack-permit-map"
+          gh api repos/secprog/sd2snes/actions/runs/40875214074 > "$reports/run.json"
+          gh api 'repos/secprog/sd2snes/actions/runs/40875214074/jobs?per_page=100' > "$reports/jobs.json"
+          gh api repos/secprog/sd2snes/actions/artifacts/12900445777 > "$reports/artifact.json"
+          python3 - "$reports" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          root = Path(sys.argv[1])
+          run = json.loads((root / 'run.json').read_text())
+          assert run['id'] == 40875214074
+          assert run['head_sha'] == '41b9c1e056485187428d5c991b299f221e6ea714'
+          assert run['status'] == 'completed' and run['conclusion'] == 'failure'
+          assert run['run_attempt'] == 1
+          assert run['path'] == '.github/workflows/compare-dsp-stack-late-permit.yml'
+          job_list = json.loads((root / 'jobs.json').read_text())
+          assert job_list['total_count'] == 1 and len(job_list['jobs']) == 1
+          job, = job_list['jobs']
+          assert job['id'] == 123452169778 and job['run_id'] == run['id']
+          assert job['status'] == 'completed' and job['conclusion'] == 'failure'
+          steps = {step['name']: step['conclusion'] for step in job['steps']}
+          expected = {
+              'Select exactly the proved runner-only source': 'success',
+              'Compile using strict native PAR and TRACE checks': 'failure',
+              'Verify candidate, project, constraints and all tracked inputs': 'failure',
+              'Inspect actual mapped stack permits, joins and target enables': 'failure',
+              'Confirm the native timing result': 'skipped',
+              'Retain the mapped NCD separately on GitHub': 'success',
+          }
+          assert all(steps.get(name) == outcome for name, outcome in expected.items())
+          artifact = json.loads((root / 'artifact.json').read_text())
+          assert artifact['id'] == 12900445777
+          assert artifact['name'] == 'dsp-stack-late-permit-seed-68-mapped-ncd'
+          assert artifact['size_in_bytes'] == 874797 and artifact['expired'] is False
+          assert artifact['digest'] == 'sha256:1ffc2b19f7868375d9b76bbba6cb99dc7447c6857e4cb4ac9663c9f09d517382'
+          origin = artifact['workflow_run']
+          assert origin['id'] == run['id'] and origin['head_sha'] == run['head_sha']
+          assert origin['repository_id'] == origin['head_repository_id'] == run['repository']['id']
+          print('Exact failed native run, job, step outcomes and mapped artifact verified.')
+          PY
+          gh api repos/secprog/sd2snes/actions/artifacts/12900445777/zip > "$RUNNER_TEMP/stack-permit-map.zip"
+          printf '1ffc2b19f7868375d9b76bbba6cb99dc7447c6857e4cb4ac9663c9f09d517382  %s\n' "$RUNNER_TEMP/stack-permit-map.zip" | sha256sum --check
+          python3 - "$RUNNER_TEMP/stack-permit-map.zip" "$RUNNER_TEMP/stack-permit-input/main_map.ncd" <<'PY'
+          import hashlib
+          import sys
+          import zipfile
+          from pathlib import Path
+          with zipfile.ZipFile(sys.argv[1]) as archive:
+              entries = archive.infolist()
+              if len(entries) != 1 or entries[0].filename != 'main_map.ncd' or not 0 < entries[0].file_size <= 16_000_000:
+                  raise SystemExit('Unexpected retained mapped artifact inventory')
+              data = archive.read(entries[0])
+          if hashlib.sha256(data).hexdigest() != '74e4e44aed657ae4542879c88656a7ebc1b224fe48015f018a32b60bfb164095':
+              raise SystemExit('Mapped NCD differs from completed native log')
+          Path(sys.argv[2]).write_bytes(data)
+          print('Verified ZIP digest and same-run NCD SHA256 before inspection.')
+          PY
+          sha256sum "$RUNNER_TEMP/stack-permit-input/main_map.ncd" > "$reports/ncd-before.sha256"
+
+      - uses: ./.github/actions/prepare-build-image
+        with:
+          target: mk2
+
+      - name: Convert retained mapped NCD with read-only inputs
+        run: |
+          set -euo pipefail
+          image=$(docker image inspect sd2snes-ci:mk2 --format '{{.Id}}')
+          test "$image" = sha256:5e3bbb00649997abca8843b1d82d8529eda99a0f2868d37ad9777e0ad5fd50e8
+          printf 'ISE image: %s\nRetained artifact: 12900445777; failed run: 40875214074; job: 123452169778\n' "$image" | tee -a "$RUNNER_TEMP/stack-permit-map/identity.txt"
+          docker run --rm --read-only --network none --user 0:0 \
+            --tmpfs /tmp:rw,mode=1777 \
+            --volume "$RUNNER_TEMP/stack-permit-input:/input:ro" \
+            --volume "$RUNNER_TEMP/stack-permit-map:/output" --workdir /output \
+            --entrypoint /bin/bash sd2snes-ci:mk2 -c \
+            'set -euo pipefail; xdl -ncd2xdl -nopips /input/main_map.ncd /output/main_map.xdl; test -s /output/main_map.xdl' \
+            2>&1 | tee "$RUNNER_TEMP/stack-permit-map/conversion.log"
+          sha256sum --check "$RUNNER_TEMP/stack-permit-map/ncd-before.sha256"
+          sha256sum "$RUNNER_TEMP/stack-permit-map/main_map.xdl" > "$RUNNER_TEMP/stack-permit-map/xdl.sha256"
+
+      - name: Retain complete bounded raw evidence and report name coverage
+        run: |
+          set -euo pipefail
+          python3 - "$RUNNER_TEMP/stack-permit-map/main_map.xdl" <<'PY' | tee "$RUNNER_TEMP/stack-permit-map/raw-mapping.txt"
+          import importlib.util
+          import re
+          import sys
+          from pathlib import Path
+          spec = importlib.util.spec_from_file_location('xdl', '.github/scripts/inspect-dsp-retained-map.py')
+          xdl = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(xdl)
+          xdl.fixture_checks()
+          instances, nets = xdl.parse(Path(sys.argv[1]).read_text(encoding='utf-8', errors='strict'))
+          if len(instances) < 100 or len(nets) < 100:
+              raise SystemExit('Unexpectedly small mapped design')
+          names = re.compile(r'stack_late_|stack_early_|run_permit|restore_permit|late_(?:low|high)_[0-9]+')
+          selected_instances = {name for name, text in instances.items() if names.search(text)}
+          bindings = []
+          for target in xdl.TARGETS:
+              comp = xdl.bind(instances, target)
+              ce_name, ce = xdl.ce_for(nets, comp)
+              drivers = [pin for pin in xdl.net_pins(ce) if pin[0] == 'outpin']
+              if len(drivers) != 1 or drivers[0][1] not in instances:
+                  raise SystemExit('Missing or ambiguous target CE driver')
+              selected_instances.update((comp, drivers[0][1]))
+              bindings.append((target, comp, ce_name, drivers[0]))
+          selected_nets = {name for name, text in nets.items() if names.search(text) or any(
+              comp in selected_instances for kind, comp, pin in xdl.net_pins(text))}
+          records = [instances[name] for name in sorted(selected_instances)]
+          records += [nets[name] for name in sorted(selected_nets)]
+          size = sum(len(record.encode('utf-8')) for record in records)
+          if not selected_instances or len(selected_instances) > 400 or len(selected_nets) > 700 or size > 3_000_000:
+              raise SystemExit('Missing/excessive complete raw evidence; no truncated excerpt accepted')
+          joined = '\n'.join(records)
+          print('READ-ONLY INSPECTION OF REJECTED CANDIDATE: native timing and input integrity FAILED.')
+          print('No new implementation, timing pass, original baseline, sequential mapped or hardware proof.')
+          print('Name presence/absence is an observation; absent names do not prove absent logic.')
+          print('Physical COMP names do not imply logical register coupling; CE pin loads are not FF counts.')
+          print(f'Parsed {len(instances)} instances/{len(nets)} nets; retained {len(selected_instances)} complete instances/{len(selected_nets)} complete nets/{size} raw bytes.')
+          for target, comp, ce_name, driver in bindings:
+              print(f'Target {target}: COMP={comp}, CE={ce_name}, driver={driver}')
+          expected = ['run_permit', 'restore_permit'] + [f'late_{lane}_{i}' for lane in ('low', 'high') for i in range(16)]
+          for name in expected:
+              found = bool(re.search(re.escape(name) + r'(?:/|:|\s|")', joined))
+              print(f'Source instance name {name}: {"present" if found else "absent"}')
+          for lane in ('low', 'high'):
+              for word in range(16):
+                  name = f'snes_dspx/stack_late_{lane}<{word}>'
+                  print(f'Exact output net {name}: {"present" if name in nets else "absent"}')
+          print('BEGIN COMPLETE RAW STATEMENTS')
+          print(joined)
+          print('END COMPLETE RAW STATEMENTS')
+          PY
+
+      - name: Require every tracked and staged input unchanged
+        if: always()
+        run: |
+          set -euo pipefail
+          git diff --exit-code
+          git diff --cached --exit-code
+          test "$(git rev-parse HEAD:verilog)" = 4e50365f59f38217b67c5126276873a29be737d5
+
+      - name: Upload only small inspection reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsp-stack-late-permit-map-inspection
+          path: |
+            ${{ runner.temp }}/stack-permit-map/identity.txt
+            ${{ runner.temp }}/stack-permit-map/run.json
+            ${{ runner.temp }}/stack-permit-map/jobs.json
+            ${{ runner.temp }}/stack-permit-map/artifact.json
+            ${{ runner.temp }}/stack-permit-map/ncd-before.sha256
+            ${{ runner.temp }}/stack-permit-map/conversion.log
+            ${{ runner.temp }}/stack-permit-map/xdl.sha256
+            ${{ runner.temp }}/stack-permit-map/raw-mapping.txt
+          if-no-files-found: error
+          retention-days: 14

@@ -161,11 +161,13 @@ jobs:
           bash .github/scripts/report-activity.sh "$container_name" &
           activity_pid=$!
           trap 'kill "$activity_pid" 2>/dev/null || true; wait "$activity_pid" 2>/dev/null || true' EXIT
-          docker run --rm --network none --name "$container_name" --user 0:0 \
+          # MAP requires the existing licensed Ethernet identity. The none
+          # driver creates only loopback, so retain the established bridge NIC.
+          docker run --rm --network bridge --name "$container_name" --user 0:0 \
             --mac-address 08:00:27:68:c9:35 --env ISE_CTABLE \
             --volume "$GITHUB_WORKSPACE:/work" --workdir /work \
             --entrypoint /bin/bash sd2snes-ci:mk2 -c \
-            'set -euo pipefail; make -C verilog/sd2snes_dspx -j2 main_map.ncd HOST=LINUX XILINX_ENV= IGNORE_TIMING=0; test -s verilog/sd2snes_dspx/main_map.ncd; test ! -e verilog/sd2snes_dspx/main.ncd; test ! -e verilog/sd2snes_dspx/main.par; test ! -e verilog/sd2snes_dspx/main.twr' \
+            'set -euo pipefail; observed_mac=$(cat /sys/class/net/eth0/address); printf "Observed build-container eth0 MAC: %s\n" "$observed_mac"; test "$observed_mac" = 08:00:27:68:c9:35; make -C verilog/sd2snes_dspx -j2 main_map.ncd HOST=LINUX XILINX_ENV= IGNORE_TIMING=0; test -s verilog/sd2snes_dspx/main_map.ncd; test ! -e verilog/sd2snes_dspx/main.ncd; test ! -e verilog/sd2snes_dspx/main.par; test ! -e verilog/sd2snes_dspx/main.twr' \
             2>&1 | tee "$RUNNER_TEMP/dsp-kept-isolated-map-build.log"
 
       - name: Retain every post-build tracked difference and generated IP hash

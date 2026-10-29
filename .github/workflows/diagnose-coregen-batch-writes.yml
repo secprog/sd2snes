@@ -1,0 +1,107 @@
+name: Diagnose CoreGen batch-mode tracked writes
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: coregen-batch-writes-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    name: Original DSP dac_buf, documented batch mode, no FPGA implementation
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Pin the original inputs and capture the complete tracked manifest
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD:verilog)" = 4e50365f59f38217b67c5126276873a29be737d5
+          test "$(git hash-object --no-filters verilog/common.mk)" = 1dd382cd82f2fdd56391dc8245d0782a6b356402
+          test "$(git hash-object --no-filters .github/actions/prepare-build-image/action.yml)" = ac2a66fc24d4a15658b666cdc5f5db7964df4c3b
+          git diff --exit-code
+          git diff --cached --exit-code
+          report="$RUNNER_TEMP/coregen-batch-writes"
+          mkdir -p "$report"
+          git ls-files -z | xargs -0 sha256sum > "$report/before.sha256"
+          git ls-files -s > "$report/index.txt"
+          printf 'Head: %s\nOriginal Verilog tree: %s\n' "$GITHUB_SHA" "$(git rev-parse HEAD:verilog)" > "$report/identity.txt"
+          printf '%s\n' 'Causal diagnostic only: test documented -b command execution without -r against retained regeneration evidence. No production recipe change, restoration, redirected outputs, timing result or weakened integrity check.' >> "$report/identity.txt"
+
+      - uses: ./.github/actions/prepare-build-image
+        with:
+          target: mk2
+
+      - name: Generate one original IP in place using supported batch mode
+        id: generate
+        run: |
+          set -euo pipefail
+          report="$RUNNER_TEMP/coregen-batch-writes"
+          image=$(docker image inspect sd2snes-ci:mk2 --format '{{.Id}}')
+          test "$image" = sha256:5e3bbb00649997abca8843b1d82d8529eda99a0f2868d37ad9777e0ad5fd50e8
+          printf 'ISE image: %s\n' "$image" | tee -a "$report/identity.txt"
+          git diff --exit-code
+          git diff --cached --exit-code
+          docker run --rm --network none --user 0:0 --mac-address 08:00:27:68:c9:35 \
+            --volume "$GITHUB_WORKSPACE:/work" --workdir /work/verilog/sd2snes_dspx \
+            --entrypoint /bin/bash sd2snes-ci:mk2 -c '
+              set -euo pipefail
+              dir=../sd2snes_dsp/ip/mk2
+              test -f "$dir/coregen.cgc"
+              test -f "$dir/dac_buf.xco"
+              test ! -e "$dir/dac_buf.ngc"
+              /opt/Xilinx/14.7/ISE_DS/ISE/bin/lin64/coregen -p "$dir" -b "$dir/dac_buf.xco"
+              test -s "$dir/dac_buf.ngc"
+              sha256sum "$dir/dac_buf.ngc"
+            ' 2>&1 | tee "$report/coregen.log"
+
+      - name: Retain all differences before the strict gate, including on failure
+        if: always() && steps.generate.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          report="$RUNNER_TEMP/coregen-batch-writes"
+          git ls-files -z | xargs -0 sha256sum > "$report/after.sha256"
+          git diff --no-ext-diff --no-renames --binary > "$report/tracked.diff"
+          git diff --cached --no-ext-diff --no-renames --binary > "$report/staged.diff"
+          git diff --no-ext-diff --no-renames --name-only | tee "$report/changed-paths.txt"
+          git diff --no-ext-diff --no-renames --numstat > "$report/numstat.txt"
+          git status --short --untracked-files=all > "$report/status.txt"
+          for file in verilog/sd2snes_dsp/ip/mk2/coregen.cgc verilog/sd2snes_dsp/ip/mk2/dac_buf.xco verilog/sd2snes_dsp/ip/mk2/dac_buf.xise; do
+            printf '%s %s\n' "$(git hash-object --no-filters "$file")" "$file"
+          done > "$report/post-blobs.txt"
+          if test -s verilog/sd2snes_dsp/ip/mk2/dac_buf.ngc; then
+            sha256sum verilog/sd2snes_dsp/ip/mk2/dac_buf.ngc > "$report/ngc.sha256"
+          fi
+          printf '%s\n' 'Any tracked rewrite is an integrity failure. Success of generation is not input-integrity, NGC equivalence, native timing or hardware proof.' > "$report/limits.txt"
+          test "$(du -sb "$report" | cut -f1)" -le 8000000
+
+      - name: Require every tracked and staged input to remain unchanged
+        if: always() && steps.generate.outcome == 'success'
+        run: |
+          set -euo pipefail
+          cmp "$RUNNER_TEMP/coregen-batch-writes/before.sha256" "$RUNNER_TEMP/coregen-batch-writes/after.sha256"
+          git diff --exit-code
+          git diff --cached --exit-code
+
+      - name: Upload complete small reports even when integrity fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coregen-batch-tracked-writes
+          path: ${{ runner.temp }}/coregen-batch-writes/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Retain the generated NGC separately on GitHub
+        if: always() && steps.generate.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coregen-batch-dac-buf-ngc
+          path: verilog/sd2snes_dsp/ip/mk2/dac_buf.ngc
+          if-no-files-found: error
+          retention-days: 14

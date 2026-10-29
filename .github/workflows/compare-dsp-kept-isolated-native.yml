@@ -1,0 +1,566 @@
+name: Trial DSPx proved KEEP with isolated CoreGen
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: dsp-kept-isolated-native-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  native:
+    name: DSPx exact KEEP and isolated IP, PAR and TRACE seed 68
+    runs-on: ubuntu-22.04
+    timeout-minutes: 150
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Require the independently reviewed CoreGen isolation validation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(gh api repos/secprog/sd2snes/actions/runs/40960956589 --jq .conclusion)" = success
+          test "$(gh api repos/secprog/sd2snes/actions/runs/40960956589 --jq .head_sha)" = d9e6754161a504f00ad28ae7005bb4369105c313
+
+      - name: Require the independently reviewed successful KEEP mapping integration
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(gh api repos/secprog/sd2snes/actions/runs/40966417289 --jq .status)" = completed
+          test "$(gh api repos/secprog/sd2snes/actions/runs/40966417289 --jq .conclusion)" = success
+          test "$(gh api repos/secprog/sd2snes/actions/runs/40966417289 --jq .head_sha)" = cadb28d2ad2168532fc644422725c05491550b67
+          test "$(git hash-object --no-filters .github/workflows/inspect-dsp-kept-isolated-map.yml)" = b9737ab39bf9d635f67bf361fbd0ef7885461df3
+          gh api repos/secprog/sd2snes/actions/artifacts/12938862421 > "$RUNNER_TEMP/dsp-kept-isolated-native-map-prerequisite.json"
+          python3 - "$RUNNER_TEMP/dsp-kept-isolated-native-map-prerequisite.json" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          artifact = json.loads(Path(sys.argv[1]).read_text())
+          expected = {'id': 12938862421, 'name': 'dsp-kept-isolated-map-only-reports', 'expired': False,
+                      'digest': 'sha256:bd4c8cab3e705aa1cb6514518e064e6601dc5e95dcd91d07b14059167b74070a'}
+          if any(artifact.get(key) != value for key, value in expected.items()):
+              raise SystemExit('Reviewed mapping artifact identity differs')
+          run = artifact['workflow_run']
+          if run['id'] != 40966417289 or run['head_sha'] != 'cadb28d2ad2168532fc644422725c05491550b67':
+              raise SystemExit('Reviewed mapping run identity differs')
+          print('Exact independently reviewed successful mapping prerequisite verified; no timing pass inferred.')
+          PY
+
+      - name: Download the independently inspected source-bound proof
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(gh api repos/secprog/sd2snes/actions/runs/40949482538 --jq .conclusion)" = success
+          test "$(gh api repos/secprog/sd2snes/actions/runs/40949482538 --jq .head_sha)" = f1125cc679c07f9f1922b15321edb222a688a0e4
+          gh api repos/secprog/sd2snes/actions/artifacts/12929844436 > "$RUNNER_TEMP/kept-proof-metadata.json"
+          python3 - "$RUNNER_TEMP/kept-proof-metadata.json" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          artifact = json.loads(Path(sys.argv[1]).read_text())
+          expected = {'id': 12929844436, 'name': 'dsp-stack-kept-boundary-proof', 'expired': False,
+                      'digest': 'sha256:3d0c5b3030df596f79bec41888f9e5ad9c1f058d8419738359045d93497a3ead'}
+          if any(artifact.get(key) != value for key, value in expected.items()):
+              raise SystemExit('Proof artifact identity differs')
+          run = artifact['workflow_run']
+          if run['id'] != 40949482538 or run['head_sha'] != 'f1125cc679c07f9f1922b15321edb222a688a0e4':
+              raise SystemExit('Proof run identity differs')
+          PY
+          gh api repos/secprog/sd2snes/actions/artifacts/12929844436/zip > "$RUNNER_TEMP/kept-proof.zip"
+          printf '3d0c5b3030df596f79bec41888f9e5ad9c1f058d8419738359045d93497a3ead  %s\n' "$RUNNER_TEMP/kept-proof.zip" | sha256sum --check
+          python3 - "$RUNNER_TEMP/kept-proof.zip" "$RUNNER_TEMP/dsp-stack-kept-boundary-proof" <<'PY'
+          import sys
+          import zipfile
+          from pathlib import Path, PurePosixPath
+          root = Path(sys.argv[2])
+          with zipfile.ZipFile(sys.argv[1]) as archive:
+              entries = archive.infolist()
+              if len(entries) != 201 or sum(item.file_size for item in entries) != 70426945:
+                  raise SystemExit('Unexpected complete proof artifact inventory')
+              for item in entries:
+                  path = PurePosixPath(item.filename)
+                  if path.is_absolute() or '..' in path.parts or '\\' in item.filename or ':' in item.filename:
+                      raise SystemExit('Unsafe proof artifact path')
+                  if item.file_size > 16_000_000:
+                      raise SystemExit('Unexpectedly large proof member')
+              archive.extractall(root)
+          print('Exact independently reviewed proof artifact ZIP identity and complete contents verified.')
+          PY
+
+      - name: Download the original DSPx timing report for comparison
+        uses: actions/download-artifact@v4
+        with:
+          name: dsp-stack-original-seed-68
+          path: ${{ runner.temp }}/dsp-stack-kept-original
+          run-id: 40524388250
+          github-token: ${{ github.token }}
+
+      - name: Select exactly the proved runner-only source
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD:verilog)" = 01ce8b6b4509a5a72e0ad739e06bf19e548a2fc1
+          test "$(git hash-object --no-filters .github/scripts/build.sh)" = 847665b375209d705de918d54f89cff194b074b1
+          test "$(git hash-object --no-filters .github/actions/prepare-build-image/action.yml)" = ac2a66fc24d4a15658b666cdc5f5db7964df4c3b
+          test "$(git hash-object --no-filters verilog/common.mk)" = c6b13825f8b7942711d3ae9723ce4fc83fdaa3cc
+          test "$(git hash-object --no-filters .github/scripts/inspect-dsp-retained-map.py)" = 2b3b867372717b5729e26cb4880cb1af0b01a965
+          git diff --exit-code
+          git diff --cached --exit-code
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/upd77c25.v)" = ba14f5b6dd198fbb5645f005fb3784890beec2c4
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/main.v)" = cc6889c4f00f653b0df19184ec8c7d726df9d2c9
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/main.ucf)" = 4f34c4cf9e475ac171a216c3f15fff74918fd03c
+          test "$(git hash-object --no-filters verilog/sd2snes_dspx/sd2snes_dspx.xise)" = 2822b63c005bce73e8e7aaf332bcdbd983d1492d
+          test "$(git hash-object --no-filters .github/scripts/prepare-dsp-stack-late-permit-proof.py)" = 0244d752e67f6cc5119b62bd49efb4cc32312022
+          test "$(git hash-object --no-filters .github/scripts/prepare-dsp-stack-kept-boundary-proof.py)" = a3a5e44be18fbfa209810ffbee44acbffa91e3ba
+          test "$(git hash-object --no-filters .github/workflows/prove-dsp-stack-kept-boundary.yml)" = 68885d57ab0c1864ebf7949db964307e7d79c99d
+          test ! -e verilog/sd2snes_dspx/ucf.extra
+          proof="$RUNNER_TEMP/dsp-stack-kept-boundary-proof"
+          test "$(wc -l < "$proof/SHA256SUMS")" = 49
+          (cd "$proof" && sha256sum --check SHA256SUMS)
+          test -s "$proof/verified.txt"
+          grep -F 'Yosys 0.33 (git sha1 2584903a060)' "$proof/tool-version.txt"
+          grep -F 'Icarus Verilog version 12.0' "$proof/iverilog-version.txt"
+          test "$(sha256sum "$proof/candidate-upd77c25.v" | cut -d' ' -f1)" = d32e7dbcae9870753215b59e7f35da7f5046ed8956fbf299c0cdd3996de2d21f
+          test "$(sha256sum "$proof/gold.v" | cut -d' ' -f1)" = 4a167b7b4efe8252d33bf2c437c494509c77aadfe6dc407a437be0030c2d2d2e
+          test "$(sha256sum "$proof/gate.v" | cut -d' ' -f1)" = b408d83454d14bd265786f2328dbed0780b1f9450e857ae4170bed7c7611d8c3
+          test "$(git hash-object --no-filters "$proof/candidate-upd77c25.v")" = 68ffd77e08dae78cb7cbeba5e3214c83b4dd8718
+          for mode in binary xstate; do
+            test "$(sha256sum "$proof/gate/miter-$mode.json" | cut -d' ' -f1)" = 1e8364f10e81db15a603e116da45a824edc753d46f9e876e43a9934b91bac6ac
+            grep -F 'SAT proof finished - no model found: SUCCESS!' "$proof/gate/proof-$mode.log"
+          done
+          for variant in bad-data bad-run bad-restore bad-reset bad-push bad-strobe bad-lane bad-word bad-return; do
+            test -s "$proof/$variant/miter-binary.json"
+            test -s "$proof/$variant/counterexample-binary.json"
+            grep -F 'SAT proof finished - model found: FAIL!' "$proof/$variant/proof-binary.log"
+          done
+          for variant in bad-x-call-data bad-x-restore-data bad-x-write-mask; do
+            test -s "$proof/$variant/miter-binary.json"
+            test -s "$proof/$variant/miter-xstate.json"
+            test -s "$proof/$variant/counterexample-xstate.json"
+            grep -F 'SAT proof finished - no model found: SUCCESS!' "$proof/$variant/proof-binary.log"
+            grep -F 'SAT proof finished - model found: FAIL!' "$proof/$variant/proof-xstate.log"
+          done
+          for variant in gold gate bad-data bad-run bad-restore bad-reset bad-push bad-strobe bad-lane bad-word bad-return bad-x-call-data bad-x-restore-data bad-x-write-mask; do
+            test -s "$proof/$variant/state-audit.log"
+            test -s "$proof/$variant/state.json"
+            test -s "$proof/$variant/transition.json"
+            grep -F 'SAT proof finished - no model found: SUCCESS!' "$proof/$variant/state-view.log"
+          done
+          grep -F 'SAT proof finished - model found: FAIL!' "$proof/gold/state-view-mutant.log"
+          test -s "$proof/gold/state-view-mutant-counterexample.json"
+          cmp "$proof/original-upd77c25.v" verilog/sd2snes_dsp/upd77c25.v
+          cp "$proof/candidate-upd77c25.v" verilog/sd2snes_dsp/upd77c25.v
+          test "$(git diff --name-only)" = verilog/sd2snes_dsp/upd77c25.v
+          git ls-files -z | xargs -0 sha256sum > "$RUNNER_TEMP/dsp-kept-isolated-native-before.sha256"
+          git ls-files -s > "$RUNNER_TEMP/dsp-kept-isolated-native-before-index.txt"
+          {
+            printf 'Checkout: %s\nVerilog tree: %s\n' "$GITHUB_SHA" "$(git rev-parse HEAD:verilog)"
+            printf 'Proof run: 40949482538; candidate DSP blob: 68ffd77e08dae78cb7cbeba5e3214c83b4dd8718\n'
+            printf 'Original project: 2822b63c005bce73e8e7aaf332bcdbd983d1492d; original UCF: 4f34c4cf9e475ac171a216c3f15fff74918fd03c\n'
+            printf 'Basis: direct human authorization for one first PAR/TRACE trial of the exact proved KEEP candidate; validated isolation 40960956589 and independently reviewed mapping 40966417289. Earlier rejected native candidates remain rejected; no unchanged failed retry.\n'
+            printf 'Diagnostic target: XST Speed, timing-driven MAP Area, one original PAR high/extra-effort c seed 68 and original TRACE. All mapping/integrity gates must pass before routing. No timing requirements changed; no automatic retry or promotion.\n'
+          } | tee "$RUNNER_TEMP/dsp-kept-isolated-native-identity.txt"
+
+      - uses: ./.github/actions/prepare-build-image
+        with:
+          target: mk2
+
+      - name: Generate candidate mapped NCD only; no PAR or TRACE result
+        id: mapping
+        env:
+          ISE_CTABLE: '68'
+        run: |
+          set -euo pipefail
+          image_id=$(docker image inspect sd2snes-ci:mk2 --format '{{.Id}}')
+          printf 'ISE image ID: %s\n' "$image_id" | tee -a "$RUNNER_TEMP/dsp-kept-isolated-native-identity.txt"
+          test "$image_id" = sha256:5e3bbb00649997abca8843b1d82d8529eda99a0f2868d37ad9777e0ad5fd50e8
+          container_name=sd2snes-dsp-kept-isolated-native
+          bash .github/scripts/report-activity.sh "$container_name" &
+          activity_pid=$!
+          trap 'kill "$activity_pid" 2>/dev/null || true; wait "$activity_pid" 2>/dev/null || true' EXIT
+          # MAP requires the existing licensed Ethernet identity. The none
+          # driver creates only loopback, so retain the established bridge NIC.
+          docker run --rm --network bridge --name "$container_name" --user 0:0 \
+            --mac-address 08:00:27:68:c9:35 --env ISE_CTABLE \
+            --volume "$GITHUB_WORKSPACE:/work" --workdir /work \
+            --entrypoint /bin/bash sd2snes-ci:mk2 -c \
+            'set -euo pipefail; observed_mac=$(cat /sys/class/net/eth0/address); printf "Observed build-container eth0 MAC: %s\n" "$observed_mac"; test "$observed_mac" = 08:00:27:68:c9:35; make -C verilog/sd2snes_dspx -j2 main_map.ncd HOST=LINUX XILINX_ENV= IGNORE_TIMING=0; test -s verilog/sd2snes_dspx/main_map.ncd; test ! -e verilog/sd2snes_dspx/main.ncd; test ! -e verilog/sd2snes_dspx/main.par; test ! -e verilog/sd2snes_dspx/main.twr' \
+            2>&1 | tee "$RUNNER_TEMP/dsp-kept-isolated-native-build.log"
+
+      - name: Retain every post-build tracked difference and generated IP hash
+        if: always() && steps.mapping.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          git ls-files -z | xargs -0 sha256sum > "$RUNNER_TEMP/dsp-kept-isolated-native-after.sha256"
+          git ls-files -s > "$RUNNER_TEMP/dsp-kept-isolated-native-after-index.txt"
+          git diff --no-ext-diff --no-renames --binary > "$RUNNER_TEMP/dsp-kept-isolated-native-post.diff"
+          git diff --cached --no-ext-diff --no-renames --binary > "$RUNNER_TEMP/dsp-kept-isolated-native-post-staged.diff"
+          git diff --no-ext-diff --no-renames --name-only | tee "$RUNNER_TEMP/dsp-kept-isolated-native-post-paths.txt"
+          for path in verilog/sd2snes_dsp/upd77c25.v verilog/sd2snes_dsp/main.v verilog/sd2snes_dsp/main.ucf verilog/sd2snes_dspx/sd2snes_dspx.xise; do
+            printf '%s %s\n' "$(git hash-object --no-filters "$path")" "$path"
+          done | tee "$RUNNER_TEMP/dsp-kept-isolated-native-post-hashes.txt"
+          {
+            missing=0
+            for core in dac_buf msu_databuf snescmd_buf upd77c25_datram upd77c25_datrom upd77c25_pgmrom; do
+              file="verilog/sd2snes_dsp/ip/mk2/build/$core.ngc"
+              if [[ -s "$file" ]]; then sha256sum "$file"; else printf 'MISSING %s\n' "$file"; missing=1; fi
+            done
+            exit "$missing"
+          } | tee "$RUNNER_TEMP/dsp-kept-isolated-native-ngc-hashes.txt"
+
+      - name: Verify candidate, project, constraints and all tracked inputs
+        if: always() && steps.mapping.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/upd77c25.v)" = 68ffd77e08dae78cb7cbeba5e3214c83b4dd8718
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/main.v)" = cc6889c4f00f653b0df19184ec8c7d726df9d2c9
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/main.ucf)" = 4f34c4cf9e475ac171a216c3f15fff74918fd03c
+          test "$(git hash-object --no-filters verilog/sd2snes_dspx/sd2snes_dspx.xise)" = 2822b63c005bce73e8e7aaf332bcdbd983d1492d
+          test "$(git diff --name-only)" = verilog/sd2snes_dsp/upd77c25.v
+          git diff --cached --exit-code
+          cmp "$RUNNER_TEMP/dsp-kept-isolated-native-before.sha256" "$RUNNER_TEMP/dsp-kept-isolated-native-after.sha256"
+          cmp "$RUNNER_TEMP/dsp-kept-isolated-native-before-index.txt" "$RUNNER_TEMP/dsp-kept-isolated-native-after-index.txt"
+          echo 'Every tracked SHA and index entry is unchanged after selecting the exact proved candidate; staged inputs unchanged.'
+
+      - name: Verify actual synthesis and MAP options; forbid routing execution
+        if: always() && steps.mapping.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          grep -Fx -- '-sd {"../sd2snes_dsp/ip/mk2/build"}' verilog/sd2snes_dspx/main.xst
+          grep -Fx -- '-opt_mode Speed' verilog/sd2snes_dspx/main.xst
+          grep -Fx -- '-define { MK2 DSP_COMP }' verilog/sd2snes_dspx/main.xst
+          grep -Fx -- '-resource_sharing Yes' verilog/sd2snes_dspx/main.xst
+          grep -Fx -- '-register_balancing Yes' verilog/sd2snes_dspx/main.xst
+          python3 - "$RUNNER_TEMP/dsp-kept-isolated-native-build.log" <<'PY'
+          import re
+          import shlex
+          import sys
+          from pathlib import Path
+          lines = Path(sys.argv[1]).read_text(errors="strict").splitlines()
+          translations = [line for line in lines if re.match(r"^\s*/\S*/ngdbuild\s+-", line)]
+          if len(translations) != 1:
+              raise SystemExit('Missing or ambiguous NGDBUILD command')
+          translate_args = shlex.split(translations[0])
+          if translate_args.count('-sd') != 1 or translate_args[translate_args.index('-sd') + 1] != '../sd2snes_dsp/ip/mk2/build':
+              raise SystemExit('NGDBUILD does not consume the isolated IP netlists')
+          print(f'Verified NGDBUILD isolated search path: {translations[0]}')
+          project = Path('verilog/sd2snes_dspx/main.prj').read_text().splitlines()
+          ip_lines = [line for line in project if '/ip/mk2/' in line]
+          expected_ips = ['dac_buf', 'msu_databuf', 'snescmd_buf', 'upd77c25_datram', 'upd77c25_datrom', 'upd77c25_pgmrom']
+          if sorted(ip_lines) != sorted(f'verilog work "../sd2snes_dsp/ip/mk2/build/{ip}.v"' for ip in expected_ips):
+              raise SystemExit('XST project does not consume exactly the six isolated IP sources')
+          print('\n'.join(ip_lines))
+          if any(re.search(r"/(?:par|trce)\s+-", line) for line in lines):
+              raise SystemExit("Unexpected PAR/TRACE execution in mapping-only diagnostic")
+          for tool, expected in (
+              ("map", {"-logic_opt": "on", "-ol": "high", "-xe": "n", "-t": "68", "-register_duplication": "on", "-cm": "area"}),
+          ):
+              commands = [line for line in lines if re.search(r"/" + tool + r"\s+-", line)]
+              if len(commands) != 1:
+                  raise SystemExit(f"Missing or ambiguous {tool} command")
+              args = shlex.split(commands[0].split(" || ", 1)[0].strip())
+              if tool == "map" and args.count("-timing") != 1:
+                  raise SystemExit("MAP is not explicitly timing-driven")
+              for flag, value in expected.items():
+                  if args.count(flag) != 1 or args.index(flag) + 1 >= len(args) or args[args.index(flag) + 1] != value:
+                      raise SystemExit(f"Unexpected {tool} option {flag}")
+              print(f"Verified {tool} command: {commands[0]}")
+          PY
+
+      - name: Compare PCF timing statements with the original report
+        if: always() && steps.mapping.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          python3 - "$RUNNER_TEMP/dsp-stack-kept-original" verilog/sd2snes_dspx/main.pcf <<'PY'
+          import hashlib
+          import re
+          import sys
+          from pathlib import Path
+          originals = list(Path(sys.argv[1]).rglob('main.pcf'))
+          if len(originals) != 1:
+              raise SystemExit('Missing or ambiguous original PCF')
+          if hashlib.sha256(originals[0].read_bytes()).hexdigest() != '849380275e2d1c6116bfae918abfa8b2d0f57317a049c7fd09905bffe4762c2b':
+              raise SystemExit('Original PCF hash differs from the retained baseline report')
+          def timing(path):
+              lines = path.read_text().splitlines()
+              return [line.strip() for line in lines if re.match(r'^(SYSTEM_JITTER|TS_\S+\s*=)', line.strip())]
+          old, new = timing(originals[0]), timing(Path(sys.argv[2]))
+          if not old or old != new or 'SYSTEM_JITTER = 480 ps;' not in new:
+              raise SystemExit(f'PCF timing statements differ: old={old!r}, new={new!r}')
+          print('\n'.join(new))
+          PY
+
+      - name: Retain bounded actual mapped nets, muxes and target FF bindings before evaluating names
+        if: always() && steps.mapping.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          core=verilog/sd2snes_dspx
+          attribute_result=0
+          for unit in dsp_stack_run_permit dsp_stack_restore_permit dsp_stack_late_join; do
+            if ! grep -F "Set property \"LUT_MAP = yes\" for unit <$unit>." "$core/main.syr"; then
+              attribute_result=1
+            fi
+          done
+          result=0
+          grep -i 'keep' "$core/main.syr" > "$RUNNER_TEMP/dsp-kept-isolated-native-keep-messages.txt" || result=$?
+          test "$result" -le 1
+          test -s "$core/main_map.ncd"
+          test "$(stat -c %s "$core/main_map.ncd")" -le 16000000
+          sha256sum "$core/main_map.ncd" | tee "$RUNNER_TEMP/dsp-kept-isolated-native-map-sha256.txt"
+          mkdir "$RUNNER_TEMP/dsp-kept-isolated-native-export"
+          docker run --rm --read-only --network none --user 0:0 \
+            --tmpfs /tmp:rw,exec,size=256m --mac-address 08:00:27:68:c9:35 \
+            --volume "$GITHUB_WORKSPACE/$core/main_map.ncd:/input/main_map.ncd:ro" \
+            --volume "$RUNNER_TEMP/dsp-kept-isolated-native-export:/output" --workdir /tmp \
+            --entrypoint /bin/bash sd2snes-ci:mk2 -c \
+            'set -euo pipefail; xdl -ncd2xdl -nopips /input/main_map.ncd /output/kept-map.xdl'
+          sha256sum --check "$RUNNER_TEMP/dsp-kept-isolated-native-map-sha256.txt"
+          sha256sum "$RUNNER_TEMP/dsp-kept-isolated-native-export/kept-map.xdl" | tee "$RUNNER_TEMP/dsp-kept-isolated-native-xdl-sha256.txt"
+          python3 - "$RUNNER_TEMP/dsp-kept-isolated-native-export/kept-map.xdl" <<'PY' | tee "$RUNNER_TEMP/dsp-kept-isolated-native-xdl.txt"
+          import importlib.util
+          import re
+          import sys
+          from pathlib import Path
+          script = Path('.github/scripts/inspect-dsp-retained-map.py')
+          spec = importlib.util.spec_from_file_location('xdl', script)
+          xdl = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(xdl)
+          xdl.fixture_checks()
+          path = Path(sys.argv[1])
+          if path.stat().st_size > 32_000_000:
+              raise SystemExit('Full XDL exceeds bounded inspection input')
+          instances, nets = xdl.parse(path.read_text())
+          names = re.compile(r'stack_late_|stack_early_|run_permit|restore_permit|late_(?:low|high)_[0-9]+')
+          selected_instances = {name for name, text in instances.items() if names.search(text)}
+          inspection_errors = []
+          # Include actual named-net drivers even when packed under unrelated COMP names.
+          for name, text in nets.items():
+              if not names.search(name):
+                  continue
+              drivers = [pin for pin in xdl.net_pins(text) if pin[0] == 'outpin']
+              if len(drivers) != 1 or drivers[0][1] not in instances:
+                  inspection_errors.append(f'Named net {name} lacks an unambiguous retained driver')
+                  continue
+              selected_instances.add(drivers[0][1])
+          bindings = []
+          for target in xdl.TARGETS:
+              try:
+                  comp = xdl.bind(instances, target)
+                  ce_name, ce = xdl.ce_for(nets, comp)
+              except ValueError as error:
+                  inspection_errors.append(f'Target {target}: {error}')
+                  continue
+              selected_instances.add(comp)
+              drivers = [pin for pin in xdl.net_pins(ce) if pin[0] == 'outpin']
+              if len(drivers) != 1 or drivers[0][1] not in instances:
+                  inspection_errors.append(f'Target {target}: missing CE driver')
+                  continue
+              selected_instances.add(drivers[0][1])
+              bindings.append(f'Actual mapped target {target}: COMP={comp}, CE={ce_name}, driver={drivers[0]}')
+          selected_nets = {name for name, text in nets.items() if names.search(text) or any(
+              comp in selected_instances for kind, comp, pin in xdl.net_pins(text))}
+          records = [instances[name] for name in sorted(selected_instances)]
+          records += [nets[name] for name in sorted(selected_nets)]
+          if not selected_instances or len(selected_instances) > 400 or len(selected_nets) > 700 or sum(len(item) for item in records) > 3_000_000:
+              raise SystemExit('Missing/excessive complete mapped evidence; inspection inconclusive')
+          joined = '\n'.join(records)
+          print(f'Parsed {len(instances)} instances/{len(nets)} nets; retained {len(selected_instances)} complete instances/{len(selected_nets)} complete nets.')
+          print('\n'.join(bindings))
+          print('Complete bounded raw statements follow. No name, fixture or pin-count result proves logical depth, sequential equivalence, timing or hardware behavior.')
+          print(joined)
+          required_instances = ['run_permit', 'restore_permit'] + [f'late_{lane}_{i}' for lane in ('low', 'high') for i in range(16)]
+          for name in required_instances:
+              found = bool(re.search(re.escape(name) + r'(?:/|:|\s|")', joined))
+              print(f'Logical source-instance name observation {name}: {"present" if found else "absent"}')
+          required_nets = ['stack_late_run', 'stack_late_restore']
+          required_nets += [f'stack_early_{lane}<{i}>' for lane in ('push', 'low', 'high') for i in range(16)]
+          required_nets += [f'stack_late_{lane}<{i}>' for lane in ('low', 'high') for i in range(16)]
+          missing = []
+          for name in required_nets:
+              found = [net for net in nets if net == name or net.endswith('/' + name)]
+              print(f'Logical net-name observation {name}: {found}')
+              if len(found) != 1:
+                  missing.append(name)
+          if missing:
+              inspection_errors.append(f'Net-name inspection inconclusive for {missing}; absent name is not absent logic')
+          if inspection_errors:
+              raise SystemExit('\n'.join(inspection_errors))
+          print('Named-net and target-FF evidence retained for independent LUT/pin/output-mux review. This is not a native/timing or structural-equivalence pass.')
+          PY
+          test "$attribute_result" -eq 0
+
+      - name: Require original tracked inputs after mapping inspections and before routing
+        if: always() && steps.mapping.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          test "$(git diff --name-only)" = verilog/sd2snes_dsp/upd77c25.v
+          git diff --cached --exit-code
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/upd77c25.v)" = 68ffd77e08dae78cb7cbeba5e3214c83b4dd8718
+          sha256sum --check "$RUNNER_TEMP/dsp-kept-isolated-native-before.sha256" > "$RUNNER_TEMP/dsp-kept-isolated-native-final-manifest-check.txt"
+          git ls-files -s > "$RUNNER_TEMP/dsp-kept-isolated-native-final-index.txt"
+          cmp "$RUNNER_TEMP/dsp-kept-isolated-native-before-index.txt" "$RUNNER_TEMP/dsp-kept-isolated-native-final-index.txt"
+
+      - name: Run the one authorized original PAR and TRACE trial after every mapping gate
+        id: route
+        env:
+          ISE_CTABLE: '68'
+        run: |
+          set -euo pipefail
+          test "$(docker image inspect sd2snes-ci:mk2 --format '{{.Id}}')" = sha256:5e3bbb00649997abca8843b1d82d8529eda99a0f2868d37ad9777e0ad5fd50e8
+          test ! -e verilog/sd2snes_dspx/main.ncd
+          test ! -e verilog/sd2snes_dspx/main.par
+          test ! -e verilog/sd2snes_dspx/main.twr
+          sha256sum --check "$RUNNER_TEMP/dsp-kept-isolated-native-before.sha256" > "$RUNNER_TEMP/dsp-kept-isolated-native-pre-route-manifest-check.txt"
+          git ls-files -s > "$RUNNER_TEMP/dsp-kept-isolated-native-pre-route-index.txt"
+          cmp "$RUNNER_TEMP/dsp-kept-isolated-native-before-index.txt" "$RUNNER_TEMP/dsp-kept-isolated-native-pre-route-index.txt"
+          sha256sum --check "$RUNNER_TEMP/dsp-kept-isolated-native-ngc-hashes.txt"
+          sha256sum verilog/sd2snes_dspx/main_map.ncd verilog/sd2snes_dspx/main.pcf > "$RUNNER_TEMP/dsp-kept-isolated-native-pre-route-map-pcf.sha256"
+          # This complete bounded raw report was independently reviewed, including
+          # all 32 actual single-LUT final joins, physical pins and output muxes.
+          test "$(wc -c < "$RUNNER_TEMP/dsp-kept-isolated-native-xdl.txt")" = 352824
+          test "$(sha256sum "$RUNNER_TEMP/dsp-kept-isolated-native-xdl.txt" | cut -d' ' -f1)" = df16dd9b2158173e42c0668980042a07348f9e0ea42d19d9ee43ad8d8ea42e67
+          container_name=sd2snes-dsp-kept-isolated-native-route
+          bash .github/scripts/report-activity.sh "$container_name" &
+          activity_pid=$!
+          trap 'kill "$activity_pid" 2>/dev/null || true; wait "$activity_pid" 2>/dev/null || true' EXIT
+          # main.ncd uses the unchanged common.mk recipe: one PAR and one TRACE,
+          # preserving tool exit codes and mandatory zero-error native checks.
+          docker run --rm --network bridge --name "$container_name" --user 0:0 \
+            --mac-address 08:00:27:68:c9:35 --env ISE_CTABLE \
+            --volume "$GITHUB_WORKSPACE:/work" --workdir /work \
+            --entrypoint /bin/bash sd2snes-ci:mk2 -c \
+            'set -euo pipefail; observed_mac=$(cat /sys/class/net/eth0/address); printf "Observed route-container eth0 MAC: %s\n" "$observed_mac"; test "$observed_mac" = 08:00:27:68:c9:35; make -C verilog/sd2snes_dspx -j2 main.ncd HOST=LINUX XILINX_ENV= IGNORE_TIMING=0' \
+            2>&1 | tee "$RUNNER_TEMP/dsp-kept-isolated-native-route.log"
+
+      - name: Retain every post-route tracked difference and final input inventory
+        if: always() && steps.route.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          git ls-files -z | xargs -0 sha256sum > "$RUNNER_TEMP/dsp-kept-isolated-native-after-route.sha256"
+          git ls-files -s > "$RUNNER_TEMP/dsp-kept-isolated-native-after-route-index.txt"
+          git diff --no-ext-diff --no-renames --binary > "$RUNNER_TEMP/dsp-kept-isolated-native-post-route.diff"
+          git diff --cached --no-ext-diff --no-renames --binary > "$RUNNER_TEMP/dsp-kept-isolated-native-post-route-staged.diff"
+          git diff --no-ext-diff --no-renames --name-only > "$RUNNER_TEMP/dsp-kept-isolated-native-post-route-paths.txt"
+
+      - name: Require unchanged original constraints, mapped input, all tracked inputs and six IP products after routing
+        if: always() && steps.route.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          test "$(git diff --name-only)" = verilog/sd2snes_dsp/upd77c25.v
+          git diff --cached --exit-code
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/upd77c25.v)" = 68ffd77e08dae78cb7cbeba5e3214c83b4dd8718
+          cmp "$RUNNER_TEMP/dsp-kept-isolated-native-before.sha256" "$RUNNER_TEMP/dsp-kept-isolated-native-after-route.sha256"
+          cmp "$RUNNER_TEMP/dsp-kept-isolated-native-before-index.txt" "$RUNNER_TEMP/dsp-kept-isolated-native-after-route-index.txt"
+          sha256sum --check "$RUNNER_TEMP/dsp-kept-isolated-native-before.sha256" > "$RUNNER_TEMP/dsp-kept-isolated-native-post-route-manifest-check.txt"
+          sha256sum --check "$RUNNER_TEMP/dsp-kept-isolated-native-pre-route-map-pcf.sha256"
+          sha256sum --check "$RUNNER_TEMP/dsp-kept-isolated-native-ngc-hashes.txt"
+          echo 'Every tracked SHA/index, six same-run IP products, mapped NCD and original-budget PCF are unchanged after routing.'
+
+      - name: Verify exactly one original PAR and TRACE command with no synthesis retry
+        if: always() && steps.route.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          python3 - "$RUNNER_TEMP/dsp-kept-isolated-native-route.log" <<'PY'
+          import re
+          import shlex
+          import sys
+          from pathlib import Path
+          lines = Path(sys.argv[1]).read_text(errors='strict').splitlines()
+          expected = {
+              'par': ['-w', '-ol', 'high', '-xe', 'c', '-t', '68', 'main_map.ncd', 'main.ncd', 'main.pcf'],
+              'trce': ['-v', '10', '-n', '10', '-u', '10', '-fastpaths', 'main.ncd', 'main.pcf', '-o', 'main.twr'],
+          }
+          for tool, arguments in expected.items():
+              commands = [line for line in lines if re.match(r'^\s*/\S*/' + tool + r'\s+-', line)]
+              if len(commands) != 1:
+                  raise SystemExit(f'Missing or repeated {tool} command')
+              args = shlex.split(commands[0].split(' || ', 1)[0].strip())
+              if args[1:] != arguments:
+                  raise SystemExit(f'Unexpected {tool} arguments: {args[1:]!r}')
+              print(f'Verified one original {tool} command: {commands[0]}')
+          if any(re.match(r'^\s*/\S*/(?:coregen|xst|ngdbuild|map|bitgen)\s+-', line) for line in lines):
+              raise SystemExit('Unexpected generation/synthesis/MAP/bitgen execution during the single route continuation')
+          PY
+
+      - name: Require explicit successful native PAR and TRACE setup and hold results
+        if: always() && steps.route.outcome != 'skipped'
+        env:
+          ROUTE_OUTCOME: ${{ steps.route.outcome }}
+        run: |
+          set -euo pipefail
+          test "$ROUTE_OUTCOME" = success
+          test -s verilog/sd2snes_dspx/main.ncd
+          test -s verilog/sd2snes_dspx/main.par
+          test -s verilog/sd2snes_dspx/main.twr
+          grep -Fx 'All signals are completely routed.' verilog/sd2snes_dspx/main.par
+          grep -Eq '^Timing Score: 0 \(Setup: 0, Hold: 0, Component Switching Limit: 0\)' verilog/sd2snes_dspx/main.par
+          grep -Eq 'Timing errors: 0[[:space:]]+Score: 0[[:space:]]+\(Setup/Max: 0, Hold: 0\)' verilog/sd2snes_dspx/main.twr
+          sha256sum verilog/sd2snes_dspx/main.ncd verilog/sd2snes_dspx/main.par verilog/sd2snes_dspx/main.twr > "$RUNNER_TEMP/dsp-kept-isolated-native-native-result.sha256"
+          echo 'One original PAR and TRACE trial passed native zero setup/hold errors with unchanged integrity and timing gates. Independent review and affected integration remain required before any promotion.'
+
+      - name: Upload small reports and source differences
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsp-kept-isolated-native-seed-68-reports
+          path: |
+            ${{ runner.temp }}/dsp-kept-isolated-native-*.sha256
+            ${{ runner.temp }}/dsp-kept-isolated-native-*-index.txt
+            ${{ runner.temp }}/dsp-kept-isolated-native-final-manifest-check.txt
+            ${{ runner.temp }}/dsp-kept-isolated-native-identity.txt
+            ${{ runner.temp }}/dsp-kept-isolated-native-build.log
+            ${{ runner.temp }}/dsp-kept-isolated-native-post.diff
+            ${{ runner.temp }}/dsp-kept-isolated-native-post-staged.diff
+            ${{ runner.temp }}/dsp-kept-isolated-native-post-paths.txt
+            ${{ runner.temp }}/dsp-kept-isolated-native-post-hashes.txt
+            ${{ runner.temp }}/dsp-kept-isolated-native-ngc-hashes.txt
+            ${{ runner.temp }}/dsp-kept-isolated-native-map-sha256.txt
+            ${{ runner.temp }}/dsp-kept-isolated-native-xdl.txt
+            ${{ runner.temp }}/dsp-kept-isolated-native-xdl-sha256.txt
+            ${{ runner.temp }}/dsp-kept-isolated-native-keep-messages.txt
+            verilog/sd2snes_dspx/main.xst
+            verilog/sd2snes_dspx/main.prj
+            verilog/sd2snes_dspx/main.pcf
+            verilog/sd2snes_dspx/sd2snes_dspx.xise
+            verilog/sd2snes_dspx/*.syr
+            verilog/sd2snes_dspx/*.mrp
+            verilog/sd2snes_dspx/*.psr
+            verilog/sd2snes_dspx/*.bld
+            verilog/sd2snes_dspx/*.par
+            verilog/sd2snes_dspx/*.twr
+            verilog/sd2snes_dspx/*.unroutes
+            ${{ runner.temp }}/dsp-kept-isolated-native-route.log
+            ${{ runner.temp }}/dsp-kept-isolated-native-map-prerequisite.json
+            ${{ runner.temp }}/dsp-kept-isolated-native-pre-route-manifest-check.txt
+            ${{ runner.temp }}/dsp-kept-isolated-native-post-route-manifest-check.txt
+            ${{ runner.temp }}/dsp-kept-isolated-native-post-route.diff
+            ${{ runner.temp }}/dsp-kept-isolated-native-post-route-staged.diff
+            ${{ runner.temp }}/dsp-kept-isolated-native-post-route-paths.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Retain the mapped NCD separately on GitHub
+        if: always() && steps.mapping.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsp-kept-isolated-native-seed-68-mapped-ncd
+          path: verilog/sd2snes_dspx/main_map.ncd
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Retain all same-run generated IP netlists separately
+        if: always() && steps.mapping.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsp-kept-isolated-native-ip-netlists
+          path: verilog/sd2snes_dsp/ip/mk2/build/*.ngc
+          if-no-files-found: error
+          retention-days: 14

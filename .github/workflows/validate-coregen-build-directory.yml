@@ -1,0 +1,121 @@
+name: Validate CoreGen build-directory isolation
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: coregen-build-directory-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: ${{ matrix.family }} canonical inputs and shared build products
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        family: [base, dsp]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+
+      - name: Pin the exact authorized source change and every tracked input
+        env:
+          FAMILY: ${{ matrix.family }}
+        run: |
+          set -euo pipefail
+          report="$RUNNER_TEMP/coregen-isolation"
+          mkdir -p "$report"
+          baseline=ecf24b31649f46ad55b9cb24896a7f77017002d2
+          test "$(git rev-parse "$baseline:verilog")" = 4e50365f59f38217b67c5126276873a29be737d5
+          test "$(git diff --name-only "$baseline" HEAD -- verilog)" = verilog/common.mk
+          test "$(git hash-object --no-filters verilog/common.mk)" = c6b13825f8b7942711d3ae9723ce4fc83fdaa3cc
+          test "$(git hash-object --no-filters .github/actions/prepare-build-image/action.yml)" = ac2a66fc24d4a15658b666cdc5f5db7964df4c3b
+          git diff --exit-code
+          git diff --cached --exit-code
+          bash -n .github/scripts/validate-coregen-build-directory.sh
+          git ls-files -z | xargs -0 sha256sum > "$report/before.sha256"
+          git ls-files -s > "$report/index.txt"
+          git diff "$baseline" HEAD -- verilog > "$report/authorized-source.diff"
+          printf 'Head: %s\nFamily: %s\nVerilog tree: %s\nCommon makefile: %s\n' "$GITHUB_SHA" "$FAMILY" "$(git rev-parse HEAD:verilog)" "$(git hash-object --no-filters verilog/common.mk)" > "$report/identity.txt"
+
+      - uses: ./.github/actions/prepare-build-image
+        with:
+          target: mk2
+
+      - name: Generate original IPs and verify shared variants reuse the products
+        id: generate
+        env:
+          FAMILY: ${{ matrix.family }}
+        run: |
+          set -euo pipefail
+          report="$RUNNER_TEMP/coregen-isolation"
+          image=$(docker image inspect sd2snes-ci:mk2 --format '{{.Id}}')
+          test "$image" = sha256:5e3bbb00649997abca8843b1d82d8529eda99a0f2868d37ad9777e0ad5fd50e8
+          printf 'ISE image: %s\n' "$image" | tee -a "$report/identity.txt"
+          git diff --exit-code
+          git diff --cached --exit-code
+          docker run --rm --network none --user 0:0 --mac-address 08:00:27:68:c9:35 \
+            --env FAMILY --volume "$GITHUB_WORKSPACE:/work" --volume "$report:/report" \
+            --workdir /work --entrypoint /bin/bash sd2snes-ci:mk2 \
+            .github/scripts/validate-coregen-build-directory.sh 2>&1 | tee "$report/coregen.log"
+          ips=(dac_buf msu_databuf snescmd_buf)
+          if test "$FAMILY" = dsp; then ips+=(upd77c25_datram upd77c25_datrom upd77c25_pgmrom); fi
+          for ip in "${ips[@]}"; do
+            expected="coregen -p ../sd2snes_$FAMILY/ip/mk2/build -b ../sd2snes_$FAMILY/ip/mk2/$ip.xco -r"
+            test "$(grep -Fc -- "$expected" "$report/coregen.log")" = 1
+            test "$(grep -Fc -- "Generating implementation netlist for '$ip'" "$report/coregen.log")" = 1
+            printf 'Verified actual original-IP generation command: %s\n' "$expected"
+          done
+
+      - name: Retain complete evidence before checking integrity even on failure
+        if: always() && steps.generate.outcome != 'skipped'
+        env:
+          FAMILY: ${{ matrix.family }}
+        run: |
+          set -euo pipefail
+          report="$RUNNER_TEMP/coregen-isolation"
+          git ls-files -z | xargs -0 sha256sum > "$report/after.sha256"
+          git ls-files -s > "$report/after-index.txt"
+          git diff --no-ext-diff --no-renames --binary > "$report/tracked.diff"
+          git diff --cached --no-ext-diff --no-renames --binary > "$report/staged.diff"
+          git diff --no-ext-diff --no-renames --name-only | tee "$report/changed-paths.txt"
+          git status --short --untracked-files=all > "$report/status.txt"
+          if test -d "verilog/sd2snes_$FAMILY/ip/mk2/build"; then
+            find "verilog/sd2snes_$FAMILY/ip/mk2/build" -type f -print0 | sort -z | xargs -0 -r sha256sum > "$report/products.sha256"
+          fi
+          printf '%s\n' 'Authorized build-product isolation only. No canonical restoration, writable input copy-back, input whitelist or integrity/timing waiver. This IP-only check executes no FPGA XST, MAP, PAR, TRACE or bitgen; native PAR0/TRACE0 setup and hold plus integration remain mandatory for any FPGA promotion. Generated NGCs retained separately; no binary-equivalence or hardware claim.' > "$report/limits.txt"
+          test "$(du -sb "$report" | cut -f1)" -le 8000000
+
+      - name: Require every tracked and staged input to remain unchanged
+        if: always() && steps.generate.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          report="$RUNNER_TEMP/coregen-isolation"
+          cmp "$report/before.sha256" "$report/after.sha256"
+          cmp "$report/index.txt" "$report/after-index.txt"
+          git diff --exit-code
+          git diff --cached --exit-code
+
+      - name: Upload complete small reports on success or failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coregen-isolation-${{ matrix.family }}-reports
+          path: ${{ runner.temp }}/coregen-isolation/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Retain generated netlists separately on GitHub
+        if: always() && steps.generate.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coregen-isolation-${{ matrix.family }}-ngc
+          path: verilog/sd2snes_${{ matrix.family }}/ip/mk2/build/*.ngc
+          if-no-files-found: warn
+          retention-days: 14

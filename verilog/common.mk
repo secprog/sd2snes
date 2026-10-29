@@ -86,6 +86,14 @@ ifneq ($(strip $(VSRC_LOCAL)),)
 	VSRC += $(sort $(VSRC_LOCAL))
 endif
 
+# CoreGen emits XCO/catalog/ISE project files as output products. Keep the
+# canonical base/DSP inputs separate from those products, including all variants
+# that share these two IP source directories. Other core recipes are unchanged.
+ifneq ($(filter base basex bootleg dsp dspx,$(CORE)),)
+XIL_IP_INPUT_DIR := $(XIL_IPCORE_DIR)
+XIL_IPCORE_DIR := $(XIL_IP_INPUT_DIR)/build
+endif
+
 XIL_IP := $(sort $(XIL_IP))
 XIL_IP += $(sort $(COMMON_IP))
 XIL_IP := $(patsubst %,$(XIL_IPCORE_DIR)/%.ngc,$(XIL_IP))
@@ -209,11 +217,28 @@ main.bit: main.ncd main.ut
 # directory and re-checks the target inside it: whoever comes second finds the netlist the
 # first one just wrote and leaves it alone, so no netlist is rewritten while the other build
 # reads it. Without flock(1) the subshell runs unlocked, as before.
+ifdef XIL_IP_INPUT_DIR
+# Seed a new writable build project from the canonical catalog. Never copy an
+# output back over a source input or remove a source path from integrity checks.
+$(XIL_IPCORE_DIR)/coregen.cgc: $(XIL_IP_INPUT_DIR)/coregen.cgc
+	mkdir -p $(XIL_IPCORE_DIR)
+	( flock 9 2>/dev/null; \
+	  [ $@ -nt $< ] || cp -- $< $@; \
+	) 9>$(XIL_IPCORE_DIR)/.coregen.lock
+
+$(XIL_IPCORE_DIR)/%.ngc: $(XIL_IP_INPUT_DIR)/%.xco $(XIL_IP_INPUT_DIR)/coregen.cgc | $(XIL_IPCORE_DIR)/coregen.cgc
+	$(call T,[mk2] fpga_$(CORE) - Regenerate IP Cores)
+	( flock 9 2>/dev/null; \
+	  { [ $@ -nt $< ] && [ $@ -nt $(XIL_IP_INPUT_DIR)/coregen.cgc ]; } || { $(XILINX_ENV) $(XILINX_BIN)/coregen -p $(XIL_IPCORE_DIR) -b $< -r || exit $$?; }; \
+	  test -s $@; \
+	) 9>$(XIL_IPCORE_DIR)/.coregen.lock
+else
 $(XIL_IPCORE_DIR)/%.ngc: $(XIL_IPCORE_DIR)/%.xco | $(XIL_IPCORE_DIR)/coregen.cgc
 	$(call T,[mk2] fpga_$(CORE) - Regenerate IP Cores)
 	( flock 9 2>/dev/null; \
 	  [ $@ -nt $< ] || { $(XILINX_ENV) $(XILINX_BIN)/coregen -p $(XIL_IPCORE_DIR) -b $< -r; } \
 	) 9>$(XIL_IPCORE_DIR)/.coregen.lock
+endif
 
 # ## Supplementary files required for Xilinx processes ##
 # PRJ file - basically a list of files that comprise the project

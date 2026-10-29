@@ -1,0 +1,159 @@
+name: Locate observed native CoreGen message sources
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: coregen-native-messages-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    name: Search installed text for actual generation messages
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Require original production inputs and image recipe
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD:verilog)" = 4e50365f59f38217b67c5126276873a29be737d5
+          test "$(git hash-object --no-filters .github/actions/prepare-build-image/action.yml)" = ac2a66fc24d4a15658b666cdc5f5db7964df4c3b
+          test "$(git hash-object --no-filters .github/docker/mk2.Dockerfile)" = 04d99e8449ef9b5803902bce44192e5344973776
+          test "$(git hash-object --no-filters .github/docker/trim-ise.sh)" = bc4af7bf8169991fd2bae507ffb3b447eeedf0df
+          test "$(git hash-object --no-filters verilog/common.mk)" = 1dd382cd82f2fdd56391dc8245d0782a6b356402
+          git diff --exit-code
+          git diff --cached --exit-code
+
+      - uses: ./.github/actions/prepare-build-image
+        with:
+          target: mk2
+
+      - name: Search bounded installed text without invoking CoreGen or scripts
+        run: |
+          set -euo pipefail
+          image=$(docker image inspect sd2snes-ci:mk2 --format '{{.Id}}')
+          test "$image" = sha256:5e3bbb00649997abca8843b1d82d8529eda99a0f2868d37ad9777e0ad5fd50e8
+          report="$RUNNER_TEMP/coregen-native-messages"
+          mkdir -p "$report"
+          printf 'Checkout: %s\nISE image: %s\n' "$GITHUB_SHA" "$image" | tee "$report/identity.txt"
+          # These three literal messages occur in completed native run
+          # 40860299285/job 123401539527. Earlier inspected simulation and
+          # Project Navigator wrappers did not establish their native emitter.
+          # No project, configuration, checkout or license file is mounted.
+          docker run --rm -i --read-only --network none --user 0:0 \
+            --volume "$report:/output" --workdir /output \
+            --entrypoint /bin/bash sd2snes-ci:mk2 -s <<'BASH' 2>&1 | tee "$report/inspection.log"
+          set -euo pipefail
+          export LC_ALL=C
+          root=/opt/Xilinx/14.7/ISE_DS/ISE
+          launcher="$root/bin/lin64/coregen"
+          echo "40933f8897391e7cf16b0c3cfad27f37ce45ce4b8444e4d7c142e2b8eb460202  $launcher" | sha256sum --check
+          sha256sum "$launcher" > /output/launcher.sha256
+          # Directory names were observed in run 40784478599. Restrict the
+          # search to frontend/support text; no IP configurations, archives,
+          # native binaries, license directories or user preferences are read.
+          roots=(
+            "$root/coregen/3rdParty" "$root/coregen/data"
+            "$root/coregen/tcl" "$root/coregen/lib"
+            "$root/coregen/plugins" "$root/data/coregen"
+            "$root/data/projnav/scripts" "$root/msg/usenglish"
+          )
+          for directory in "${roots[@]}"; do
+            test -d "$directory" && test ! -L "$directory"
+            test "$(readlink -f "$directory")" = "$directory"
+          done
+          printf '%s\n' "${roots[@]}" > /output/search-roots.txt
+          printf '%s\n' \
+            'Regenerating ISE project file for' \
+            'Generating ISE project' \
+            'Generating metadata file' > /output/patterns.txt
+          find "${roots[@]}" -type f \
+            \( -iname '*.tcl' -o -iname '*.java' -o -iname '*.properties' -o -iname '*.msg' -o -iname '*.xml' \) \
+            ! -ipath '*license*' ! -ipath '*licence*' -print0 \
+            | sort -z > /output/candidate-paths.nul
+          test "$(wc -c < /output/candidate-paths.nul)" -le 1048576
+          mapfile -d '' inputs < /output/candidate-paths.nul
+          test "${#inputs[@]}" -gt 0
+          test "${#inputs[@]}" -le 10000
+          total=0
+          : > /output/coverage.txt
+          : > /output/searched.sha256
+          : > /output/matched.sha256
+          : > /output/matches.txt
+          # Bound the entire selected inventory before reading any contents.
+          for input in "${inputs[@]}"; do
+            size=$(stat --format=%s "$input")
+            total=$((total + size))
+            printf '%s bytes %s\n' "$size" "$input" >> /output/coverage.txt
+          done
+          test "$total" -le 134217728
+          searched=0
+          skipped=0
+          matched=0
+          for input in "${inputs[@]}"; do
+            size=$(stat --format=%s "$input")
+            if ((size > 1048576)); then
+              printf 'SKIPPED oversized: %s\n' "$input" >> /output/coverage.txt
+              skipped=$((skipped + 1))
+              continue
+            fi
+            text_status=0
+            grep -Iq . "$input" || text_status=$?
+            case "$text_status" in
+              0) ;;
+              1)
+                printf 'SKIPPED empty/binary: %s\n' "$input" >> /output/coverage.txt
+                skipped=$((skipped + 1))
+                continue
+                ;;
+              *) exit "$text_status" ;;
+            esac
+            sha256sum "$input" >> /output/searched.sha256
+            searched=$((searched + 1))
+            result=0
+            grep -n -F -C 8 -f /output/patterns.txt "$input" > /output/current.matches || result=$?
+            case "$result" in
+              0)
+                matched=$((matched + 1))
+                test "$matched" -le 20
+                test "$(wc -c < /output/current.matches)" -le 150000
+                sha256sum "$input" >> /output/matched.sha256
+                printf 'BEGIN source: %s\n' "$input" >> /output/matches.txt
+                cat /output/current.matches >> /output/matches.txt
+                printf 'END source: %s\n' "$input" >> /output/matches.txt
+                test "$(wc -c < /output/matches.txt)" -le 524288
+                ;;
+              1) ;;
+              *) exit "$result" ;;
+            esac
+          done
+          rm -f /output/current.matches /output/candidate-paths.nul
+          test "$searched" -gt 0
+          sha256sum --check /output/searched.sha256 > /output/after-read-checks.txt
+          printf 'Candidate files: %s\nCandidate bytes: %s\nSearched text files: %s\nSkipped files: %s\nMatching files: %s\n' \
+            "${#inputs[@]}" "$total" "$searched" "$skipped" "$matched" | tee /output/summary.txt
+          cat /output/patterns.txt /output/matched.sha256 /output/matches.txt
+          printf '%s\n' 'Exact-message text discovery only. No CoreGen, Tcl source, IP generation or FPGA implementation was executed. Message presence alone does not establish runtime control flow or a preserve-input capability. Zero matches do not establish absence outside the stated roots, extensions and bounds. Original strict tracked/staged input and PAR0/TRACE0 gates remain unchanged.' | tee /output/limits.txt
+          BASH
+          test "$(du -sb "$report" | cut -f1)" -le 3000000
+
+      - name: Require unchanged tracked and staged files
+        if: always()
+        run: |
+          set -euo pipefail
+          git diff --exit-code
+          git diff --cached --exit-code
+
+      - name: Retain bounded text discovery reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coregen-native-message-sources
+          path: ${{ runner.temp }}/coregen-native-messages/
+          if-no-files-found: error
+          retention-days: 14

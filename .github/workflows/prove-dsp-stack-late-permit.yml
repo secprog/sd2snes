@@ -36,6 +36,8 @@ jobs:
           test "$(git rev-parse HEAD:verilog)" = 4e50365f59f38217b67c5126276873a29be737d5
           test "$(git hash-object --no-filters .github/scripts/prepare-dsp-stack-experiment.py)" = 81fb25b4819cd0412fab84977d8cf7dacbcc49a5
           test "$(git hash-object --no-filters .github/scripts/cut-dsp-stack-case-state.py)" = f76cb8a134e598f97f1d9e43a26c35637cc44903
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/config.vh)" = 1a9a6a14b8b08eb6e931ce2320326e913aa8000e
+          test "$(git hash-object --no-filters verilog/sd2snes_dspx/config.vh)" = 4cf8aa3111a5bf103065cded5fb77fdfc39ee239
           git diff --exit-code
           git diff --cached --exit-code
           python3 .github/scripts/prepare-dsp-stack-late-permit-proof.py \

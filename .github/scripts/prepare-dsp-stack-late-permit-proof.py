@@ -128,6 +128,15 @@ def main():
     if blob(raw) != ref.EXPECTED_BLOB:
         raise SystemExit("Original complete DSP source pin changed")
     original = raw.decode("utf-8")
+    headers = {
+        "dsp": (source.parent / "config.vh", "1a9a6a14b8b08eb6e931ce2320326e913aa8000e"),
+        "dspx": (source.parent.parent / "sd2snes_dspx" / "config.vh", "4cf8aa3111a5bf103065cded5fb77fdfc39ee239"),
+    }
+    for path, expected in headers.values():
+        if blob(path.read_bytes()) != expected:
+            raise SystemExit("Actual preprocessing header pin changed")
+    if original.count('`include "config.vh"') != 1:
+        raise SystemExit("Unexpected source include boundary")
     fragments = (ref.DECL, ref.PUSH, ref.OTHER_PUSH, ref.SCAN_READ,
                  ref.RETURN, ref.RESTORE, ref.SCAN_INDEX, ref.WRITE_INDEX)
     remainder = original
@@ -212,6 +221,8 @@ end"""
     output.mkdir(parents=True, exist_ok=True)
     for name, text in files.items():
         (output / name).write_text(text, encoding="utf-8")
+    for name, (path, _) in headers.items():
+        (output / f"original-{name}-config.vh").write_bytes(path.read_bytes())
 
     configurations = (
         ("none", []), ("debug", ["DEBUG"]), ("mk3", ["MK3"]),
@@ -223,15 +234,17 @@ end"""
     )
     audit = []
     for name, defines in configurations:
+        target = "MK2" in defines and "DSP_COMP" in defines
+        header, header_blob = headers["dspx" if target else "dsp"]
         selected = []
         for version in ("original", "candidate"):
             dest = output / f"pp-{name}-{version}.v"
-            subprocess.run(["iverilog", "-g2012", "-E"] + ["-D" + d for d in defines]
+            subprocess.run(["iverilog", "-g2012", "-E", "-I", str(header.parent.resolve())]
+                           + ["-D" + d for d in defines]
                            + ["-o", str(dest), str(output / f"{version}-upd77c25.v")], check=True)
             selected.append(dest.read_text(encoding="utf-8"))
         if not all(text.strip() for text in selected):
             raise SystemExit("Empty preprocessing output")
-        target = "MK2" in defines and "DSP_COMP" in defines
         if not target and normalize(selected[0]) != normalize(selected[1]):
             raise SystemExit(f"Non-target configuration changed: {name}")
         if target:
@@ -241,7 +254,7 @@ end"""
             before = once(once(selected[0], ref.PUSH, ""), ref.RESTORE, "")
             if normalize(after) != normalize(before):
                 raise SystemExit("Target preprocessing changed more than the two stack writes")
-        audit.append(f"{name}: {'target replacements verified' if target else 'non-target token identity'}\n")
+        audit.append(f"{name}: {'target replacements verified' if target else 'non-target token identity'}; header {header_blob}\n")
     (output / "preprocessing.txt").write_text("".join(audit), encoding="utf-8")
     (output / "candidate.diff").write_text("".join(difflib.unified_diff(
         original.splitlines(True), candidate.splitlines(True), "original-upd77c25.v", "candidate-upd77c25.v")), encoding="utf-8")

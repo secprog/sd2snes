@@ -108,7 +108,11 @@ def inspect(path):
             frontier.add(driver(instances, nets[name])[0])
         except ValueError as error:
             errors.append(f"{name}: {error}")
-    for depth in range(3):
+    # The three-layer run 40976440812 exceeded the unchanged 400/700 bounds.
+    # Inspect one predecessor layer and its immediate drivers, with all
+    # incident nets complete. This deliberately leaves deeper logic outside.
+    print("Scope: one physical predecessor layer plus immediate drivers; deeper layers are uninspected.")
+    for depth in range(1):
         print(f"Physical predecessor layer {depth}: {len(frontier)} COMPs")
         selected.update(frontier)
         following = set()
@@ -139,7 +143,7 @@ def inspect(path):
         print(record)
     print("END COMPLETE BOUNDED RAW STATEMENTS")
     print("Physical COMP names do not imply logical coupling. CE pin loads are not FF counts.")
-    print("Three specified predecessor layers include packed companion logic; not a complete logical cone, baseline, routing benefit, sequential equivalence or timing pass.")
+    print("One specified predecessor layer and its immediate drivers include packed companion logic; not a complete logical cone, baseline, routing benefit, sequential equivalence or timing pass.")
     if errors:
         raise ValueError("Inspection incomplete after raw retention:\n" + "\n".join(errors))
 

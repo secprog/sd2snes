@@ -32,7 +32,7 @@ jobs:
           test "$(git hash-object --no-filters verilog/sd2snes_base/cheat.v)" = dfc2f4fe2dc21fdd07da735fa1cd57a7aa6f4f3f
           test "$(git hash-object --no-filters .github/workflows/compare-basex-late-priority.yml)" = 4686a33e07344f124454865c38ebad594ae75fd1
           test "$(git hash-object --no-filters .github/scripts/inspect-dsp-retained-map.py)" = 2b3b867372717b5729e26cb4880cb1af0b01a965
-          test "$(git hash-object --no-filters .github/scripts/inspect-basex-dma-map.py)" = bfd80bb13725d4c030b2c3e26f71287035cb93de
+          test "$(git hash-object --no-filters .github/scripts/inspect-basex-dma-map.py)" = 00ddc14b2932b47a9abdad7acf511e515ea8b6bc
           test "$(git hash-object --no-filters .github/actions/prepare-build-image/action.yml)" = ac2a66fc24d4a15658b666cdc5f5db7964df4c3b
           git diff --exit-code
           git diff --cached --exit-code
@@ -42,6 +42,7 @@ jobs:
           git ls-files -s > "$report/index-before.txt"
           printf 'Checkout: %s\nVerilog tree: %s\n' "$GITHUB_SHA" "$(git rev-parse HEAD:verilog)" > "$report/identity.txt"
           printf '%s\n' 'Basis: original Area46 TRACE has cmd_data_r_4 to DMA pending at -0.763ns; rejected late-priority TRACE has SNES_ADDR13 to shadow_dst11 at -3.239ns. Existing raw excerpt covers cheat gates, not these DMA CE drivers. Inspect retained failed mapping only; no synthesis/routing/retry or source candidate.' >> "$report/identity.txt"
+          printf '%s\n' 'Changed inspection scope: three-layer run 40976440812 failed unchanged bounds at 470 instances/1907 nets before raw retention. Inspect one physical predecessor layer and immediate drivers only; retain every incident net without raising 400/700/3MB bounds. Deeper logic remains uninspected; earlier failure remains inconclusive.' >> "$report/identity.txt"
 
       - name: Exercise exact FF and physical driver controls on hosted runner
         run: python3 .github/scripts/inspect-basex-dma-map.py --self-check

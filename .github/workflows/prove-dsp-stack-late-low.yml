@@ -1,0 +1,151 @@
+name: Prove DSPx late low-address stack decoder
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dsp-stack-late-low-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  prove:
+    name: Prove all176 stack transitions and both reads with actual negative controls
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Record every tracked SHA and index entry before tools or preparation
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/stack-late-low-proof"
+          git ls-files -z | xargs -0 sha256sum > "$RUNNER_TEMP/stack-late-low-proof/tracked-before.sha256"
+          git ls-files --stage > "$RUNNER_TEMP/stack-late-low-proof/index-before.txt"
+          git diff --exit-code
+          git diff --cached --exit-code
+
+      - name: Install and identify hosted proof tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends yosys iverilog
+          mkdir -p "$RUNNER_TEMP/stack-late-low-proof"
+          yosys -V | tee "$RUNNER_TEMP/stack-late-low-proof/tool-version.txt"
+          grep -F 'Yosys 0.33 (git sha1 2584903a060)' "$RUNNER_TEMP/stack-late-low-proof/tool-version.txt"
+          iverilog -V > "$RUNNER_TEMP/stack-late-low-proof/iverilog-version.txt" 2>&1
+
+      - name: Prepare original and new decoder candidate without changing inputs
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD:verilog)" = 01ce8b6b4509a5a72e0ad739e06bf19e548a2fc1
+          test "$(git hash-object --no-filters .github/scripts/prepare-dsp-stack-experiment.py)" = 81fb25b4819cd0412fab84977d8cf7dacbcc49a5
+          test "$(git hash-object --no-filters .github/scripts/prepare-dsp-stack-late-permit-proof.py)" = 0244d752e67f6cc5119b62bd49efb4cc32312022
+          test "$(git hash-object --no-filters .github/scripts/prepare-dsp-stack-late-low-proof.py)" = a4aa1c4849917538a1281942d511d04e9c8aeafe
+          test "$(git hash-object --no-filters .github/scripts/cut-dsp-stack-case-state.py)" = f76cb8a134e598f97f1d9e43a26c35637cc44903
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/config.vh)" = 1a9a6a14b8b08eb6e931ce2320326e913aa8000e
+          test "$(git hash-object --no-filters verilog/sd2snes_dspx/config.vh)" = 4cf8aa3111a5bf103065cded5fb77fdfc39ee239
+          git diff --exit-code
+          git diff --cached --exit-code
+          python3 .github/scripts/prepare-dsp-stack-late-low-proof.py \
+            verilog/sd2snes_dsp/upd77c25.v "$RUNNER_TEMP/stack-late-low-proof"
+
+      - name: Audit all state bits and prove their observation ordering
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/stack-late-low-proof"
+          sha256sum --check SHA256SUMS
+          variants=(gold gate bad-data bad-run bad-restore bad-reset bad-push bad-strobe bad-lane bad-word bad-prefix bad-return bad-x-call-data bad-x-restore-data bad-x-write-mask bad-x-address)
+          for variant in "${variants[@]}"; do
+            mkdir "$variant"
+            cp "$variant.v" "$variant/model.v"
+            (
+              cd "$variant"
+              # Do not optimize away X-sensitive controls or dynamic memory
+              # semantics with opt_expr or the general memory pipeline.
+              yosys -l preparation.log -p 'read_verilog -sv -formal model.v; hierarchy -check -top stack_model; flatten; proc -ifx -noopt; check -assert; memory_memx; memory_collect; memory_map; dffunmap; setundef -undriven -undef; opt_clean; check -assert; write_json state.json'
+              model_name=gate
+              if [[ "$variant" == gold ]]; then model_name=gold; fi
+              python3 "$GITHUB_WORKSPACE/.github/scripts/cut-dsp-stack-case-state.py" \
+                state.json transition.json "$model_name" | tee state-audit.log
+              yosys -l state-view.log -p "read_json transition.json; hierarchy -check -top $model_name; sat -verify -enable_undef -prove state_view_ok 1 -show-inputs -show state_view_ok -timeout 180"
+              grep -F 'SAT proof finished - no model found: SUCCESS!' state-view.log
+              if [[ "$variant" == gold ]]; then
+                result=0
+                yosys -l state-view-mutant.log -p 'read_json state-view-mutant.json; hierarchy -check -top gold; sat -verify -enable_undef -set-def-inputs -prove state_view_ok 1 -show-inputs -show state_view_ok -dump_json state-view-mutant-counterexample.json -timeout 180' || result=$?
+                test "$result" -ne 0
+                grep -F 'SAT proof finished - model found: FAIL!' state-view-mutant.log
+                test -s state-view-mutant-counterexample.json
+              fi
+            )
+          done
+
+      - name: Prove strict state and reads and require real binary and X counterexamples
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/stack-late-low-proof"
+          for mode in binary xstate; do
+            if [[ "$mode" == binary ]]; then
+              variants=(gate bad-data bad-run bad-restore bad-reset bad-push bad-strobe bad-lane bad-word bad-prefix bad-return bad-x-call-data bad-x-restore-data bad-x-write-mask bad-x-address)
+              input_flags='-set-def-inputs'
+            else
+              variants=(bad-x-call-data bad-x-restore-data bad-x-write-mask bad-x-address gate)
+              input_flags=''
+            fi
+            for variant in "${variants[@]}"; do
+              cat > "$variant/prove-$mode.ys" <<YOSYS
+          read_json ../gold/transition.json
+          read_json transition.json
+          miter -equiv -make_assert -make_outputs -make_outcmp gold gate miter
+          hierarchy -check -top miter
+          flatten -wb
+          hierarchy -check -top miter
+          opt_clean
+          check -assert
+          write_json miter-$mode.json
+          sat -verify -enable_undef $input_flags -prove-asserts -show-inputs -show-outputs -dump_json counterexample-$mode.json -timeout 300
+          YOSYS
+              result=0
+              (cd "$variant" && yosys -l "proof-$mode.log" -s "prove-$mode.ys") || result=$?
+              test -s "$variant/miter-$mode.json"
+              if [[ "$variant" == gate || ( "$variant" == bad-x-* && "$mode" == binary ) ]]; then
+                test "$result" -eq 0
+                grep -F 'SAT proof finished - no model found: SUCCESS!' "$variant/proof-$mode.log"
+              else
+                test "$result" -ne 0
+                grep -F 'SAT proof finished - model found: FAIL!' "$variant/proof-$mode.log"
+                test -s "$variant/counterexample-$mode.json"
+              fi
+            done
+          done
+          sha256sum --check SHA256SUMS
+          printf 'Fresh late-low decoder component proof: all176 stack transitions and both reads match for common binary and unrestricted Yosys-X state/inputs; ten binary and four binary-equivalent X mutations produced counterexamples. Independent source, state, actual miter and witness review remains required. No native mapping/timing, CoreGen integrity or hardware result.\n' \
+            | tee verified.txt >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Require every tracked SHA and index entry and empty staged differences
+        if: always()
+        run: |
+          set -euo pipefail
+          audit="$RUNNER_TEMP/stack-late-low-proof"
+          test -s "$audit/tracked-before.sha256"
+          test -s "$audit/index-before.txt"
+          git ls-files -z | xargs -0 sha256sum > "$audit/tracked-after.sha256"
+          git ls-files --stage > "$audit/index-after.txt"
+          cmp "$audit/tracked-before.sha256" "$audit/tracked-after.sha256"
+          cmp "$audit/index-before.txt" "$audit/index-after.txt"
+          sha256sum --check "$audit/tracked-before.sha256" | tee "$audit/tracked-final-check.txt"
+          git diff --exit-code
+          git diff --cached --exit-code
+
+      - name: Retain exact feasibility models, audits, miters and actual counterexamples
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsp-stack-late-low-proof
+          path: ${{ runner.temp }}/stack-late-low-proof/
+          if-no-files-found: error
+          retention-days: 14

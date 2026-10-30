@@ -1,0 +1,121 @@
+name: Prove basex S-RTC late address bits
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: basex-srtc-late-bits-proof-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  prove:
+    name: Prove the S-RTC enable output and reject mutations
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Record every tracked SHA and index entry
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/basex-srtc-late-bits-proof"
+          git ls-files -z | xargs -0 sha256sum > "$RUNNER_TEMP/basex-srtc-late-bits-proof/tracked-before.sha256"
+          git ls-files --stage > "$RUNNER_TEMP/basex-srtc-late-bits-proof/index-before.txt"
+          git diff --exit-code
+          git diff --cached --exit-code
+
+      - name: Install and identify formal tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends yosys iverilog
+          yosys -V | tee "$RUNNER_TEMP/basex-srtc-late-bits-proof/tool-version.txt"
+          grep -F 'Yosys 0.33 (git sha1 2584903a060)' "$RUNNER_TEMP/basex-srtc-late-bits-proof/tool-version.txt"
+          iverilog -V > "$RUNNER_TEMP/basex-srtc-late-bits-proof/iverilog-version.txt" 2>&1
+          grep -F 'Icarus Verilog version 12.0' "$RUNNER_TEMP/basex-srtc-late-bits-proof/iverilog-version.txt"
+
+      - name: Prepare pinned original and runner-only candidate
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD:verilog)" = 01ce8b6b4509a5a72e0ad739e06bf19e548a2fc1
+          test "$(git hash-object --no-filters .github/scripts/prepare-basex-srtc-late-bits-proof.py)" = b1acdae7997eb48aee63817168fa5a1b75685bc0
+          test "$(git hash-object --no-filters verilog/sd2snes_basex/sd2snes_basex.xise)" = 5338e8fa5fef0af0c526ff99563b17a0763ed34a
+          git diff --exit-code
+          git diff --cached --exit-code
+          python3 .github/scripts/prepare-basex-srtc-late-bits-proof.py \
+            verilog/sd2snes_base/address.v "$RUNNER_TEMP/basex-srtc-late-bits-proof"
+
+      - name: Prove binary and X-valued expressions with negative controls
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/basex-srtc-late-bits-proof"
+          sha256sum --check SHA256SUMS
+          for variant in gate bad-bit4 bad-bit6 bad-prefix-field bad-prefix-value bad-bank bad-feature bad-join bad-x-address bad-x-feature; do
+            mkdir "$variant"
+            cp "$variant.v" "$variant/model.v"
+          done
+          for mode in binary xstate; do
+            if [[ "$mode" == binary ]]; then
+              variants=(gate bad-bit4 bad-bit6 bad-prefix-field bad-prefix-value bad-bank bad-feature bad-join bad-x-address bad-x-feature)
+              input_flags='-set-def-inputs'
+            else
+              variants=(bad-x-address bad-x-feature gate)
+              input_flags=''
+            fi
+            for variant in "${variants[@]}"; do
+              cat > "$variant/prove-$mode.ys" <<YOSYS
+          read_verilog -sv -formal ../gold.v model.v
+          proc -ifx -noopt
+          miter -equiv -make_assert -make_outputs -make_outcmp gold gate miter
+          hierarchy -check -top miter
+          flatten -wb
+          hierarchy -check -top miter
+          opt_clean
+          check -assert
+          write_json miter-$mode.json
+          sat -verify -enable_undef $input_flags -prove-asserts -show-inputs -show-outputs -dump_json counterexample-$mode.json -timeout 180
+          YOSYS
+              result=0
+              (cd "$variant" && yosys -l "proof-$mode.log" -s "prove-$mode.ys") || result=$?
+              if [[ "$variant" == gate || ( "$variant" == bad-x-* && "$mode" == binary ) ]]; then
+                test "$result" -eq 0
+                grep -F 'SAT proof finished - no model found: SUCCESS!' "$variant/proof-$mode.log"
+              else
+                test "$result" -ne 0
+                grep -F 'SAT proof finished - model found: FAIL!' "$variant/proof-$mode.log"
+                test -s "$variant/counterexample-$mode.json"
+              fi
+            done
+          done
+          sha256sum --check SHA256SUMS
+          printf 'The extracted S-RTC enable matches for binary and Yosys X-valued inputs. Seven binary mutants and two binary-equivalent X controls produced counterexamples. This is a component proof, not a whole-FPGA or hardware proof.\n' \
+            | tee verified.txt >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Require all tracked hashes, index and staged inputs unchanged
+        if: always()
+        run: |
+          set -euo pipefail
+          audit="$RUNNER_TEMP/basex-srtc-late-bits-proof"
+          test -s "$audit/tracked-before.sha256"
+          test -s "$audit/index-before.txt"
+          git ls-files -z | xargs -0 sha256sum > "$audit/tracked-after.sha256"
+          git ls-files --stage > "$audit/index-after.txt"
+          cmp "$audit/tracked-before.sha256" "$audit/tracked-after.sha256"
+          cmp "$audit/index-before.txt" "$audit/index-after.txt"
+          sha256sum --check "$audit/tracked-before.sha256" | tee "$audit/tracked-final-check.txt"
+          git diff --exit-code
+          git diff --cached --exit-code
+
+      - name: Upload proof models, miter bindings and counterexamples
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: basex-srtc-late-bits-proof
+          path: ${{ runner.temp }}/basex-srtc-late-bits-proof/
+          if-no-files-found: error
+          retention-days: 14

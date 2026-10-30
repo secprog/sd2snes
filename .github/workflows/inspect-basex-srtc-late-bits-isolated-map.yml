@@ -1,0 +1,420 @@
+name: Inspect Basex S-RTC late address-bit mapping with isolated CoreGen
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: basex-srtc-late-bits-isolated-map-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  mapping:
+    name: Basex S-RTC late address-bit qualifiers and isolated IP inputs, MAP only
+    runs-on: ubuntu-22.04
+    timeout-minutes: 150
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Require the independently reviewed CoreGen isolation validation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(gh api repos/secprog/sd2snes/actions/runs/40960956589 --jq .conclusion)" = success
+          test "$(gh api repos/secprog/sd2snes/actions/runs/40960956589 --jq .head_sha)" = d9e6754161a504f00ad28ae7005bb4369105c313
+
+      - name: Download the independently inspected source-bound proof
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(gh api repos/secprog/sd2snes/actions/runs/41133271280 --jq .conclusion)" = success
+          test "$(gh api repos/secprog/sd2snes/actions/runs/41133271280 --jq .head_sha)" = 1dacdf3682392b9ca64c55a4e013c6cf417cf23a
+          gh api repos/secprog/sd2snes/actions/artifacts/13013783280 > "$RUNNER_TEMP/srtc-late-bits-proof-metadata.json"
+          python3 - "$RUNNER_TEMP/srtc-late-bits-proof-metadata.json" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          artifact = json.loads(Path(sys.argv[1]).read_text())
+          expected = {'id': 13013783280, 'name': 'basex-srtc-late-bits-proof', 'expired': False,
+                      'digest': 'sha256:4528ce5f55f6d93823ac7099e724247fefd6fdacd4079bc43dd06800640868db'}
+          if any(artifact.get(key) != value for key, value in expected.items()):
+              raise SystemExit('Proof artifact identity differs')
+          run = artifact['workflow_run']
+          if run['id'] != 41133271280 or run['head_sha'] != '1dacdf3682392b9ca64c55a4e013c6cf417cf23a':
+              raise SystemExit('Proof run identity differs')
+          PY
+          gh api repos/secprog/sd2snes/actions/artifacts/13013783280/zip > "$RUNNER_TEMP/srtc-late-bits-proof.zip"
+          printf '4528ce5f55f6d93823ac7099e724247fefd6fdacd4079bc43dd06800640868db  %s\n' "$RUNNER_TEMP/srtc-late-bits-proof.zip" | sha256sum --check
+          python3 - "$RUNNER_TEMP/srtc-late-bits-proof.zip" "$RUNNER_TEMP/basex-srtc-late-bits-proof" <<'PY'
+          import sys
+          import zipfile
+          from pathlib import Path, PurePosixPath
+          root = Path(sys.argv[2])
+          with zipfile.ZipFile(sys.argv[1]) as archive:
+              entries = archive.infolist()
+              if len(entries) != 103 or sum(item.file_size for item in entries) != 1668643:
+                  raise SystemExit('Unexpected complete proof artifact inventory')
+              for item in entries:
+                  path = PurePosixPath(item.filename)
+                  if path.is_absolute() or '..' in path.parts or '\\' in item.filename or ':' in item.filename:
+                      raise SystemExit('Unsafe proof artifact path')
+                  if item.file_size > 16_000_000:
+                      raise SystemExit('Unexpectedly large proof member')
+              archive.extractall(root)
+          print('Exact independently reviewed proof artifact ZIP identity and complete contents verified.')
+          PY
+
+      - name: Download the original basex timing report for comparison
+        uses: actions/download-artifact@v4
+        with:
+          name: basex-write-gate-original-seed-46
+          path: ${{ runner.temp }}/basex-srtc-late-bits-original
+          run-id: 40528297097
+          github-token: ${{ github.token }}
+
+      - name: Select exactly the proved runner-only source
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD:verilog)" = 01ce8b6b4509a5a72e0ad739e06bf19e548a2fc1
+          test "$(git hash-object --no-filters .github/scripts/build.sh)" = 847665b375209d705de918d54f89cff194b074b1
+          test "$(git hash-object --no-filters .github/actions/prepare-build-image/action.yml)" = ac2a66fc24d4a15658b666cdc5f5db7964df4c3b
+          test "$(git hash-object --no-filters verilog/common.mk)" = c6b13825f8b7942711d3ae9723ce4fc83fdaa3cc
+          test "$(git hash-object --no-filters .github/scripts/inspect-dsp-retained-map.py)" = 2b3b867372717b5729e26cb4880cb1af0b01a965
+          git diff --exit-code
+          git diff --cached --exit-code
+          test "$(git hash-object --no-filters verilog/sd2snes_base/address.v)" = 36ce9a5c17fc80b9ddda1d869f0d75a4fb52356c
+          test "$(git hash-object --no-filters verilog/sd2snes_base/main.v)" = 2bd168af3e0254a6c985ff7cd5b0413afafab0a9
+          test "$(git hash-object --no-filters verilog/sd2snes_base/main.ucf)" = e582e03059fbbcf21b4124e5dd7aa9ac8792fd6b
+          test "$(git hash-object --no-filters verilog/sd2snes_basex/sd2snes_basex.xise)" = 5338e8fa5fef0af0c526ff99563b17a0763ed34a
+          test "$(git hash-object --no-filters .github/scripts/prepare-basex-srtc-late-bits-proof.py)" = b1acdae7997eb48aee63817168fa5a1b75685bc0
+          test "$(git hash-object --no-filters .github/workflows/prove-basex-srtc-late-bits.yml)" = 33df91ba18a0d55a8885eee3720d5e81d3a3e7b1
+          test ! -e verilog/sd2snes_basex/ucf.extra
+          proof="$RUNNER_TEMP/basex-srtc-late-bits-proof"
+          test "$(wc -l < "$proof/SHA256SUMS")" = 39
+          (cd "$proof" && sha256sum --check SHA256SUMS)
+          test -s "$proof/verified.txt"
+          grep -F 'Yosys 0.33 (git sha1 2584903a060)' "$proof/tool-version.txt"
+          grep -F 'Icarus Verilog version 12.0' "$proof/iverilog-version.txt"
+          test "$(sha256sum "$proof/candidate-address.v" | cut -d' ' -f1)" = 4f373b8ae27e58bc97d79ad2a6c67b1072f3f247058196f5b16ff6fd9fa46f22
+          test "$(sha256sum "$proof/gold.v" | cut -d' ' -f1)" = f3094be8792d6b63d73907011f1fd13a980b22b592426f5272dcdca9c9ea028c
+          test "$(sha256sum "$proof/gate.v" | cut -d' ' -f1)" = e58d13369e76f7beae2c7c58f4bfd554404184cb25e3bfa97c058c5a825e4830
+          test "$(git hash-object --no-filters "$proof/candidate-address.v")" = 544beeb3ee6c6805197d332b08d10b8ee179f38a
+          for mode in binary xstate; do
+            test "$(sha256sum "$proof/gate/miter-$mode.json" | cut -d' ' -f1)" = 055f1e3e151ccac400679f095b301d7d4c5bbdffbf8e43912872edd354c01d53
+            grep -F 'SAT proof finished - no model found: SUCCESS!' "$proof/gate/proof-$mode.log"
+          done
+          for variant in bad-bit4 bad-bit6 bad-prefix-field bad-prefix-value bad-bank bad-feature bad-join; do
+            test -s "$proof/$variant/miter-binary.json"
+            test -s "$proof/$variant/counterexample-binary.json"
+            grep -F 'SAT proof finished - model found: FAIL!' "$proof/$variant/proof-binary.log"
+          done
+          for variant in bad-x-address bad-x-feature; do
+            test -s "$proof/$variant/miter-binary.json"
+            test -s "$proof/$variant/miter-xstate.json"
+            test -s "$proof/$variant/counterexample-xstate.json"
+            grep -F 'SAT proof finished - no model found: SUCCESS!' "$proof/$variant/proof-binary.log"
+            grep -F 'SAT proof finished - model found: FAIL!' "$proof/$variant/proof-xstate.log"
+          done
+          cmp "$proof/original-address.v" verilog/sd2snes_base/address.v
+          cp "$proof/candidate-address.v" verilog/sd2snes_base/address.v
+          test "$(git diff --name-only)" = verilog/sd2snes_base/address.v
+          git ls-files -z | xargs -0 sha256sum > "$RUNNER_TEMP/basex-srtc-late-bits-isolated-map-before.sha256"
+          git ls-files -s > "$RUNNER_TEMP/basex-srtc-late-bits-isolated-map-before-index.txt"
+          {
+            printf 'Checkout: %s\nVerilog tree: %s\n' "$GITHUB_SHA" "$(git rev-parse HEAD:verilog)"
+            printf 'Proof run: 41133271280; candidate address blob: 544beeb3ee6c6805197d332b08d10b8ee179f38a\n'
+            printf 'Original project: 5338e8fa5fef0af0c526ff99563b17a0763ed34a; original UCF: e582e03059fbbcf21b4124e5dd7aa9ac8792fd6b\n'
+            printf 'Basis: original Area46 has SNES_ADDR6/4 to SRTC rtc_ptr3 through three decoder stages; new exact proved candidate puts those bits in a final three-input LUT after a kept other-input permit. No source state or cycles added. Old rejected candidates stay rejected.\n'
+            printf 'Diagnostic target: XST Speed, timing-driven MAP Area seed 46 only. No PAR/TRACE, timing or native pass; requirements unchanged.\n'
+          } | tee "$RUNNER_TEMP/basex-srtc-late-bits-isolated-map-identity.txt"
+
+      - uses: ./.github/actions/prepare-build-image
+        with:
+          target: mk2
+
+      - name: Generate candidate mapped NCD only; no PAR or TRACE result
+        id: mapping
+        env:
+          ISE_CTABLE: '46'
+        run: |
+          set -euo pipefail
+          image_id=$(docker image inspect sd2snes-ci:mk2 --format '{{.Id}}')
+          printf 'ISE image ID: %s\n' "$image_id" | tee -a "$RUNNER_TEMP/basex-srtc-late-bits-isolated-map-identity.txt"
+          test "$image_id" = sha256:5e3bbb00649997abca8843b1d82d8529eda99a0f2868d37ad9777e0ad5fd50e8
+          container_name=sd2snes-basex-srtc-late-bits-isolated-map
+          bash .github/scripts/report-activity.sh "$container_name" &
+          activity_pid=$!
+          trap 'kill "$activity_pid" 2>/dev/null || true; wait "$activity_pid" 2>/dev/null || true' EXIT
+          # MAP requires the existing licensed Ethernet identity. The none
+          # driver creates only loopback, so retain the established bridge NIC.
+          docker run --rm --network bridge --name "$container_name" --user 0:0 \
+            --mac-address 08:00:27:68:c9:35 --env ISE_CTABLE \
+            --volume "$GITHUB_WORKSPACE:/work" --workdir /work \
+            --entrypoint /bin/bash sd2snes-ci:mk2 -c \
+            'set -euo pipefail; observed_mac=$(cat /sys/class/net/eth0/address); printf "Observed build-container eth0 MAC: %s\n" "$observed_mac"; test "$observed_mac" = 08:00:27:68:c9:35; make -C verilog/sd2snes_basex -j2 main_map.ncd HOST=LINUX XILINX_ENV= IGNORE_TIMING=0; test -s verilog/sd2snes_basex/main_map.ncd; test ! -e verilog/sd2snes_basex/main.ncd; test ! -e verilog/sd2snes_basex/main.par; test ! -e verilog/sd2snes_basex/main.twr' \
+            2>&1 | tee "$RUNNER_TEMP/basex-srtc-late-bits-isolated-map-build.log"
+
+      - name: Retain every post-build tracked difference and generated IP hash
+        if: always() && steps.mapping.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          git ls-files -z | xargs -0 sha256sum > "$RUNNER_TEMP/basex-srtc-late-bits-isolated-map-after.sha256"
+          git ls-files -s > "$RUNNER_TEMP/basex-srtc-late-bits-isolated-map-after-index.txt"
+          git diff --no-ext-diff --no-renames --binary > "$RUNNER_TEMP/basex-srtc-late-bits-isolated-map-post.diff"
+          git diff --cached --no-ext-diff --no-renames --binary > "$RUNNER_TEMP/basex-srtc-late-bits-isolated-map-post-staged.diff"
+          git diff --no-ext-diff --no-renames --name-only | tee "$RUNNER_TEMP/basex-srtc-late-bits-isolated-map-post-paths.txt"
+          for path in verilog/sd2snes_base/address.v verilog/sd2snes_base/main.v verilog/sd2snes_base/main.ucf verilog/sd2snes_basex/sd2snes_basex.xise; do
+            printf '%s %s\n' "$(git hash-object --no-filters "$path")" "$path"
+          done | tee "$RUNNER_TEMP/basex-srtc-late-bits-isolated-map-post-hashes.txt"
+          {
+            missing=0
+            for core in dac_buf msu_databuf snescmd_buf; do
+              file="verilog/sd2snes_base/ip/mk2/build/$core.ngc"
+              if [[ -s "$file" ]]; then sha256sum "$file"; else printf 'MISSING %s\n' "$file"; missing=1; fi
+            done
+            exit "$missing"
+          } | tee "$RUNNER_TEMP/basex-srtc-late-bits-isolated-map-ngc-hashes.txt"
+
+      - name: Verify candidate, project, constraints and all tracked inputs
+        if: always() && steps.mapping.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          test "$(git hash-object --no-filters verilog/sd2snes_base/address.v)" = 544beeb3ee6c6805197d332b08d10b8ee179f38a
+          test "$(git hash-object --no-filters verilog/sd2snes_base/main.v)" = 2bd168af3e0254a6c985ff7cd5b0413afafab0a9
+          test "$(git hash-object --no-filters verilog/sd2snes_base/main.ucf)" = e582e03059fbbcf21b4124e5dd7aa9ac8792fd6b
+          test "$(git hash-object --no-filters verilog/sd2snes_basex/sd2snes_basex.xise)" = 5338e8fa5fef0af0c526ff99563b17a0763ed34a
+          test "$(git diff --name-only)" = verilog/sd2snes_base/address.v
+          git diff --cached --exit-code
+          cmp "$RUNNER_TEMP/basex-srtc-late-bits-isolated-map-before.sha256" "$RUNNER_TEMP/basex-srtc-late-bits-isolated-map-after.sha256"
+          cmp "$RUNNER_TEMP/basex-srtc-late-bits-isolated-map-before-index.txt" "$RUNNER_TEMP/basex-srtc-late-bits-isolated-map-after-index.txt"
+          echo 'Every tracked SHA and index entry is unchanged after selecting the exact proved candidate; staged inputs unchanged.'
+
+      - name: Verify actual synthesis and MAP options; forbid routing execution
+        if: always() && steps.mapping.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          grep -Fx -- '-sd {"../sd2snes_base/ip/mk2/build"}' verilog/sd2snes_basex/main.xst
+          grep -Fx -- '-opt_mode Speed' verilog/sd2snes_basex/main.xst
+          grep -Fx -- '-define { MK2 BASE_EXT }' verilog/sd2snes_basex/main.xst
+          grep -Fx -- '-resource_sharing Yes' verilog/sd2snes_basex/main.xst
+          grep -Fx -- '-register_balancing Yes' verilog/sd2snes_basex/main.xst
+          python3 - "$RUNNER_TEMP/basex-srtc-late-bits-isolated-map-build.log" <<'PY'
+          import re
+          import shlex
+          import sys
+          from pathlib import Path
+          lines = Path(sys.argv[1]).read_text(errors="strict").splitlines()
+          translations = [line for line in lines if re.match(r"^\s*/\S*/ngdbuild\s+-", line)]
+          if len(translations) != 1:
+              raise SystemExit('Missing or ambiguous NGDBUILD command')
+          translate_args = shlex.split(translations[0])
+          if translate_args.count('-sd') != 1 or translate_args[translate_args.index('-sd') + 1] != '../sd2snes_base/ip/mk2/build':
+              raise SystemExit('NGDBUILD does not consume the isolated IP netlists')
+          print(f'Verified NGDBUILD isolated search path: {translations[0]}')
+          project = Path('verilog/sd2snes_basex/main.prj').read_text().splitlines()
+          ip_lines = [line for line in project if '/ip/mk2/' in line]
+          expected_ips = ['dac_buf', 'msu_databuf', 'snescmd_buf']
+          if sorted(ip_lines) != sorted(f'verilog work "../sd2snes_base/ip/mk2/build/{ip}.v"' for ip in expected_ips):
+              raise SystemExit('XST project does not consume exactly the three isolated IP sources')
+          print('\n'.join(ip_lines))
+          if any(re.search(r"/(?:par|trce)\s+-", line) for line in lines):
+              raise SystemExit("Unexpected PAR/TRACE execution in mapping-only diagnostic")
+          for tool, expected in (
+              ("map", {"-logic_opt": "on", "-ol": "high", "-xe": "n", "-t": "46", "-register_duplication": "on", "-cm": "area"}),
+          ):
+              commands = [line for line in lines if re.search(r"/" + tool + r"\s+-", line)]
+              if len(commands) != 1:
+                  raise SystemExit(f"Missing or ambiguous {tool} command")
+              args = shlex.split(commands[0].split(" || ", 1)[0].strip())
+              if tool == "map" and args.count("-timing") != 1:
+                  raise SystemExit("MAP is not explicitly timing-driven")
+              for flag, value in expected.items():
+                  if args.count(flag) != 1 or args.index(flag) + 1 >= len(args) or args[args.index(flag) + 1] != value:
+                      raise SystemExit(f"Unexpected {tool} option {flag}")
+              print(f"Verified {tool} command: {commands[0]}")
+          PY
+
+      - name: Compare PCF timing statements with the original report
+        if: always() && steps.mapping.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          python3 - "$RUNNER_TEMP/basex-srtc-late-bits-original" verilog/sd2snes_basex/main.pcf <<'PY'
+          import hashlib
+          import re
+          import sys
+          from pathlib import Path
+          originals = list(Path(sys.argv[1]).rglob('main.pcf'))
+          if len(originals) != 1:
+              raise SystemExit('Missing or ambiguous original PCF')
+          if hashlib.sha256(originals[0].read_bytes()).hexdigest() != 'fcc454491b6784f08a93ddfc802ab7c6a984d5dc8583b9e005d65255b25096fe':
+              raise SystemExit('Original PCF hash differs from the retained baseline report')
+          def timing(path):
+              lines = path.read_text().splitlines()
+              return [line.strip() for line in lines if re.match(r'^(SYSTEM_JITTER|TS_\S+\s*=)', line.strip())]
+          old, new = timing(originals[0]), timing(Path(sys.argv[2]))
+          if not old or old != new or any(line.startswith('SYSTEM_JITTER') for line in old + new):
+              raise SystemExit(f'PCF timing statements differ: old={old!r}, new={new!r}')
+          print('\n'.join(new))
+          PY
+
+      - name: Retain bounded actual mapped nets, muxes and target FF bindings before evaluating names
+        if: always() && steps.mapping.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          core=verilog/sd2snes_basex
+          attribute_result=0
+          if ! grep -F 'Set property "LUT_MAP = yes" for unit <basex_srtc_late_bits>.' "$core/main.syr"; then
+            attribute_result=1
+          fi
+          result=0
+          grep -i 'keep' "$core/main.syr" > "$RUNNER_TEMP/basex-srtc-late-bits-isolated-map-keep-messages.txt" || result=$?
+          test "$result" -le 1
+          test -s "$core/main_map.ncd"
+          test "$(stat -c %s "$core/main_map.ncd")" -le 16000000
+          sha256sum "$core/main_map.ncd" | tee "$RUNNER_TEMP/basex-srtc-late-bits-isolated-map-map-sha256.txt"
+          mkdir "$RUNNER_TEMP/basex-srtc-late-bits-isolated-map-export"
+          docker run --rm --read-only --network none --user 0:0 \
+            --tmpfs /tmp:rw,exec,size=256m --mac-address 08:00:27:68:c9:35 \
+            --volume "$GITHUB_WORKSPACE/$core/main_map.ncd:/input/main_map.ncd:ro" \
+            --volume "$RUNNER_TEMP/basex-srtc-late-bits-isolated-map-export:/output" --workdir /tmp \
+            --entrypoint /bin/bash sd2snes-ci:mk2 -c \
+            'set -euo pipefail; xdl -ncd2xdl -nopips /input/main_map.ncd /output/srtc-late-bits-map.xdl'
+          sha256sum --check "$RUNNER_TEMP/basex-srtc-late-bits-isolated-map-map-sha256.txt"
+          sha256sum "$RUNNER_TEMP/basex-srtc-late-bits-isolated-map-export/srtc-late-bits-map.xdl" | tee "$RUNNER_TEMP/basex-srtc-late-bits-isolated-map-xdl-sha256.txt"
+          python3 - "$RUNNER_TEMP/basex-srtc-late-bits-isolated-map-export/srtc-late-bits-map.xdl" <<'PY' | tee "$RUNNER_TEMP/basex-srtc-late-bits-isolated-map-xdl.txt"
+          import importlib.util
+          import re
+          import sys
+          from pathlib import Path
+          script = Path('.github/scripts/inspect-dsp-retained-map.py')
+          spec = importlib.util.spec_from_file_location('xdl', script)
+          xdl = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(xdl)
+          xdl.fixture_checks()
+          path = Path(sys.argv[1])
+          if path.stat().st_size > 32_000_000:
+              raise SystemExit('Full XDL exceeds bounded inspection input')
+          instances, nets = xdl.parse(path.read_text())
+          names = re.compile(r'srtc_other_permit|srtc_late_bits_decode|srtc_enable')
+          selected_instances = {name for name, text in instances.items() if names.search(text)}
+          inspection_errors = []
+          # Include actual named-net drivers even when packed under unrelated COMP names.
+          for name, text in nets.items():
+              if not names.search(name):
+                  continue
+              drivers = [pin for pin in xdl.net_pins(text) if pin[0] == 'outpin']
+              if len(drivers) != 1 or drivers[0][1] not in instances:
+                  inspection_errors.append(f'Named net {name} lacks an unambiguous retained driver')
+                  continue
+              selected_instances.add(drivers[0][1])
+          bindings = []
+          for target in ('snes_srtc/rtc_ptr_3',):
+              try:
+                  comp = xdl.bind(instances, target)
+                  ce_name, ce = xdl.ce_for(nets, comp)
+              except ValueError as error:
+                  inspection_errors.append(f'Target {target}: {error}')
+                  continue
+              selected_instances.add(comp)
+              drivers = [pin for pin in xdl.net_pins(ce) if pin[0] == 'outpin']
+              if len(drivers) != 1 or drivers[0][1] not in instances:
+                  inspection_errors.append(f'Target {target}: missing CE driver')
+                  continue
+              selected_instances.add(drivers[0][1])
+              bindings.append(f'Actual mapped target {target}: COMP={comp}, CE={ce_name}, driver={drivers[0]}')
+          selected_nets = {name for name, text in nets.items() if names.search(text) or any(
+              comp in selected_instances for kind, comp, pin in xdl.net_pins(text))}
+          records = [instances[name] for name in sorted(selected_instances)]
+          records += [nets[name] for name in sorted(selected_nets)]
+          if not selected_instances or len(selected_instances) > 400 or len(selected_nets) > 700 or sum(len(item) for item in records) > 3_000_000:
+              raise SystemExit('Missing/excessive complete mapped evidence; inspection inconclusive')
+          joined = '\n'.join(records)
+          print(f'Parsed {len(instances)} instances/{len(nets)} nets; retained {len(selected_instances)} complete instances/{len(selected_nets)} complete nets.')
+          print('\n'.join(bindings))
+          print('Complete bounded raw statements follow. No name, fixture or pin-count result proves logical depth, sequential equivalence, timing or hardware behavior.')
+          print(joined)
+          required_instances = ['srtc_late_bits_decode']
+          for name in required_instances:
+              found = bool(re.search(re.escape(name) + r'(?:/|:|\s|")', joined))
+              print(f'Logical source-instance name observation {name}: {"present" if found else "absent"}')
+          required_nets = ['srtc_other_permit', 'srtc_enable']
+          missing = []
+          for name in required_nets:
+              found = [net for net in nets if net == name or net.endswith('/' + name)]
+              print(f'Logical net-name observation {name}: {found}')
+              if len(found) != 1:
+                  missing.append(name)
+          if missing:
+              inspection_errors.append(f'Net-name inspection inconclusive for {missing}; absent name is not absent logic')
+          if inspection_errors:
+              raise SystemExit('\n'.join(inspection_errors))
+          print('Named-net and target-FF evidence retained for independent LUT/pin/output-mux review. This is not a native/timing or structural-equivalence pass.')
+          PY
+          test "$attribute_result" -eq 0
+
+      - name: Require original tracked inputs after mapping-only inspections
+        if: always() && steps.mapping.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          test "$(git diff --name-only)" = verilog/sd2snes_base/address.v
+          git diff --cached --exit-code
+          test "$(git hash-object --no-filters verilog/sd2snes_base/address.v)" = 544beeb3ee6c6805197d332b08d10b8ee179f38a
+          sha256sum --check "$RUNNER_TEMP/basex-srtc-late-bits-isolated-map-before.sha256" > "$RUNNER_TEMP/basex-srtc-late-bits-isolated-map-final-manifest-check.txt"
+          git ls-files -s > "$RUNNER_TEMP/basex-srtc-late-bits-isolated-map-final-index.txt"
+          cmp "$RUNNER_TEMP/basex-srtc-late-bits-isolated-map-before-index.txt" "$RUNNER_TEMP/basex-srtc-late-bits-isolated-map-final-index.txt"
+
+      - name: Upload small reports and source differences
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: basex-srtc-late-bits-isolated-map-only-reports
+          path: |
+            ${{ runner.temp }}/basex-srtc-late-bits-isolated-map-*.sha256
+            ${{ runner.temp }}/basex-srtc-late-bits-isolated-map-*-index.txt
+            ${{ runner.temp }}/basex-srtc-late-bits-isolated-map-final-manifest-check.txt
+            ${{ runner.temp }}/basex-srtc-late-bits-isolated-map-identity.txt
+            ${{ runner.temp }}/basex-srtc-late-bits-isolated-map-build.log
+            ${{ runner.temp }}/basex-srtc-late-bits-isolated-map-post.diff
+            ${{ runner.temp }}/basex-srtc-late-bits-isolated-map-post-staged.diff
+            ${{ runner.temp }}/basex-srtc-late-bits-isolated-map-post-paths.txt
+            ${{ runner.temp }}/basex-srtc-late-bits-isolated-map-post-hashes.txt
+            ${{ runner.temp }}/basex-srtc-late-bits-isolated-map-ngc-hashes.txt
+            ${{ runner.temp }}/basex-srtc-late-bits-isolated-map-map-sha256.txt
+            ${{ runner.temp }}/basex-srtc-late-bits-isolated-map-xdl.txt
+            ${{ runner.temp }}/basex-srtc-late-bits-isolated-map-xdl-sha256.txt
+            ${{ runner.temp }}/basex-srtc-late-bits-isolated-map-keep-messages.txt
+            verilog/sd2snes_basex/main.xst
+            verilog/sd2snes_basex/main.prj
+            verilog/sd2snes_basex/main.pcf
+            verilog/sd2snes_basex/sd2snes_basex.xise
+            verilog/sd2snes_basex/*.syr
+            verilog/sd2snes_basex/*.mrp
+            verilog/sd2snes_basex/*.psr
+            verilog/sd2snes_basex/*.bld
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Retain the mapped NCD separately on GitHub
+        if: always() && steps.mapping.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: basex-srtc-late-bits-isolated-map-only-mapped-ncd
+          path: verilog/sd2snes_basex/main_map.ncd
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Retain all same-run generated IP netlists separately
+        if: always() && steps.mapping.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: basex-srtc-late-bits-isolated-map-ip-netlists
+          path: verilog/sd2snes_base/ip/mk2/build/*.ngc
+          if-no-files-found: error
+          retention-days: 14

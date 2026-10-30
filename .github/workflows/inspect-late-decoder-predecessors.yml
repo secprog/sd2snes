@@ -1,0 +1,144 @@
+name: Inspect retained late-decoder predecessor drivers
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: retained-late-decoder-drivers-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - family: dsp
+            run: '41132749432'
+            job: '124327605166'
+            head: c21eb9e893b3ca52bc6578d8b92febd232f07247
+            artifact: '13013887964'
+            name: dsp-late-low-isolated-map-only-mapped-ncd
+            bytes: '862114'
+            zip_sha: fe0b74025fad858dcbed947b2c541480cc0c358c5fa197e4b8be0404946254e6
+            ncd_sha: ad20b8c37cf5023d855320a99b2b02b1fbdb7cc48f981aaa9073577d496d7314
+          - family: basex
+            run: '41133808054'
+            job: '124331159647'
+            head: a252d29ee7a3375d403c77ef2a6a477b97c94546
+            artifact: '13015820882'
+            name: basex-srtc-late-bits-isolated-map-only-mapped-ncd
+            bytes: '900611'
+            zip_sha: d66f9e86ff1720e3759a0079ab34ece52360acd71302375fdaf2e2d66e12d35a
+            ncd_sha: c8d7c8f7919301fc288fa91966e575dd0e21d9e9b48f4ab9adff75b8a5424617
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      FAMILY: ${{ matrix.family }}
+      RETAINED_RUN: ${{ matrix.run }}
+      RETAINED_JOB: ${{ matrix.job }}
+      RETAINED_HEAD: ${{ matrix.head }}
+      RETAINED_ARTIFACT: ${{ matrix.artifact }}
+      RETAINED_NAME: ${{ matrix.name }}
+      RETAINED_BYTES: ${{ matrix.bytes }}
+      RETAINED_ZIP_SHA: ${{ matrix.zip_sha }}
+      RETAINED_NCD_SHA: ${{ matrix.ncd_sha }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Pin sources and inventory every tracked byte and index entry
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/late-driver-reports" "$RUNNER_TEMP/late-driver-input" "$RUNNER_TEMP/late-driver-export"
+          test "$(git rev-parse HEAD:verilog)" = 01ce8b6b4509a5a72e0ad739e06bf19e548a2fc1
+          test "$(git hash-object --no-filters .github/scripts/inspect-dsp-retained-map.py)" = 2b3b867372717b5729e26cb4880cb1af0b01a965
+          test "$(git hash-object --no-filters .github/actions/prepare-build-image/action.yml)" = ac2a66fc24d4a15658b666cdc5f5db7964df4c3b
+          test "$(git hash-object --no-filters .github/scripts/inspect-late-decoder-predecessors.py)" = 25ed88434124acf109b2ceb1e2211405c6265240
+          git ls-files -z | xargs -0 sha256sum > "$RUNNER_TEMP/late-driver-reports/tracked-before.sha256"
+          git ls-files --stage > "$RUNNER_TEMP/late-driver-reports/index-before.txt"
+          git diff --exit-code
+          git diff --cached --exit-code
+      - name: Verify exact completed mapping provenance and single retained NCD
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          report="$RUNNER_TEMP/late-driver-reports"
+          gh api "repos/secprog/sd2snes/actions/runs/$RETAINED_RUN" > "$report/run.json"
+          gh api "repos/secprog/sd2snes/actions/runs/$RETAINED_RUN/jobs?per_page=100" > "$report/jobs.json"
+          gh api "repos/secprog/sd2snes/actions/artifacts/$RETAINED_ARTIFACT" > "$report/artifact.json"
+          gh api "repos/secprog/sd2snes/actions/artifacts/$RETAINED_ARTIFACT/zip" > "$RUNNER_TEMP/late-driver-input.zip"
+          python3 - <<'PY'
+          import hashlib, json, os, zipfile
+          from pathlib import Path
+          e = os.environ
+          report = Path(e['RUNNER_TEMP']) / 'late-driver-reports'
+          run = json.loads((report / 'run.json').read_text())
+          jobs = json.loads((report / 'jobs.json').read_text())
+          artifact = json.loads((report / 'artifact.json').read_text())
+          if (run['id'], run['head_sha'], run['status'], run['conclusion']) != (int(e['RETAINED_RUN']), e['RETAINED_HEAD'], 'completed', 'success'):
+              raise SystemExit('Retained run identity/outcome differs')
+          if jobs['total_count'] != 1 or len(jobs['jobs']) != 1:
+              raise SystemExit('Unexpected complete retained job inventory')
+          job = jobs['jobs'][0]
+          if job['id'] != int(e['RETAINED_JOB']) or job['conclusion'] != 'success' or any(s['conclusion'] != 'success' for s in job['steps']):
+              raise SystemExit('Retained job/step identity or outcomes differ')
+          expected = {'id': int(e['RETAINED_ARTIFACT']), 'name': e['RETAINED_NAME'], 'expired': False, 'size_in_bytes': int(e['RETAINED_BYTES']), 'digest': 'sha256:' + e['RETAINED_ZIP_SHA']}
+          if any(artifact.get(k) != v for k, v in expected.items()) or artifact['workflow_run']['id'] != int(e['RETAINED_RUN']) or artifact['workflow_run']['head_sha'] != e['RETAINED_HEAD']:
+              raise SystemExit('Retained artifact identity differs')
+          archive_path = Path(e['RUNNER_TEMP']) / 'late-driver-input.zip'
+          raw = archive_path.read_bytes()
+          if len(raw) != int(e['RETAINED_BYTES']) or hashlib.sha256(raw).hexdigest() != e['RETAINED_ZIP_SHA']:
+              raise SystemExit('Retained ZIP digest differs')
+          with zipfile.ZipFile(archive_path) as archive:
+              members = archive.infolist()
+              if len(members) != 1 or members[0].filename != 'main_map.ncd' or members[0].file_size > 16_000_000:
+                  raise SystemExit('Unexpected single bounded NCD inventory')
+              ncd = archive.read(members[0])
+          if hashlib.sha256(ncd).hexdigest() != e['RETAINED_NCD_SHA']:
+              raise SystemExit('Retained NCD digest differs')
+          (Path(e['RUNNER_TEMP']) / 'late-driver-input/main_map.ncd').write_bytes(ncd)
+          print('Exact successful mapping provenance, complete job/steps, ZIP digest and single NCD verified.')
+          PY
+      - uses: ./.github/actions/prepare-build-image
+        with:
+          target: mk2
+      - name: Convert retained NCD read-only and retain bounded predecessor evidence
+        run: |
+          set -euo pipefail
+          test "$(docker image inspect sd2snes-ci:mk2 --format '{{.Id}}')" = sha256:5e3bbb00649997abca8843b1d82d8529eda99a0f2868d37ad9777e0ad5fd50e8
+          printf '%s  %s\n' "$RETAINED_NCD_SHA" "$RUNNER_TEMP/late-driver-input/main_map.ncd" | tee "$RUNNER_TEMP/late-driver-reports/ncd-before.sha256" | sha256sum --check
+          docker run --rm --read-only --network none --mac-address 08:00:27:68:c9:35 --user 0:0 --tmpfs /tmp:rw,exec,size=256m \
+            --volume "$RUNNER_TEMP/late-driver-input/main_map.ncd:/input/main_map.ncd:ro" \
+            --volume "$RUNNER_TEMP/late-driver-export:/output" --workdir /tmp \
+            --entrypoint /bin/bash sd2snes-ci:mk2 -c \
+            'set -euo pipefail; xdl -ncd2xdl -nopips /input/main_map.ncd /output/retained.xdl' \
+            2>&1 | tee "$RUNNER_TEMP/late-driver-reports/conversion.log"
+          sha256sum --check "$RUNNER_TEMP/late-driver-reports/ncd-before.sha256"
+          sha256sum "$RUNNER_TEMP/late-driver-export/retained.xdl" > "$RUNNER_TEMP/late-driver-reports/xdl.sha256"
+          python3 .github/scripts/inspect-late-decoder-predecessors.py "$FAMILY" "$RUNNER_TEMP/late-driver-export/retained.xdl" | tee "$RUNNER_TEMP/late-driver-reports/raw.txt"
+      - name: Require all tracked SHA/index/staged inputs and retained NCD unchanged
+        if: always()
+        run: |
+          set -euo pipefail
+          report="$RUNNER_TEMP/late-driver-reports"
+          git ls-files -z | xargs -0 sha256sum > "$report/tracked-after.sha256"
+          git ls-files --stage > "$report/index-after.txt"
+          cmp "$report/tracked-before.sha256" "$report/tracked-after.sha256"
+          cmp "$report/index-before.txt" "$report/index-after.txt"
+          sha256sum --check "$report/tracked-before.sha256" > "$report/final-sha-check.txt"
+          git diff --exit-code
+          git diff --cached --exit-code
+          sha256sum --check "$report/ncd-before.sha256"
+      - name: Retain small read-only reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: late-decoder-predecessors-${{ matrix.family }}-reports
+          path: ${{ runner.temp }}/late-driver-reports/
+          if-no-files-found: error
+          retention-days: 14

@@ -83,7 +83,7 @@ jobs:
           par = (report / 'main.par').read_text(encoding='utf-8', errors='strict')
           if len(re.findall(r'^\s*/\S*/trce\s+-', route, flags=re.M)) != 2:
               raise SystemExit('Authentic original broad-regex failure no longer reproduced')
-          if not re.search(r'Timing Score:\s+2168\s+\(Setup:\s+2168,\s+Hold:\s+0, Component Switching Limit:\s+0\)', par) or not re.search(r'Timing errors:\s+15\s+Score:\s+\d+\s+\(Setup/Max:\s+15, Hold:\s+0\)', twr):
+          if not re.search(r'Timing Score:\s+2168\s+\(Setup:\s+2168,\s+Hold:\s+0, Component Switching Limit:\s+0\)', par) or not re.search(r'Timing errors:\s+15\s+Score:\s+2168\s+\(Setup/Max:\s+2168, Hold:\s+0\)', twr):
               raise SystemExit('Authentic native timing failure was not retained')
           baseline = checker.check_text(route, twr, 68)
           header = checker.console_header_from_twr(twr)

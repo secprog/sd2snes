@@ -241,6 +241,8 @@ end"""
         "bad-return": (PROOF_RETURN, "stack[regs_sp-4'd1]"),
         "bad-x-call-data": ("stack_late_push_data = pc + 1;", "stack_late_push_data = (pc + 1) ^ {11{ss_wa[0] ^ ss_wa[0]}};"),
         "bad-x-restore-data": (" : {ss_wd[2:0], ss_wd};", " : ({ss_wd[2:0], ss_wd} ^ {11{pc[0] ^ pc[0]}});"),
+        # The first casex control lowered to exact $eqx under proc -ifx.
+        # A strict !==0 guard deliberately writes on an unknown comparison.
         "bad-x-address": (
             """always @* begin
   selected = 1'b0;
@@ -250,10 +252,9 @@ end"""
 end""",
             """always @* begin
   selected = 1'b0;
-  casex (addr_lo)
-    VALUE: if (prefix) selected = 1'b1;
-    default: begin end
-  endcase
+  if (prefix) begin
+    if ((addr_lo == VALUE) !== 1'b0) selected = 1'b1;
+  end
 end""",
         ),
         "bad-x-write-mask": ("assign write = (run_permit & push_selected) | (restore_permit & restore_selected);", "assign write = ((run_permit & push_selected) | (restore_permit & restore_selected)) ^ (ss_unused ^ ss_unused);"),

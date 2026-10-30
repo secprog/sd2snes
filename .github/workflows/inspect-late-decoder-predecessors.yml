@@ -19,7 +19,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - family: dsp
+          - family: dsp-drivers
             run: '41132749432'
             job: '124327605166'
             head: c21eb9e893b3ca52bc6578d8b92febd232f07247
@@ -28,15 +28,24 @@ jobs:
             bytes: '862114'
             zip_sha: fe0b74025fad858dcbed947b2c541480cc0c358c5fa197e4b8be0404946254e6
             ncd_sha: ad20b8c37cf5023d855320a99b2b02b1fbdb7cc48f981aaa9073577d496d7314
-          - family: basex
-            run: '41133808054'
-            job: '124331159647'
-            head: a252d29ee7a3375d403c77ef2a6a477b97c94546
-            artifact: '13015820882'
-            name: basex-srtc-late-bits-isolated-map-only-mapped-ncd
-            bytes: '900611'
-            zip_sha: d66f9e86ff1720e3759a0079ab34ece52360acd71302375fdaf2e2d66e12d35a
-            ncd_sha: c8d7c8f7919301fc288fa91966e575dd0e21d9e9b48f4ab9adff75b8a5424617
+          - family: dsp-ff-low
+            run: '41132749432'
+            job: '124327605166'
+            head: c21eb9e893b3ca52bc6578d8b92febd232f07247
+            artifact: '13013887964'
+            name: dsp-late-low-isolated-map-only-mapped-ncd
+            bytes: '862114'
+            zip_sha: fe0b74025fad858dcbed947b2c541480cc0c358c5fa197e4b8be0404946254e6
+            ncd_sha: ad20b8c37cf5023d855320a99b2b02b1fbdb7cc48f981aaa9073577d496d7314
+          - family: dsp-ff-high
+            run: '41132749432'
+            job: '124327605166'
+            head: c21eb9e893b3ca52bc6578d8b92febd232f07247
+            artifact: '13013887964'
+            name: dsp-late-low-isolated-map-only-mapped-ncd
+            bytes: '862114'
+            zip_sha: fe0b74025fad858dcbed947b2c541480cc0c358c5fa197e4b8be0404946254e6
+            ncd_sha: ad20b8c37cf5023d855320a99b2b02b1fbdb7cc48f981aaa9073577d496d7314
     env:
       PYTHONDONTWRITEBYTECODE: '1'
       FAMILY: ${{ matrix.family }}
@@ -57,7 +66,7 @@ jobs:
           test "$(git rev-parse HEAD:verilog)" = 01ce8b6b4509a5a72e0ad739e06bf19e548a2fc1
           test "$(git hash-object --no-filters .github/scripts/inspect-dsp-retained-map.py)" = 2b3b867372717b5729e26cb4880cb1af0b01a965
           test "$(git hash-object --no-filters .github/actions/prepare-build-image/action.yml)" = ac2a66fc24d4a15658b666cdc5f5db7964df4c3b
-          test "$(git hash-object --no-filters .github/scripts/inspect-late-decoder-predecessors.py)" = 25ed88434124acf109b2ceb1e2211405c6265240
+          test "$(git hash-object --no-filters .github/scripts/inspect-late-decoder-predecessors.py)" = 952a31c843cfe86a796afeca208a0148c8c5eb1a
           git ls-files -z | xargs -0 sha256sum > "$RUNNER_TEMP/late-driver-reports/tracked-before.sha256"
           git ls-files --stage > "$RUNNER_TEMP/late-driver-reports/index-before.txt"
           git diff --exit-code

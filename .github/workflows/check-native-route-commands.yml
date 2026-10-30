@@ -1,0 +1,143 @@
+name: Guard native route command counts with authentic retained reports
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v6
+      - name: Pin the checker and all tracked inputs
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/native-command-guard"
+          test "$(git rev-parse HEAD:verilog)" = 01ce8b6b4509a5a72e0ad739e06bf19e548a2fc1
+          test "$(git hash-object --no-filters .github/scripts/check-native-route-commands.py)" = e2312dc65d7e6959983efd5829bf171250771940
+          git ls-files -z | xargs -0 sha256sum > "$RUNNER_TEMP/native-command-guard/tracked-before.sha256"
+          git ls-files --stage > "$RUNNER_TEMP/native-command-guard/index-before.txt"
+          git diff --exit-code
+          git diff --cached --exit-code
+      - name: Download authentic failed-trial report fixtures with exact provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          report="$RUNNER_TEMP/native-command-guard"
+          gh api repos/secprog/sd2snes/actions/runs/40973904498 > "$report/run.json"
+          gh api repos/secprog/sd2snes/actions/artifacts/12943307841 > "$report/artifact.json"
+          gh api repos/secprog/sd2snes/actions/artifacts/12943307841/zip > "$RUNNER_TEMP/native-command-fixtures.zip"
+          python3 - <<'PY'
+          import hashlib, json, os, zipfile
+          from pathlib import Path
+          report = Path(os.environ['RUNNER_TEMP']) / 'native-command-guard'
+          run = json.loads((report / 'run.json').read_text())
+          artifact = json.loads((report / 'artifact.json').read_text())
+          if (run['id'], run['head_sha'], run['status'], run['conclusion']) != (40973904498, 'cdb4f037b6ec8b6fc986e14bb88b1e6b3727a26b', 'completed', 'failure'):
+              raise SystemExit('Authentic failed native run identity differs')
+          expected = {'id': 12943307841, 'name': 'dsp-kept-isolated-native-seed-68-reports', 'expired': False, 'size_in_bytes': 860710, 'digest': 'sha256:177ffb2de8d635e84e1f912a478f85706c47a5088ec03cc5b7dce6f7bbff5679'}
+          if any(artifact.get(k) != v for k, v in expected.items()) or artifact['workflow_run']['id'] != 40973904498 or artifact['workflow_run']['head_sha'] != 'cdb4f037b6ec8b6fc986e14bb88b1e6b3727a26b':
+              raise SystemExit('Authentic failed-trial artifact identity differs')
+          raw = (Path(os.environ['RUNNER_TEMP']) / 'native-command-fixtures.zip').read_bytes()
+          if len(raw) != 860710 or hashlib.sha256(raw).hexdigest() != '177ffb2de8d635e84e1f912a478f85706c47a5088ec03cc5b7dce6f7bbff5679':
+              raise SystemExit('Fixture ZIP digest differs')
+          fixtures = {
+              'route.log': ('/dsp-kept-isolated-native-route.log', '24a5ad7b21f29adde3dac72ee46020a8653a53873ea9ae2fb34c042b8c96355f'),
+              'main.twr': ('/main.twr', '07d5dd16764d1d76356081aed08777395709491aff6468a215a264c5e7ae8d72'),
+              'main.par': ('/main.par', 'eb0913aeaa0e13eff2a1c5539ce9b8a5c16515a39b060ab5422f79989f28f154'),
+          }
+          with zipfile.ZipFile(Path(os.environ['RUNNER_TEMP']) / 'native-command-fixtures.zip') as archive:
+              entries = archive.infolist()
+              if len(entries) != 39 or sum(i.file_size for i in entries) != 5900598 or any(i.file_size > 8_000_000 for i in entries):
+                  raise SystemExit('Unexpected complete fixture ZIP inventory')
+              for name, (suffix, digest) in fixtures.items():
+                  found = [i for i in entries if i.filename.endswith(suffix)]
+                  if len(found) != 1:
+                      raise SystemExit('Missing/duplicate authentic fixture')
+                  data = archive.read(found[0])
+                  data.decode('utf-8', errors='strict')
+                  if b'\0' in data or hashlib.sha256(data).hexdigest() != digest:
+                      raise SystemExit('Authentic fixture bytes differ')
+                  (report / name).write_bytes(data)
+          print('Exact authentic failed route, PAR and TRACE fixtures retained. No original result is changed.')
+          PY
+      - name: Require authentic command-count acceptance and synthetic fail-closed controls
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' | tee "$RUNNER_TEMP/native-command-guard/controls.txt"
+          import importlib.util, json, os, re
+          from pathlib import Path
+          spec = importlib.util.spec_from_file_location('checker', '.github/scripts/check-native-route-commands.py')
+          checker = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(checker)
+          report = Path(os.environ['RUNNER_TEMP']) / 'native-command-guard'
+          route = (report / 'route.log').read_text(encoding='utf-8', errors='strict')
+          twr = (report / 'main.twr').read_text(encoding='utf-8', errors='strict')
+          par = (report / 'main.par').read_text(encoding='utf-8', errors='strict')
+          if len(re.findall(r'^\s*/\S*/trce\s+-', route, flags=re.M)) != 2:
+              raise SystemExit('Authentic original broad-regex failure no longer reproduced')
+          if not re.search(r'Timing Score:\s+2168\s+\(Setup:\s+2168,\s+Hold:\s+0, Component Switching Limit:\s+0\)', par) or not re.search(r'Timing errors:\s+15\s+Score:\s+\d+\s+\(Setup/Max:\s+15, Hold:\s+0\)', twr):
+              raise SystemExit('Authentic native timing failure was not retained')
+          baseline = checker.check_text(route, twr, 68)
+          header = checker.console_header_from_twr(twr)
+          par_cmd = baseline['commands']['par'][0]
+          trace_cmd = baseline['commands']['trce'][0]
+          controls = {
+              'duplicate-par': (route + '\n' + par_cmd, twr, 68),
+              'duplicate-trace': (route + '\n' + trace_cmd, twr, 68),
+              'missing-par': (route.replace(par_cmd, '', 1), twr, 68),
+              'missing-trace': (route.replace(trace_cmd, '', 1), twr, 68),
+              'unexpected-unwrapped-command': (route + '\n' + ' '.join(twr.splitlines()[4:6]), twr, 68),
+              'duplicate-console-header': (route + '\n' + header, twr, 68),
+              'missing-console-header': (route.replace(header, '', 1), twr, 68),
+              'wrong-par-arguments': (route.replace('-t 68', '-t 67', 1), twr, 68),
+              'wrong-trace-arguments': (route.replace(checker.BIN + 'trce -v 10', checker.BIN + 'trce -v 11', 1), twr, 68),
+              'forbidden-xst': (route + '\n' + checker.BIN + 'xst -ifn main.xst -ofn main.syr', twr, 68),
+              'quoted-extra-tool-command': (route + '\n"' + checker.BIN + 'trce" -v 10', twr, 68),
+              'extra-inline-handler': (route.replace('par_status=$?;', 'par_status=$?; ' + checker.BIN + 'par -w;', 1), twr, 68),
+              'unrecognized-inline-tool': (route + '\necho check; ' + checker.BIN + 'map', twr, 68),
+              'forbidden-tool-without-arguments': (route + '\n' + checker.BIN + 'bitgen', twr, 68),
+              'wrong-selected-seed': (route, twr, 46),
+              'truncated-file-header': (route, twr[:50], 68),
+          }
+          rejected = []
+          for name, args in controls.items():
+              try:
+                  checker.check_text(*args)
+              except ValueError as error:
+                  rejected.append({'name': name, 'reason': str(error)})
+              else:
+                  raise SystemExit(f'Synthetic negative control unexpectedly accepted: {name}')
+          result = {'authentic_count_only': baseline, 'synthetic_controls_only': rejected,
+                    'original_native_failure_retained': True, 'original_command_gate_failure_retained': True,
+                    'no_fpga_execution': True, 'no_timing_pass': True}
+          (report / 'controls.json').write_text(json.dumps(result, indent=2) + '\n')
+          print(json.dumps(result, indent=2))
+          PY
+      - name: Require every tracked hash/index/staged input unchanged
+        if: always()
+        run: |
+          set -euo pipefail
+          report="$RUNNER_TEMP/native-command-guard"
+          git ls-files -z | xargs -0 sha256sum > "$report/tracked-after.sha256"
+          git ls-files --stage > "$report/index-after.txt"
+          cmp "$report/tracked-before.sha256" "$report/tracked-after.sha256"
+          cmp "$report/index-before.txt" "$report/index-after.txt"
+          sha256sum --check "$report/tracked-before.sha256" > "$report/final-sha-check.txt"
+          git diff --exit-code
+          git diff --cached --exit-code
+      - name: Retain authentic fixtures and explicitly synthetic control outcomes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-route-command-guard-reports
+          path: ${{ runner.temp }}/native-command-guard/
+          if-no-files-found: error
+          retention-days: 14

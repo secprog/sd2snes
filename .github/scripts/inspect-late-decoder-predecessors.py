@@ -14,15 +14,22 @@ spec.loader.exec_module(xdl)
 
 def inspect(family, path):
     xdl.fixture_checks()
-    if family not in {"dsp", "basex"} or path.stat().st_size > 32_000_000:
+    if family not in {"dsp-drivers", "dsp-ff-low", "dsp-ff-high", "basex"} or path.stat().st_size > 32_000_000:
         raise SystemExit("Invalid family or excessive full XDL")
     instances, nets = xdl.parse(path.read_text(encoding="utf-8", errors="strict"))
-    if family == "dsp":
-        targets = [f"snes_dspx/stack<{w}>_{b}" for w in range(16) for b in range(11)]
+    if family.startswith("dsp-"):
+        words = range(0, 8) if family == "dsp-ff-low" else range(8, 16)
+        targets = [] if family == "dsp-drivers" else [
+            f"snes_dspx/stack<{w}>_{b}" for w in words for b in range(11)]
         seeds = ["snes_dspx/N378", "snes_dspx/N357"]
         observed = seeds + [f"snes_dspx/ss_wa<{b}>" for b in range(8)]
         observed += ["snes_dspx/ss_wr"]
         observed += [f"snes_dspx/stack_restore_prefix<{g}>" for g in range(5)]
+        # Distinct declared read-only scopes after the original 774-net bounds failure.
+        # FF scopes retain every target COMP/CE driver and every incident net.
+        # Driver scope retains one predecessor layer; no scope truncates raw records.
+        if family != "dsp-drivers":
+            seeds, observed = [], []
     else:
         targets = ["snes_srtc/rtc_ptr_3"]
         seeds = ["snes_addr/N195", "snes_addr/N92", "N3241", "snes_addr/srtc_other_permit"]

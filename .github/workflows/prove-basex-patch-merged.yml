@@ -1,0 +1,160 @@
+# Diagnostic-only response to run 41235863589: unrestricted-X SAT timed out
+# after 300s (63262 variables / 170537 clauses). Keep the exact candidate,
+# all 24 outputs, all common arbitrary inputs and all real negative controls.
+# opt_merge -keepdc shares identical combinational cells only; no opt_expr,
+# changed timeout, ignored output, input assumption or FPGA build. Retain both
+# complete pre/post-merge miters for independent structural review.
+name: Prove basex patch mux with identical combinational cells merged
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: prove-basex-patch-merged-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  prove:
+    name: Prove ${{ matrix.family }} slow-path source change
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        family: [basex]
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      FAMILY: ${{ matrix.family }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Record every tracked input before tools or preparation
+        run: |
+          set -euo pipefail
+          REPORT="$RUNNER_TEMP/slow-path-proof"
+          echo "REPORT=$REPORT" >> "$GITHUB_ENV"
+          mkdir -p "$REPORT"
+          git ls-files -z | xargs -0 sha256sum > "$REPORT/tracked-before.sha256"
+          git ls-files --stage > "$REPORT/index-before.txt"
+          git diff --exit-code
+          git diff --cached --exit-code
+          test "$(git rev-parse HEAD:verilog)" = 01ce8b6b4509a5a72e0ad739e06bf19e548a2fc1
+          test "$(git hash-object --no-filters .github/scripts/prepare-slow-path-proofs.py)" = 393d3156292af684ca3db498cc43a20de77bbda4
+          test "$(git hash-object --no-filters .github/scripts/cut-dsp-status-state.py)" = 800ded87072611af03749b1d29e6a018bc79abb4
+          test "$(git hash-object --no-filters .github/scripts/run-basex-patch-merged-proof.sh)" = 49c8d3fbc673a317d3dfba85b85bed92688e0824
+          test "$(git hash-object --no-filters .github/fixtures/slow-path-proof-data.json)" = 7833210e1b7523a28aefc6a680000889efe39391
+          test "$(git hash-object --no-filters .github/fixtures/slow-path-parent-dsp.v)" = 80050b8015d47cbf4eb25c6fd8c14aa78c378790
+          test "$(git hash-object --no-filters .github/fixtures/slow-path-parent-basex.v)" = 544beeb3ee6c6805197d332b08d10b8ee179f38a
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/config.vh)" = 1a9a6a14b8b08eb6e931ce2320326e913aa8000e
+          test "$(git hash-object --no-filters verilog/sd2snes_dspx/config.vh)" = 4cf8aa3111a5bf103065cded5fb77fdfc39ee239
+
+      - name: Verify exact previously reviewed parent source proof and full artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, io, json, os, stat, subprocess, urllib.request, zipfile
+          from pathlib import Path, PurePosixPath
+          records = {
+              'dsp': (41132173203, 124325549576, '6b81898fba0273cfd944f03e1e75bc35ebe17a89', 13013851609, 4016659, 'dc4c16ea44b4c2769a70a81c9a09856e592e50bf6e81efc531d3a15d6c24ec4c', 'candidate-upd77c25.v'),
+              'basex': (41133271280, 124329361168, '1dacdf3682392b9ca64c55a4e013c6cf417cf23a', 13013783280, 506078, '4528ce5f55f6d93823ac7099e724247fefd6fdacd4079bc43dd06800640868db', 'candidate-address.v'),
+          }
+          family = os.environ['FAMILY']
+          run, job, head, artifact, length, digest, member = records[family]
+          root = 'https://api.github.com/repos/secprog/sd2snes/'
+          def get(route, binary=False):
+              if binary:
+                  # Use the established CLI artifact redirect handling. urllib's
+                  # forwarded API authorization caused a storage HTTP401 here.
+                  data = subprocess.check_output(['gh', 'api', 'repos/secprog/sd2snes/' + route], timeout=60)
+                  assert len(data) <= 8 * 1024 * 1024
+                  return data
+              request = urllib.request.Request(root + route, headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28'})
+              with urllib.request.urlopen(request, timeout=60) as response:
+                  data = response.read(8 * 1024 * 1024 + 1)
+              assert len(data) <= 8 * 1024 * 1024
+              return data if binary else json.loads(data)
+          metadata = get(f'actions/runs/{run}')
+          jobs = get(f'actions/runs/{run}/jobs?per_page=100')
+          assert metadata['head_sha'] == head and metadata['status'] == 'completed' and metadata['conclusion'] == 'success'
+          assert jobs['total_count'] == len(jobs['jobs']) == 1
+          selected = jobs['jobs'][0]
+          assert selected['id'] == job and selected['status'] == 'completed' and selected['conclusion'] == 'success'
+          assert all(step['conclusion'] == 'success' for step in selected['steps'])
+          artifact_metadata = get(f'actions/artifacts/{artifact}')
+          assert artifact_metadata['workflow_run']['id'] == run and artifact_metadata['workflow_run']['head_sha'] == head
+          assert not artifact_metadata['expired'] and artifact_metadata['size_in_bytes'] == length and artifact_metadata['digest'] == 'sha256:' + digest
+          raw = get(f'actions/artifacts/{artifact}/zip', True)
+          assert len(raw) == length and hashlib.sha256(raw).hexdigest() == digest
+          files = {}
+          with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+              items = archive.infolist()
+              assert 1 <= len(items) <= 500 and sum(item.file_size for item in items) <= 96 * 1024 * 1024
+              for item in items:
+                  name = item.filename
+                  assert not item.is_dir() and not PurePosixPath(name).is_absolute() and '..' not in PurePosixPath(name).parts
+                  assert '\\' not in name and ':' not in name and name not in files and not (item.flag_bits & 1)
+                  assert not stat.S_ISLNK(item.external_attr >> 16) and item.file_size <= 16 * 1024 * 1024
+                  content = archive.read(item)
+                  content.decode('utf-8', errors='strict')
+                  files[name] = content
+          assert files[member] == Path(f'.github/fixtures/slow-path-parent-{family}.v').read_bytes()
+          verified = []
+          for line in files['SHA256SUMS'].decode().splitlines():
+              expected, filename = line.split('  ', 1)
+              assert filename not in verified and hashlib.sha256(files[filename]).hexdigest() == expected
+              verified.append(filename)
+          assert len(verified) == (52 if family == 'dsp' else 39)
+          result = {'run': metadata, 'jobs': jobs, 'artifact': artifact_metadata, 'zipSha256': digest, 'allManifestEntries': verified, 'exactParent': member, 'entries': len(files)}
+          Path(os.environ['REPORT'], 'parent-proof-provenance.json').write_text(json.dumps(result, indent=2))
+          print(f'{family}: exact successful parent proof, full ZIP digest, all {len(verified)} source manifest entries and candidate bytes verified')
+          PY
+
+      - name: Install and identify hosted proof tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends yosys iverilog
+          yosys -V | tee "$REPORT/tool-version.txt"
+          grep -F 'Yosys 0.33 (git sha1 2584903a060)' "$REPORT/tool-version.txt"
+          iverilog -V > "$REPORT/iverilog-version.txt" 2>&1
+          grep -F 'Icarus Verilog version 12.0' "$REPORT/iverilog-version.txt"
+
+      - name: Prepare exact candidate and source-bound models
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/prepare-slow-path-proofs.py "$FAMILY" .github/fixtures "$REPORT"
+
+      - name: Prove every component output and require actual negative witnesses
+        run: |
+          set -euo pipefail
+          bash .github/scripts/run-basex-patch-merged-proof.sh "$FAMILY" "$REPORT"
+          cat "$REPORT/verified.txt" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Require every tracked SHA and index entry and empty staged differences
+        if: always()
+        run: |
+          set -euo pipefail
+          test -s "$REPORT/tracked-before.sha256"
+          test -s "$REPORT/index-before.txt"
+          git ls-files -z | xargs -0 sha256sum > "$REPORT/tracked-after.sha256"
+          git ls-files --stage > "$REPORT/index-after.txt"
+          cmp "$REPORT/tracked-before.sha256" "$REPORT/tracked-after.sha256"
+          cmp "$REPORT/index-before.txt" "$REPORT/index-after.txt"
+          sha256sum --check "$REPORT/tracked-before.sha256" | tee "$REPORT/tracked-final-check.txt"
+          git diff --exit-code
+          git diff --cached --exit-code
+
+      - name: Retain complete source, models, state views, miters and actual witnesses
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: basex-patch-merged-proof
+          path: ${{ runner.temp }}/slow-path-proof/
+          if-no-files-found: error
+          retention-days: 14

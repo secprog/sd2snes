@@ -1,0 +1,611 @@
+# Prepared diagnostic only. A fresh human authorization is required before one native dispatch.
+name: Trial DSPx proved late low-address decoder with isolated CoreGen
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: dsp-late-low-isolated-native-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  mapping:
+    name: DSPx late low decoder, one PAR and TRACE seed 68
+    runs-on: ubuntu-22.04
+    timeout-minutes: 150
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Require the independently reviewed CoreGen isolation validation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(gh api repos/secprog/sd2snes/actions/runs/40960956589 --jq .conclusion)" = success
+          test "$(gh api repos/secprog/sd2snes/actions/runs/40960956589 --jq .head_sha)" = d9e6754161a504f00ad28ae7005bb4369105c313
+
+      - name: Require exact independently reviewed mapping, physical inspection and command controls
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git hash-object --no-filters .github/scripts/check-native-route-commands.py)" = e2312dc65d7e6959983efd5829bf171250771940
+          test "$(git hash-object --no-filters .github/workflows/check-native-route-commands.yml)" = 75d8c410a87c6a8fb48bf42a18b713255fed9b62
+          test "$(git hash-object --no-filters .github/scripts/inspect-late-decoder-predecessors.py)" = 952a31c843cfe86a796afeca208a0148c8c5eb1a
+          test "$(git hash-object --no-filters .github/workflows/inspect-dsp-late-low-isolated-map.yml)" = e5fd6e2911f38d3041c112355fc75728f83787b7
+          python3 - <<'PY' | tee "$RUNNER_TEMP/dsp-late-low-isolated-native-prerequisites.json"
+          import hashlib, io, json, os, subprocess, zipfile
+          from pathlib import PurePosixPath
+          checks = json.loads('''[{"run":41132749432,"head":"c21eb9e893b3ca52bc6578d8b92febd232f07247","conclusion":"success","total_jobs":1,"jobs":[124327605166],"artifacts":[{"id":13014955819,"name":"dsp-late-low-isolated-map-only-reports","size_in_bytes":546348,"digest":"sha256:323902f139322dc51413acbb724ffc5c3b4c088a85f93b7c5b581514f211f7f0"}]},{"run":41137301644,"head":"a73668fa4b3511294971db2746f08849625fc639","conclusion":"success","total_jobs":1,"jobs":[124342807708],"artifacts":[{"id":13016923326,"name":"native-route-command-guard-reports","size_in_bytes":386596,"digest":"sha256:19fe2121239d89ef26d3526cb622084ff9874293afeb88c1b4f5f6cf07f890b3"}]},{"run":41136938577,"head":"e4a810b648d9bf269d609ae085f8130d38359abd","conclusion":"success","total_jobs":3,"jobs":[124341594600,124341594999,124341595190],"artifacts":[{"id":13017258331,"name":"late-decoder-predecessors-dsp-drivers-reports","size_in_bytes":351028,"digest":"sha256:45250e6005d6d8b5dd2f1472b85d7ce833d3ba0a0cce3ebf1dd7a277885c385c"},{"id":13016558555,"name":"late-decoder-predecessors-dsp-ff-low-reports","size_in_bytes":364416,"digest":"sha256:0a4d51f420de7c6aa5f41a47d0a0eae68c4e6764d8037fc70753a6df43af406c"},{"id":13016998344,"name":"late-decoder-predecessors-dsp-ff-high-reports","size_in_bytes":359511,"digest":"sha256:286c260ffbb5020ef8bb3312cd59c9385a48be3400b8b49c9a5bbe5131ae2190"}]}]''')
+          observed = []
+          def api(path):
+              return json.loads(subprocess.check_output(['gh', 'api', 'repos/secprog/sd2snes/' + path]))
+          for check in checks:
+              run = api('actions/runs/' + str(check['run']))
+              jobs = api('actions/runs/' + str(check['run']) + '/jobs?per_page=100')
+              if (run['id'], run['head_sha'], run['status'], run['conclusion']) != (check['run'], check['head'], 'completed', check['conclusion']):
+                  raise SystemExit('Prerequisite run identity/outcome differs')
+              if jobs['total_count'] != check['total_jobs'] or len(jobs['jobs']) != check['total_jobs']:
+                  raise SystemExit('Incomplete prerequisite job inventory')
+              for job_id in check['jobs']:
+                  found = [job for job in jobs['jobs'] if job['id'] == job_id]
+                  if len(found) != 1 or found[0]['head_sha'] != check['head'] or found[0]['conclusion'] != 'success' or any(step['conclusion'] != 'success' for step in found[0]['steps']):
+                      raise SystemExit('Required prerequisite job/step failed, missing or skipped')
+              for expected in check['artifacts']:
+                  artifact = api('actions/artifacts/' + str(expected['id']))
+                  if any(artifact.get(k) != v for k, v in expected.items()) or artifact['expired'] or artifact['workflow_run']['id'] != check['run'] or artifact['workflow_run']['head_sha'] != check['head']:
+                      raise SystemExit('Reviewed prerequisite artifact identity differs')
+              observed.append({'run': run, 'jobs': jobs})
+          raw = subprocess.check_output(['gh', 'api', 'repos/secprog/sd2snes/actions/artifacts/13016923326/zip'])
+          if len(raw) != 386596 or hashlib.sha256(raw).hexdigest() != '19fe2121239d89ef26d3526cb622084ff9874293afeb88c1b4f5f6cf07f890b3':
+              raise SystemExit('Command-control report ZIP digest differs')
+          with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+              entries = archive.infolist()
+              if len(entries) > 30 or sum(i.file_size for i in entries) > 4_000_000 or any(i.file_size > 2_000_000 for i in entries):
+                  raise SystemExit('Excessive command-control report inventory')
+              for item in entries:
+                  p = PurePosixPath(item.filename)
+                  if p.is_absolute() or '..' in p.parts or ':' in item.filename or chr(92) in item.filename:
+                      raise SystemExit('Unsafe command-control report path')
+              files = [i for i in entries if i.filename == 'controls.json']
+              if len(files) != 1:
+                  raise SystemExit('Missing/duplicate command controls')
+              controls = json.loads(archive.read(files[0]).decode('utf-8', errors='strict'))
+          expected_controls = ['duplicate-par', 'duplicate-trace', 'missing-par', 'missing-trace', 'unexpected-unwrapped-command', 'duplicate-console-header', 'missing-console-header', 'wrong-par-arguments', 'wrong-trace-arguments', 'forbidden-xst', 'quoted-extra-tool-command', 'extra-inline-handler', 'unrecognized-inline-tool', 'forbidden-tool-without-arguments', 'wrong-selected-seed', 'truncated-file-header']
+          if [item['name'] for item in controls['synthetic_controls_only']] != expected_controls or any(not item['reason'] for item in controls['synthetic_controls_only']):
+              raise SystemExit('Incomplete successful command negative controls')
+          count = controls['authentic_count_only']
+          if (count['original_par_recipes'], count['original_trace_recipes'], count['same_run_trace_command_headers'], count['seed'], count['timing_pass_inferred']) != (1, 1, 1, 68, False):
+              raise SystemExit('Authentic command control outcome differs')
+          if any(controls[k] is not True for k in ['original_native_failure_retained', 'original_command_gate_failure_retained', 'no_fpga_execution', 'no_timing_pass']):
+              raise SystemExit('Original failure retention or diagnostic scope differs')
+          print(json.dumps({'prerequisites': observed, 'command_controls': controls}, indent=2))
+          PY
+
+      - name: Download the independently inspected source-bound proof
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(gh api repos/secprog/sd2snes/actions/runs/41132173203 --jq .conclusion)" = success
+          test "$(gh api repos/secprog/sd2snes/actions/runs/41132173203 --jq .head_sha)" = 6b81898fba0273cfd944f03e1e75bc35ebe17a89
+          gh api repos/secprog/sd2snes/actions/artifacts/13013851609 > "$RUNNER_TEMP/late-low-proof-metadata.json"
+          python3 - "$RUNNER_TEMP/late-low-proof-metadata.json" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          artifact = json.loads(Path(sys.argv[1]).read_text())
+          expected = {'id': 13013851609, 'name': 'dsp-stack-late-low-proof', 'expired': False,
+                      'digest': 'sha256:dc4c16ea44b4c2769a70a81c9a09856e592e50bf6e81efc531d3a15d6c24ec4c'}
+          if any(artifact.get(key) != value for key, value in expected.items()):
+              raise SystemExit('Proof artifact identity differs')
+          run = artifact['workflow_run']
+          if run['id'] != 41132173203 or run['head_sha'] != '6b81898fba0273cfd944f03e1e75bc35ebe17a89':
+              raise SystemExit('Proof run identity differs')
+          PY
+          gh api repos/secprog/sd2snes/actions/artifacts/13013851609/zip > "$RUNNER_TEMP/late-low-proof.zip"
+          printf 'dc4c16ea44b4c2769a70a81c9a09856e592e50bf6e81efc531d3a15d6c24ec4c  %s\n' "$RUNNER_TEMP/late-low-proof.zip" | sha256sum --check
+          python3 - "$RUNNER_TEMP/late-low-proof.zip" "$RUNNER_TEMP/dsp-stack-late-low-proof" <<'PY'
+          import sys
+          import zipfile
+          from pathlib import Path, PurePosixPath
+          root = Path(sys.argv[2])
+          with zipfile.ZipFile(sys.argv[1]) as archive:
+              entries = archive.infolist()
+              if len(entries) != 230 or sum(item.file_size for item in entries) != 68578823:
+                  raise SystemExit('Unexpected complete proof artifact inventory')
+              for item in entries:
+                  path = PurePosixPath(item.filename)
+                  if path.is_absolute() or '..' in path.parts or '\\' in item.filename or ':' in item.filename:
+                      raise SystemExit('Unsafe proof artifact path')
+                  if item.file_size > 16_000_000:
+                      raise SystemExit('Unexpectedly large proof member')
+              archive.extractall(root)
+          print('Exact independently reviewed proof artifact ZIP identity and complete contents verified.')
+          PY
+
+      - name: Download the original DSPx timing report for comparison
+        uses: actions/download-artifact@v4
+        with:
+          name: dsp-stack-original-seed-68
+          path: ${{ runner.temp }}/dsp-stack-late-low-original
+          run-id: 40524388250
+          github-token: ${{ github.token }}
+
+      - name: Select exactly the proved runner-only source
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD:verilog)" = 01ce8b6b4509a5a72e0ad739e06bf19e548a2fc1
+          test "$(git hash-object --no-filters .github/scripts/build.sh)" = 847665b375209d705de918d54f89cff194b074b1
+          test "$(git hash-object --no-filters .github/actions/prepare-build-image/action.yml)" = ac2a66fc24d4a15658b666cdc5f5db7964df4c3b
+          test "$(git hash-object --no-filters verilog/common.mk)" = c6b13825f8b7942711d3ae9723ce4fc83fdaa3cc
+          test "$(git hash-object --no-filters .github/scripts/inspect-dsp-retained-map.py)" = 2b3b867372717b5729e26cb4880cb1af0b01a965
+          git diff --exit-code
+          git diff --cached --exit-code
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/upd77c25.v)" = ba14f5b6dd198fbb5645f005fb3784890beec2c4
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/main.v)" = cc6889c4f00f653b0df19184ec8c7d726df9d2c9
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/main.ucf)" = 4f34c4cf9e475ac171a216c3f15fff74918fd03c
+          test "$(git hash-object --no-filters verilog/sd2snes_dspx/sd2snes_dspx.xise)" = 2822b63c005bce73e8e7aaf332bcdbd983d1492d
+          test "$(git hash-object --no-filters .github/scripts/prepare-dsp-stack-late-permit-proof.py)" = 0244d752e67f6cc5119b62bd49efb4cc32312022
+          test "$(git hash-object --no-filters .github/scripts/prepare-dsp-stack-late-low-proof.py)" = 30e782b863c8ad64262fde826fe28b7a4daf42b0
+          test "$(git hash-object --no-filters .github/workflows/prove-dsp-stack-late-low.yml)" = 0b53d5e8ae8503efef7dd2542c6bdd1e58424a35
+          test ! -e verilog/sd2snes_dspx/ucf.extra
+          proof="$RUNNER_TEMP/dsp-stack-late-low-proof"
+          test "$(wc -l < "$proof/SHA256SUMS")" = 52
+          (cd "$proof" && sha256sum --check SHA256SUMS)
+          test -s "$proof/verified.txt"
+          grep -F 'Yosys 0.33 (git sha1 2584903a060)' "$proof/tool-version.txt"
+          grep -F 'Icarus Verilog version 12.0' "$proof/iverilog-version.txt"
+          test "$(sha256sum "$proof/candidate-upd77c25.v" | cut -d' ' -f1)" = b536c4ab74015b76751d0544e48cce23a458b70b2e0e34f101bdd18421907d4a
+          test "$(sha256sum "$proof/gold.v" | cut -d' ' -f1)" = 4a167b7b4efe8252d33bf2c437c494509c77aadfe6dc407a437be0030c2d2d2e
+          test "$(sha256sum "$proof/gate.v" | cut -d' ' -f1)" = a03a0c2c7836b32e42763a339d8a64a5223d672cf49b5d26f1f5ea9ac9466333
+          test "$(git hash-object --no-filters "$proof/candidate-upd77c25.v")" = 80050b8015d47cbf4eb25c6fd8c14aa78c378790
+          for mode in binary xstate; do
+            test "$(sha256sum "$proof/gate/miter-$mode.json" | cut -d' ' -f1)" = e1f14ea4cfdf85032af3dc4da4405dac8ec67adadf29cc387d6bcb9e67dfdd42
+            grep -F 'SAT proof finished - no model found: SUCCESS!' "$proof/gate/proof-$mode.log"
+          done
+          for variant in bad-data bad-run bad-restore bad-reset bad-push bad-strobe bad-lane bad-word bad-prefix bad-return; do
+            test -s "$proof/$variant/miter-binary.json"
+            test -s "$proof/$variant/counterexample-binary.json"
+            grep -F 'SAT proof finished - model found: FAIL!' "$proof/$variant/proof-binary.log"
+          done
+          for variant in bad-x-call-data bad-x-restore-data bad-x-write-mask bad-x-address; do
+            test -s "$proof/$variant/miter-binary.json"
+            test -s "$proof/$variant/miter-xstate.json"
+            test -s "$proof/$variant/counterexample-xstate.json"
+            grep -F 'SAT proof finished - no model found: SUCCESS!' "$proof/$variant/proof-binary.log"
+            grep -F 'SAT proof finished - model found: FAIL!' "$proof/$variant/proof-xstate.log"
+          done
+          for variant in gold gate bad-data bad-run bad-restore bad-reset bad-push bad-strobe bad-lane bad-word bad-prefix bad-return bad-x-call-data bad-x-restore-data bad-x-write-mask bad-x-address; do
+            test -s "$proof/$variant/state-audit.log"
+            test -s "$proof/$variant/state.json"
+            test -s "$proof/$variant/transition.json"
+            grep -F 'SAT proof finished - no model found: SUCCESS!' "$proof/$variant/state-view.log"
+          done
+          grep -F 'SAT proof finished - model found: FAIL!' "$proof/gold/state-view-mutant.log"
+          test -s "$proof/gold/state-view-mutant-counterexample.json"
+          cmp "$proof/original-upd77c25.v" verilog/sd2snes_dsp/upd77c25.v
+          cp "$proof/candidate-upd77c25.v" verilog/sd2snes_dsp/upd77c25.v
+          test "$(git diff --name-only)" = verilog/sd2snes_dsp/upd77c25.v
+          git ls-files -z | xargs -0 sha256sum > "$RUNNER_TEMP/dsp-late-low-isolated-native-before.sha256"
+          git ls-files -s > "$RUNNER_TEMP/dsp-late-low-isolated-native-before-index.txt"
+          {
+            printf 'Checkout: %s\nVerilog tree: %s\n' "$GITHUB_SHA" "$(git rev-parse HEAD:verilog)"
+            printf 'Proof run: 41132173203; candidate DSP blob: 80050b8015d47cbf4eb25c6fd8c14aa78c378790\n'
+            printf 'Original project: 2822b63c005bce73e8e7aaf332bcdbd983d1492d; original UCF: 4f34c4cf9e475ac171a216c3f15fff74918fd03c\n'
+            printf 'Basis: rejected KEEP native run 40973904498 exposes ss_wa1/2 through two early LUTs. New exact proved candidate moves low3 bits after shared upper-address/strobe prefixes; actual single-LUT suffix and final-join pins require review. All previous trials remain rejected.\n'
+            printf 'Diagnostic target: XST Speed, timing-driven MAP Area seed 68 only. No PAR/TRACE, timing or native pass; requirements unchanged.\n'
+          } | tee "$RUNNER_TEMP/dsp-late-low-isolated-native-identity.txt"
+
+      - uses: ./.github/actions/prepare-build-image
+        with:
+          target: mk2
+
+      - name: Generate candidate mapped NCD only; no PAR or TRACE result
+        id: mapping
+        env:
+          ISE_CTABLE: '68'
+        run: |
+          set -euo pipefail
+          image_id=$(docker image inspect sd2snes-ci:mk2 --format '{{.Id}}')
+          printf 'ISE image ID: %s\n' "$image_id" | tee -a "$RUNNER_TEMP/dsp-late-low-isolated-native-identity.txt"
+          test "$image_id" = sha256:5e3bbb00649997abca8843b1d82d8529eda99a0f2868d37ad9777e0ad5fd50e8
+          container_name=sd2snes-dsp-late-low-isolated-native
+          bash .github/scripts/report-activity.sh "$container_name" &
+          activity_pid=$!
+          trap 'kill "$activity_pid" 2>/dev/null || true; wait "$activity_pid" 2>/dev/null || true' EXIT
+          # MAP requires the existing licensed Ethernet identity. The none
+          # driver creates only loopback, so retain the established bridge NIC.
+          docker run --rm --network bridge --name "$container_name" --user 0:0 \
+            --mac-address 08:00:27:68:c9:35 --env ISE_CTABLE \
+            --volume "$GITHUB_WORKSPACE:/work" --workdir /work \
+            --entrypoint /bin/bash sd2snes-ci:mk2 -c \
+            'set -euo pipefail; observed_mac=$(cat /sys/class/net/eth0/address); printf "Observed build-container eth0 MAC: %s\n" "$observed_mac"; test "$observed_mac" = 08:00:27:68:c9:35; make -C verilog/sd2snes_dspx -j2 main_map.ncd HOST=LINUX XILINX_ENV= IGNORE_TIMING=0; test -s verilog/sd2snes_dspx/main_map.ncd; test ! -e verilog/sd2snes_dspx/main.ncd; test ! -e verilog/sd2snes_dspx/main.par; test ! -e verilog/sd2snes_dspx/main.twr' \
+            2>&1 | tee "$RUNNER_TEMP/dsp-late-low-isolated-native-build.log"
+
+      - name: Retain every post-build tracked difference and generated IP hash
+        if: always() && steps.mapping.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          git ls-files -z | xargs -0 sha256sum > "$RUNNER_TEMP/dsp-late-low-isolated-native-after.sha256"
+          git ls-files -s > "$RUNNER_TEMP/dsp-late-low-isolated-native-after-index.txt"
+          git diff --no-ext-diff --no-renames --binary > "$RUNNER_TEMP/dsp-late-low-isolated-native-post.diff"
+          git diff --cached --no-ext-diff --no-renames --binary > "$RUNNER_TEMP/dsp-late-low-isolated-native-post-staged.diff"
+          git diff --no-ext-diff --no-renames --name-only | tee "$RUNNER_TEMP/dsp-late-low-isolated-native-post-paths.txt"
+          for path in verilog/sd2snes_dsp/upd77c25.v verilog/sd2snes_dsp/main.v verilog/sd2snes_dsp/main.ucf verilog/sd2snes_dspx/sd2snes_dspx.xise; do
+            printf '%s %s\n' "$(git hash-object --no-filters "$path")" "$path"
+          done | tee "$RUNNER_TEMP/dsp-late-low-isolated-native-post-hashes.txt"
+          {
+            missing=0
+            for core in dac_buf msu_databuf snescmd_buf upd77c25_datram upd77c25_datrom upd77c25_pgmrom; do
+              file="verilog/sd2snes_dsp/ip/mk2/build/$core.ngc"
+              if [[ -s "$file" ]]; then sha256sum "$file"; else printf 'MISSING %s\n' "$file"; missing=1; fi
+            done
+            exit "$missing"
+          } | tee "$RUNNER_TEMP/dsp-late-low-isolated-native-ngc-hashes.txt"
+
+      - name: Verify candidate, project, constraints and all tracked inputs
+        if: always() && steps.mapping.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/upd77c25.v)" = 80050b8015d47cbf4eb25c6fd8c14aa78c378790
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/main.v)" = cc6889c4f00f653b0df19184ec8c7d726df9d2c9
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/main.ucf)" = 4f34c4cf9e475ac171a216c3f15fff74918fd03c
+          test "$(git hash-object --no-filters verilog/sd2snes_dspx/sd2snes_dspx.xise)" = 2822b63c005bce73e8e7aaf332bcdbd983d1492d
+          test "$(git diff --name-only)" = verilog/sd2snes_dsp/upd77c25.v
+          git diff --cached --exit-code
+          cmp "$RUNNER_TEMP/dsp-late-low-isolated-native-before.sha256" "$RUNNER_TEMP/dsp-late-low-isolated-native-after.sha256"
+          cmp "$RUNNER_TEMP/dsp-late-low-isolated-native-before-index.txt" "$RUNNER_TEMP/dsp-late-low-isolated-native-after-index.txt"
+          echo 'Every tracked SHA and index entry is unchanged after selecting the exact proved candidate; staged inputs unchanged.'
+
+      - name: Verify actual synthesis and MAP options; forbid routing execution
+        if: always() && steps.mapping.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          grep -Fx -- '-sd {"../sd2snes_dsp/ip/mk2/build"}' verilog/sd2snes_dspx/main.xst
+          grep -Fx -- '-opt_mode Speed' verilog/sd2snes_dspx/main.xst
+          grep -Fx -- '-define { MK2 DSP_COMP }' verilog/sd2snes_dspx/main.xst
+          grep -Fx -- '-resource_sharing Yes' verilog/sd2snes_dspx/main.xst
+          grep -Fx -- '-register_balancing Yes' verilog/sd2snes_dspx/main.xst
+          python3 - "$RUNNER_TEMP/dsp-late-low-isolated-native-build.log" <<'PY'
+          import re
+          import shlex
+          import sys
+          from pathlib import Path
+          lines = Path(sys.argv[1]).read_text(errors="strict").splitlines()
+          translations = [line for line in lines if re.match(r"^\s*/\S*/ngdbuild\s+-", line)]
+          if len(translations) != 1:
+              raise SystemExit('Missing or ambiguous NGDBUILD command')
+          translate_args = shlex.split(translations[0])
+          if translate_args.count('-sd') != 1 or translate_args[translate_args.index('-sd') + 1] != '../sd2snes_dsp/ip/mk2/build':
+              raise SystemExit('NGDBUILD does not consume the isolated IP netlists')
+          print(f'Verified NGDBUILD isolated search path: {translations[0]}')
+          project = Path('verilog/sd2snes_dspx/main.prj').read_text().splitlines()
+          ip_lines = [line for line in project if '/ip/mk2/' in line]
+          expected_ips = ['dac_buf', 'msu_databuf', 'snescmd_buf', 'upd77c25_datram', 'upd77c25_datrom', 'upd77c25_pgmrom']
+          if sorted(ip_lines) != sorted(f'verilog work "../sd2snes_dsp/ip/mk2/build/{ip}.v"' for ip in expected_ips):
+              raise SystemExit('XST project does not consume exactly the six isolated IP sources')
+          print('\n'.join(ip_lines))
+          if any(re.search(r"/(?:par|trce)\s+-", line) for line in lines):
+              raise SystemExit("Unexpected PAR/TRACE execution in mapping-only diagnostic")
+          for tool, expected in (
+              ("map", {"-logic_opt": "on", "-ol": "high", "-xe": "n", "-t": "68", "-register_duplication": "on", "-cm": "area"}),
+          ):
+              commands = [line for line in lines if re.search(r"/" + tool + r"\s+-", line)]
+              if len(commands) != 1:
+                  raise SystemExit(f"Missing or ambiguous {tool} command")
+              args = shlex.split(commands[0].split(" || ", 1)[0].strip())
+              if tool == "map" and args.count("-timing") != 1:
+                  raise SystemExit("MAP is not explicitly timing-driven")
+              for flag, value in expected.items():
+                  if args.count(flag) != 1 or args.index(flag) + 1 >= len(args) or args[args.index(flag) + 1] != value:
+                      raise SystemExit(f"Unexpected {tool} option {flag}")
+              print(f"Verified {tool} command: {commands[0]}")
+          PY
+
+      - name: Compare PCF timing statements with the original report
+        if: always() && steps.mapping.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          python3 - "$RUNNER_TEMP/dsp-stack-late-low-original" verilog/sd2snes_dspx/main.pcf <<'PY'
+          import hashlib
+          import re
+          import sys
+          from pathlib import Path
+          originals = list(Path(sys.argv[1]).rglob('main.pcf'))
+          if len(originals) != 1:
+              raise SystemExit('Missing or ambiguous original PCF')
+          if hashlib.sha256(originals[0].read_bytes()).hexdigest() != '849380275e2d1c6116bfae918abfa8b2d0f57317a049c7fd09905bffe4762c2b':
+              raise SystemExit('Original PCF hash differs from the retained baseline report')
+          def timing(path):
+              lines = path.read_text().splitlines()
+              return [line.strip() for line in lines if re.match(r'^(SYSTEM_JITTER|TS_\S+\s*=)', line.strip())]
+          old, new = timing(originals[0]), timing(Path(sys.argv[2]))
+          if not old or old != new or 'SYSTEM_JITTER = 480 ps;' not in new:
+              raise SystemExit(f'PCF timing statements differ: old={old!r}, new={new!r}')
+          print('\n'.join(new))
+          PY
+
+      - name: Retain bounded actual mapped nets, muxes and target FF bindings before evaluating names
+        if: always() && steps.mapping.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          core=verilog/sd2snes_dspx
+          attribute_result=0
+          for unit in dsp_stack_run_permit dsp_stack_restore_permit dsp_stack_late_join; do
+            if ! grep -F "Set property \"LUT_MAP = yes\" for unit <$unit>." "$core/main.syr"; then
+              attribute_result=1
+            fi
+          done
+          if ! grep -E 'Set property "LUT_MAP = yes" for unit <dsp_stack_restore_suffix([^>]*)>\.' "$core/main.syr"; then
+            attribute_result=1
+          fi
+          result=0
+          grep -i 'keep' "$core/main.syr" > "$RUNNER_TEMP/dsp-late-low-isolated-native-keep-messages.txt" || result=$?
+          test "$result" -le 1
+          test -s "$core/main_map.ncd"
+          test "$(stat -c %s "$core/main_map.ncd")" -le 16000000
+          sha256sum "$core/main_map.ncd" | tee "$RUNNER_TEMP/dsp-late-low-isolated-native-map-sha256.txt"
+          mkdir "$RUNNER_TEMP/dsp-late-low-isolated-native-export"
+          docker run --rm --read-only --network none --user 0:0 \
+            --tmpfs /tmp:rw,exec,size=256m --mac-address 08:00:27:68:c9:35 \
+            --volume "$GITHUB_WORKSPACE/$core/main_map.ncd:/input/main_map.ncd:ro" \
+            --volume "$RUNNER_TEMP/dsp-late-low-isolated-native-export:/output" --workdir /tmp \
+            --entrypoint /bin/bash sd2snes-ci:mk2 -c \
+            'set -euo pipefail; xdl -ncd2xdl -nopips /input/main_map.ncd /output/late-low-map.xdl'
+          sha256sum --check "$RUNNER_TEMP/dsp-late-low-isolated-native-map-sha256.txt"
+          sha256sum "$RUNNER_TEMP/dsp-late-low-isolated-native-export/late-low-map.xdl" | tee "$RUNNER_TEMP/dsp-late-low-isolated-native-xdl-sha256.txt"
+          python3 - "$RUNNER_TEMP/dsp-late-low-isolated-native-export/late-low-map.xdl" <<'PY' | tee "$RUNNER_TEMP/dsp-late-low-isolated-native-xdl.txt"
+          import importlib.util
+          import re
+          import sys
+          from pathlib import Path
+          script = Path('.github/scripts/inspect-dsp-retained-map.py')
+          spec = importlib.util.spec_from_file_location('xdl', script)
+          xdl = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(xdl)
+          xdl.fixture_checks()
+          path = Path(sys.argv[1])
+          if path.stat().st_size > 32_000_000:
+              raise SystemExit('Full XDL exceeds bounded inspection input')
+          instances, nets = xdl.parse(path.read_text())
+          names = re.compile(r'stack_late_|stack_early_|stack_restore_prefix|restore_prefix_[0-4]|run_permit|restore_permit|late_(?:low|high)_[0-9]+')
+          selected_instances = {name for name, text in instances.items() if names.search(text)}
+          inspection_errors = []
+          # Include actual named-net drivers even when packed under unrelated COMP names.
+          for name, text in nets.items():
+              if not names.search(name):
+                  continue
+              drivers = [pin for pin in xdl.net_pins(text) if pin[0] == 'outpin']
+              if len(drivers) != 1 or drivers[0][1] not in instances:
+                  inspection_errors.append(f'Named net {name} lacks an unambiguous retained driver')
+                  continue
+              selected_instances.add(drivers[0][1])
+          bindings = []
+          for target in xdl.TARGETS:
+              try:
+                  comp = xdl.bind(instances, target)
+                  ce_name, ce = xdl.ce_for(nets, comp)
+              except ValueError as error:
+                  inspection_errors.append(f'Target {target}: {error}')
+                  continue
+              selected_instances.add(comp)
+              drivers = [pin for pin in xdl.net_pins(ce) if pin[0] == 'outpin']
+              if len(drivers) != 1 or drivers[0][1] not in instances:
+                  inspection_errors.append(f'Target {target}: missing CE driver')
+                  continue
+              selected_instances.add(drivers[0][1])
+              bindings.append(f'Actual mapped target {target}: COMP={comp}, CE={ce_name}, driver={drivers[0]}')
+          selected_nets = {name for name, text in nets.items() if names.search(text) or any(
+              comp in selected_instances for kind, comp, pin in xdl.net_pins(text))}
+          records = [instances[name] for name in sorted(selected_instances)]
+          records += [nets[name] for name in sorted(selected_nets)]
+          if not selected_instances or len(selected_instances) > 400 or len(selected_nets) > 700 or sum(len(item) for item in records) > 3_000_000:
+              raise SystemExit('Missing/excessive complete mapped evidence; inspection inconclusive')
+          joined = '\n'.join(records)
+          print(f'Parsed {len(instances)} instances/{len(nets)} nets; retained {len(selected_instances)} complete instances/{len(selected_nets)} complete nets.')
+          print('\n'.join(bindings))
+          print('Complete bounded raw statements follow. No name, fixture or pin-count result proves logical depth, sequential equivalence, timing or hardware behavior.')
+          print(joined)
+          required_instances = ['run_permit', 'restore_permit'] + [f'late_{lane}_{i}' for lane in ('low', 'high') for i in range(16)]
+          required_instances += [f'early_select_{i}/{lane}_lane' for lane in ('low', 'high') for i in range(16)]
+          required_instances += [f'restore_prefix_{i}' for i in range(5)]
+          for name in required_instances:
+              found = bool(re.search(re.escape(name) + r'(?:/|:|\s|")', joined))
+              print(f'Logical source-instance name observation {name}: {"present" if found else "absent"}')
+          required_nets = ['stack_late_run', 'stack_late_restore']
+          required_nets += [f'stack_restore_prefix<{i}>' for i in range(5)]
+          required_nets += [f'stack_early_{lane}<{i}>' for lane in ('push', 'low', 'high') for i in range(16)]
+          required_nets += [f'stack_late_{lane}<{i}>' for lane in ('low', 'high') for i in range(16)]
+          missing = []
+          for name in required_nets:
+              found = [net for net in nets if net == name or net.endswith('/' + name)]
+              print(f'Logical net-name observation {name}: {found}')
+              if len(found) != 1:
+                  missing.append(name)
+          if missing:
+              inspection_errors.append(f'Net-name inspection inconclusive for {missing}; absent name is not absent logic')
+          if inspection_errors:
+              raise SystemExit('\n'.join(inspection_errors))
+          print('Named-net and target-FF evidence retained for independent LUT/pin/output-mux review. This is not a native/timing or structural-equivalence pass.')
+          PY
+          test "$attribute_result" -eq 0
+
+      - name: Require original tracked inputs after mapping-only inspections
+        if: always() && steps.mapping.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          test "$(git diff --name-only)" = verilog/sd2snes_dsp/upd77c25.v
+          git diff --cached --exit-code
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/upd77c25.v)" = 80050b8015d47cbf4eb25c6fd8c14aa78c378790
+          sha256sum --check "$RUNNER_TEMP/dsp-late-low-isolated-native-before.sha256" > "$RUNNER_TEMP/dsp-late-low-isolated-native-final-manifest-check.txt"
+          git ls-files -s > "$RUNNER_TEMP/dsp-late-low-isolated-native-final-index.txt"
+          cmp "$RUNNER_TEMP/dsp-late-low-isolated-native-before-index.txt" "$RUNNER_TEMP/dsp-late-low-isolated-native-final-index.txt"
+
+      - name: Require the independently reviewed complete bounded physical reports before routing
+        run: |
+          set -euo pipefail
+          test "$(git hash-object --no-filters .github/scripts/inspect-late-decoder-predecessors.py)" = 952a31c843cfe86a796afeca208a0148c8c5eb1a
+          python3 .github/scripts/inspect-late-decoder-predecessors.py dsp-drivers "$RUNNER_TEMP/dsp-late-low-isolated-native-export/late-low-map.xdl" | tee "$RUNNER_TEMP/dsp-late-low-isolated-native-expanded-dsp-drivers.txt"
+          test "$(wc -c < "$RUNNER_TEMP/dsp-late-low-isolated-native-expanded-dsp-drivers.txt")" = 251303
+          test "$(sha256sum "$RUNNER_TEMP/dsp-late-low-isolated-native-expanded-dsp-drivers.txt" | cut -d' ' -f1)" = 52a27735ed903cc3a7ac81320de7e5f334c53b8a76a554d214f07526437519d5
+          python3 .github/scripts/inspect-late-decoder-predecessors.py dsp-ff-low "$RUNNER_TEMP/dsp-late-low-isolated-native-export/late-low-map.xdl" | tee "$RUNNER_TEMP/dsp-late-low-isolated-native-expanded-dsp-ff-low.txt"
+          test "$(wc -c < "$RUNNER_TEMP/dsp-late-low-isolated-native-expanded-dsp-ff-low.txt")" = 408974
+          test "$(sha256sum "$RUNNER_TEMP/dsp-late-low-isolated-native-expanded-dsp-ff-low.txt" | cut -d' ' -f1)" = 824f01ee44d2799671af489d40535e106b81d5c0541ff8141d1a2501128ec64b
+          python3 .github/scripts/inspect-late-decoder-predecessors.py dsp-ff-high "$RUNNER_TEMP/dsp-late-low-isolated-native-export/late-low-map.xdl" | tee "$RUNNER_TEMP/dsp-late-low-isolated-native-expanded-dsp-ff-high.txt"
+          test "$(wc -c < "$RUNNER_TEMP/dsp-late-low-isolated-native-expanded-dsp-ff-high.txt")" = 364313
+          test "$(sha256sum "$RUNNER_TEMP/dsp-late-low-isolated-native-expanded-dsp-ff-high.txt" | cut -d' ' -f1)" = df01d88a70ea30c9571f481bc3e350016cdffd0c00ee6226f77ee47ce0ab14eb
+
+      - name: Run one original PAR and TRACE trial after every prerequisite and mapping gate
+        id: route
+        env:
+          ISE_CTABLE: '68'
+        run: |
+          set -euo pipefail
+          test "$(docker image inspect sd2snes-ci:mk2 --format '{{.Id}}')" = sha256:5e3bbb00649997abca8843b1d82d8529eda99a0f2868d37ad9777e0ad5fd50e8
+          test ! -e verilog/sd2snes_dspx/main.ncd
+          test ! -e verilog/sd2snes_dspx/main.par
+          test ! -e verilog/sd2snes_dspx/main.twr
+          sha256sum --check "$RUNNER_TEMP/dsp-late-low-isolated-native-before.sha256" > "$RUNNER_TEMP/dsp-late-low-isolated-native-pre-route-manifest-check.txt"
+          git ls-files -s > "$RUNNER_TEMP/dsp-late-low-isolated-native-pre-route-index.txt"
+          cmp "$RUNNER_TEMP/dsp-late-low-isolated-native-before-index.txt" "$RUNNER_TEMP/dsp-late-low-isolated-native-pre-route-index.txt"
+          sha256sum --check "$RUNNER_TEMP/dsp-late-low-isolated-native-ngc-hashes.txt"
+          sha256sum verilog/sd2snes_dspx/main_map.ncd verilog/sd2snes_dspx/main.pcf > "$RUNNER_TEMP/dsp-late-low-isolated-native-pre-route-map-pcf.sha256"
+          # This complete bounded raw report was independently reviewed, including
+          # all 32 suffixes/final joins, actual physical pins and output muxes.
+          test "$(wc -c < "$RUNNER_TEMP/dsp-late-low-isolated-native-xdl.txt")" = 301401
+          test "$(sha256sum "$RUNNER_TEMP/dsp-late-low-isolated-native-xdl.txt" | cut -d' ' -f1)" = 39cfe4f4005632fd52722d59d1195aa5678507b54d1e914fc4a150ec9ad9ee32
+          container_name=sd2snes-dsp-late-low-isolated-native-route
+          bash .github/scripts/report-activity.sh "$container_name" &
+          activity_pid=$!
+          trap 'kill "$activity_pid" 2>/dev/null || true; wait "$activity_pid" 2>/dev/null || true' EXIT
+          # main.ncd uses the unchanged common.mk recipe: one PAR and one TRACE,
+          # preserving tool exit codes and mandatory zero-error native checks.
+          docker run --rm --network bridge --name "$container_name" --user 0:0 \
+            --mac-address 08:00:27:68:c9:35 --env ISE_CTABLE \
+            --volume "$GITHUB_WORKSPACE:/work" --workdir /work \
+            --entrypoint /bin/bash sd2snes-ci:mk2 -c \
+            'set -euo pipefail; observed_mac=$(cat /sys/class/net/eth0/address); printf "Observed route-container eth0 MAC: %s\n" "$observed_mac"; test "$observed_mac" = 08:00:27:68:c9:35; make -C verilog/sd2snes_dspx -j2 main.ncd HOST=LINUX XILINX_ENV= IGNORE_TIMING=0' \
+            2>&1 | tee "$RUNNER_TEMP/dsp-late-low-isolated-native-route.log"
+
+      - name: Retain every post-route tracked difference and final input inventory
+        if: always() && steps.route.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          git ls-files -z | xargs -0 sha256sum > "$RUNNER_TEMP/dsp-late-low-isolated-native-after-route.sha256"
+          git ls-files -s > "$RUNNER_TEMP/dsp-late-low-isolated-native-after-route-index.txt"
+          git diff --no-ext-diff --no-renames --binary > "$RUNNER_TEMP/dsp-late-low-isolated-native-post-route.diff"
+          git diff --cached --no-ext-diff --no-renames --binary > "$RUNNER_TEMP/dsp-late-low-isolated-native-post-route-staged.diff"
+          git diff --no-ext-diff --no-renames --name-only > "$RUNNER_TEMP/dsp-late-low-isolated-native-post-route-paths.txt"
+
+      - name: Require unchanged original constraints, mapped input, all tracked inputs and six IP products after routing
+        if: always() && steps.route.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          test "$(git diff --name-only)" = verilog/sd2snes_dsp/upd77c25.v
+          git diff --cached --exit-code
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/upd77c25.v)" = 80050b8015d47cbf4eb25c6fd8c14aa78c378790
+          cmp "$RUNNER_TEMP/dsp-late-low-isolated-native-before.sha256" "$RUNNER_TEMP/dsp-late-low-isolated-native-after-route.sha256"
+          cmp "$RUNNER_TEMP/dsp-late-low-isolated-native-before-index.txt" "$RUNNER_TEMP/dsp-late-low-isolated-native-after-route-index.txt"
+          sha256sum --check "$RUNNER_TEMP/dsp-late-low-isolated-native-before.sha256" > "$RUNNER_TEMP/dsp-late-low-isolated-native-post-route-manifest-check.txt"
+          sha256sum --check "$RUNNER_TEMP/dsp-late-low-isolated-native-pre-route-map-pcf.sha256"
+          sha256sum --check "$RUNNER_TEMP/dsp-late-low-isolated-native-ngc-hashes.txt"
+          echo 'Every tracked SHA/index, six same-run IP products, mapped NCD and original-budget PCF are unchanged after routing.'
+
+      - name: Verify exactly one original PAR and TRACE command against the same-run report
+        if: always() && steps.route.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          test "$(git hash-object --no-filters .github/scripts/check-native-route-commands.py)" = e2312dc65d7e6959983efd5829bf171250771940
+          python3 .github/scripts/check-native-route-commands.py "$RUNNER_TEMP/dsp-late-low-isolated-native-route.log" verilog/sd2snes_dspx/main.twr 68 | tee "$RUNNER_TEMP/dsp-late-low-isolated-native-command-counts.json"
+
+      - name: Require explicit successful native PAR and TRACE setup and hold results
+        if: always() && steps.route.outcome != 'skipped'
+        env:
+          ROUTE_OUTCOME: ${{ steps.route.outcome }}
+        run: |
+          set -euo pipefail
+          test "$ROUTE_OUTCOME" = success
+          test -s verilog/sd2snes_dspx/main.ncd
+          test -s verilog/sd2snes_dspx/main.par
+          test -s verilog/sd2snes_dspx/main.twr
+          grep -Fx 'All signals are completely routed.' verilog/sd2snes_dspx/main.par
+          grep -Eq '^Timing Score: 0 \(Setup: 0, Hold: 0, Component Switching Limit: 0\)' verilog/sd2snes_dspx/main.par
+          grep -Eq 'Timing errors: 0[[:space:]]+Score: 0[[:space:]]+\(Setup/Max: 0, Hold: 0\)' verilog/sd2snes_dspx/main.twr
+          sha256sum verilog/sd2snes_dspx/main.ncd verilog/sd2snes_dspx/main.par verilog/sd2snes_dspx/main.twr > "$RUNNER_TEMP/dsp-late-low-isolated-native-native-result.sha256"
+          echo 'One original PAR and TRACE trial passed native zero setup/hold errors with unchanged integrity and timing gates. Independent review and affected integration remain required before any promotion.'
+
+      - name: Upload small reports and source differences
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsp-late-low-isolated-native-seed-68-reports
+          path: |
+            ${{ runner.temp }}/dsp-late-low-isolated-native-*.sha256
+            ${{ runner.temp }}/dsp-late-low-isolated-native-*-index.txt
+            ${{ runner.temp }}/dsp-late-low-isolated-native-final-manifest-check.txt
+            ${{ runner.temp }}/dsp-late-low-isolated-native-identity.txt
+            ${{ runner.temp }}/dsp-late-low-isolated-native-build.log
+            ${{ runner.temp }}/dsp-late-low-isolated-native-post.diff
+            ${{ runner.temp }}/dsp-late-low-isolated-native-post-staged.diff
+            ${{ runner.temp }}/dsp-late-low-isolated-native-post-paths.txt
+            ${{ runner.temp }}/dsp-late-low-isolated-native-post-hashes.txt
+            ${{ runner.temp }}/dsp-late-low-isolated-native-ngc-hashes.txt
+            ${{ runner.temp }}/dsp-late-low-isolated-native-map-sha256.txt
+            ${{ runner.temp }}/dsp-late-low-isolated-native-xdl.txt
+            ${{ runner.temp }}/dsp-late-low-isolated-native-xdl-sha256.txt
+            ${{ runner.temp }}/dsp-late-low-isolated-native-keep-messages.txt
+            verilog/sd2snes_dspx/main.xst
+            verilog/sd2snes_dspx/main.prj
+            verilog/sd2snes_dspx/main.pcf
+            verilog/sd2snes_dspx/sd2snes_dspx.xise
+            verilog/sd2snes_dspx/*.syr
+            verilog/sd2snes_dspx/*.mrp
+            verilog/sd2snes_dspx/*.psr
+            verilog/sd2snes_dspx/*.bld
+            verilog/sd2snes_dspx/*.par
+            verilog/sd2snes_dspx/*.twr
+            verilog/sd2snes_dspx/*.unroutes
+            ${{ runner.temp }}/dsp-late-low-isolated-native-route.log
+            ${{ runner.temp }}/dsp-late-low-isolated-native-post-route*.diff
+            ${{ runner.temp }}/dsp-late-low-isolated-native-post-route*.txt
+            ${{ runner.temp }}/dsp-late-low-isolated-native-pre-route-manifest-check.txt
+            ${{ runner.temp }}/dsp-late-low-isolated-native-post-route-manifest-check.txt
+            ${{ runner.temp }}/dsp-late-low-isolated-native-command-counts.json
+            ${{ runner.temp }}/dsp-late-low-isolated-native-prerequisites.json
+            ${{ runner.temp }}/dsp-late-low-isolated-native-expanded-*.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Retain the mapped NCD separately on GitHub
+        if: always() && steps.mapping.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsp-late-low-isolated-native-seed-68-mapped-ncd
+          path: verilog/sd2snes_dspx/main_map.ncd
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Retain all same-run generated IP netlists separately
+        if: always() && steps.mapping.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsp-late-low-isolated-native-ip-netlists
+          path: verilog/sd2snes_dsp/ip/mk2/build/*.ngc
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Retain the routed NCD separately on GitHub
+        if: always() && steps.route.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsp-late-low-isolated-native-seed-68-routed-ncd
+          path: verilog/sd2snes_dspx/main.ncd
+          if-no-files-found: error
+          retention-days: 14

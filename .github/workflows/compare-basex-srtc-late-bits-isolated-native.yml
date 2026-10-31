@@ -1,4 +1,4 @@
-# Prepared diagnostic only. A fresh human authorization is required before one native dispatch.
+# Authorized hosted continuation after the report-order diagnostic fix; preserve every native/input gate.
 name: Trial basex proved late S-RTC address bits with isolated CoreGen
 
 on:
@@ -37,12 +37,14 @@ jobs:
           set -euo pipefail
           test "$(git hash-object --no-filters .github/scripts/check-native-route-commands.py)" = e2312dc65d7e6959983efd5829bf171250771940
           test "$(git hash-object --no-filters .github/workflows/check-native-route-commands.yml)" = 75d8c410a87c6a8fb48bf42a18b713255fed9b62
-          test "$(git hash-object --no-filters .github/scripts/inspect-late-decoder-predecessors.py)" = 952a31c843cfe86a796afeca208a0148c8c5eb1a
+          test "$(git hash-object --no-filters .github/scripts/inspect-late-decoder-stable.py)" = 25fd5038678f0edff556fb7b12d7b005ca6691ab
+          test "$(git hash-object --no-filters .github/scripts/check-late-decoder-report-order.py)" = 0fc310b33719151044e4dc3876aad9c8393ac0f7
+          test "$(git hash-object --no-filters .github/workflows/check-late-decoder-report-order.yml)" = b57d23e32ccfaf7f52dc8afd30ffff7ec574b7c2
           test "$(git hash-object --no-filters .github/workflows/inspect-basex-srtc-late-bits-isolated-map.yml)" = 345925b2cc0d6ee3136e089cce4f69d61514700a
           python3 - <<'PY' | tee "$RUNNER_TEMP/basex-srtc-late-bits-isolated-native-prerequisites.json"
           import hashlib, io, json, os, subprocess, zipfile
           from pathlib import PurePosixPath
-          checks = json.loads('''[{"run":41133808054,"head":"a252d29ee7a3375d403c77ef2a6a477b97c94546","conclusion":"success","total_jobs":1,"jobs":[124331159647],"artifacts":[{"id":13015870909,"name":"basex-srtc-late-bits-isolated-map-only-reports","size_in_bytes":553721,"digest":"sha256:20c62c0d382aca68080e8112194313c635e10da06faa732919ba50034d6c8b8a"}]},{"run":41137301644,"head":"a73668fa4b3511294971db2746f08849625fc639","conclusion":"success","total_jobs":1,"jobs":[124342807708],"artifacts":[{"id":13016923326,"name":"native-route-command-guard-reports","size_in_bytes":386596,"digest":"sha256:19fe2121239d89ef26d3526cb622084ff9874293afeb88c1b4f5f6cf07f890b3"}]},{"run":41135768963,"head":"5a40b1915b25180f6615c0dd43d70595fabbf9f6","conclusion":"failure","total_jobs":2,"jobs":[124337706603],"artifacts":[{"id":13015763462,"name":"late-decoder-predecessors-basex-reports","size_in_bytes":351636,"digest":"sha256:fd7dabda879ce45e4ce440900a4aa040b1dab2f9c1c948e680317b3698e7cc5c"}]}]''')
+          checks = json.loads('''[{"run":41133808054,"head":"a252d29ee7a3375d403c77ef2a6a477b97c94546","conclusion":"success","total_jobs":1,"jobs":[124331159647],"artifacts":[{"id":13015870909,"name":"basex-srtc-late-bits-isolated-map-only-reports","size_in_bytes":553721,"digest":"sha256:20c62c0d382aca68080e8112194313c635e10da06faa732919ba50034d6c8b8a"}]},{"run":41137301644,"head":"a73668fa4b3511294971db2746f08849625fc639","conclusion":"success","total_jobs":1,"jobs":[124342807708],"artifacts":[{"id":13016923326,"name":"native-route-command-guard-reports","size_in_bytes":386596,"digest":"sha256:19fe2121239d89ef26d3526cb622084ff9874293afeb88c1b4f5f6cf07f890b3"}]},{"run":41135768963,"head":"5a40b1915b25180f6615c0dd43d70595fabbf9f6","conclusion":"failure","total_jobs":2,"jobs":[124337706603],"artifacts":[{"id":13015763462,"name":"late-decoder-predecessors-basex-reports","size_in_bytes":351636,"digest":"sha256:fd7dabda879ce45e4ce440900a4aa040b1dab2f9c1c948e680317b3698e7cc5c"}]},{"run":41231420886,"head":"07bdf25d5b609b291439c652cf03c8e47677ccfa","conclusion":"success","total_jobs":1,"jobs":[124626252744],"artifacts":[{"id":13053965982,"name":"stable-late-decoder-report-order-reports","size_in_bytes":1717375,"digest":"sha256:c35142e5f6718a75d0ddad4bdf6ecbb989b5e7951b64a7a9fb93edf032e89b53"}]}]''')
           observed = []
           def api(path):
               return json.loads(subprocess.check_output(['gh', 'api', 'repos/secprog/sd2snes/' + path]))
@@ -85,7 +87,36 @@ jobs:
               raise SystemExit('Authentic command control outcome differs')
           if any(controls[k] is not True for k in ['original_native_failure_retained', 'original_command_gate_failure_retained', 'no_fpga_execution', 'no_timing_pass']):
               raise SystemExit('Original failure retention or diagnostic scope differs')
-          print(json.dumps({'prerequisites': observed, 'command_controls': controls}, indent=2))
+          raw = subprocess.check_output(['gh', 'api', 'repos/secprog/sd2snes/actions/artifacts/13053965982/zip'])
+          if len(raw) != 1717375 or hashlib.sha256(raw).hexdigest() != 'c35142e5f6718a75d0ddad4bdf6ecbb989b5e7951b64a7a9fb93edf032e89b53':
+              raise SystemExit('Stable report guard ZIP digest differs')
+          with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+              entries = archive.infolist()
+              if len(entries) != 79 or sum(i.file_size for i in entries) != 14224454 or any(i.file_size > 8_000_000 for i in entries):
+                  raise SystemExit('Unexpected complete stable report guard inventory')
+              names = set()
+              for item in entries:
+                  p = PurePosixPath(item.filename)
+                  if p.is_absolute() or '..' in p.parts or ':' in item.filename or chr(92) in item.filename or item.filename in names:
+                      raise SystemExit('Unsafe/duplicate stable report guard member')
+                  names.add(item.filename)
+              summaries = [i for i in entries if i.filename.endswith('/summary.json')]
+              if len(summaries) != 1:
+                  raise SystemExit('Missing/duplicate stable report summary')
+              stable = json.loads(archive.read(summaries[0]).decode('utf-8', errors='strict'))
+              if stable['native_execution'] is not False or stable['old_failures_preserved'] is not True:
+                  raise SystemExit('Stable report guard scope/failure retention differs')
+              expected_stable = json.loads('{"native_execution":false,"old_failures_preserved":true,"families":[{"family":"basex","reference_bytes":253550,"reference_sha256":"174fbb7b93b55740756ab19448a570150c077e6187d5c6b126012f6790eb7cbe","binding_lines_including_duplicates":40,"partial_fixture_controls":[{"python_hash_seed":"0","bytes":253547,"sha256":"affb5dabdb65ac7d548ef02fbc5cd8f512b54e51ea24755fb347a58356ed4b7c"},{"python_hash_seed":"1","bytes":253547,"sha256":"affb5dabdb65ac7d548ef02fbc5cd8f512b54e51ea24755fb347a58356ed4b7c"}],"synthetic_negatives":[{"synthetic":"lut","exit":0,"output_sha256":"7382034c5dce8b695d9c3e5020fdde8ff7e9dbfa45c49c05e868b7167be8fe25","exact_output_rejected":true},{"synthetic":"init","exit":0,"output_sha256":"57d774859198f7a225fcfda8965764c24f0dc13967c53b1f2bdbc0b00a817506","exact_output_rejected":true},{"synthetic":"truncated","exit":1,"output_sha256":"495dcd06940008baafb5732db1a53b3d504f141b74a8805cc4797da506ffdbb6","exact_output_rejected":true}]},{"family":"dsp-drivers","reference_bytes":251303,"reference_sha256":"07333d0cb76b6a4342ac9bcd4acbf0cc7ff90bb3857cf413d1bb66d709490a9b","binding_lines_including_duplicates":34,"partial_fixture_controls":[{"python_hash_seed":"0","bytes":251300,"sha256":"962acc9090dee1fa02d96fced8e2dbe06c7876075e70f80fd3ec09ad8b68ef6c"},{"python_hash_seed":"1","bytes":251300,"sha256":"962acc9090dee1fa02d96fced8e2dbe06c7876075e70f80fd3ec09ad8b68ef6c"}],"synthetic_negatives":[{"synthetic":"lut","exit":0,"output_sha256":"8d462b14d399bc19a63885c481ca4e66c303dc70a67760509980d9be15e96eb0","exact_output_rejected":true},{"synthetic":"init","exit":0,"output_sha256":"9e4f65e2938edcde0fe783db0f00dd6777a7f85dabdd0659043023014df7497e","exact_output_rejected":true},{"synthetic":"truncated","exit":1,"output_sha256":"495dcd06940008baafb5732db1a53b3d504f141b74a8805cc4797da506ffdbb6","exact_output_rejected":true}]},{"family":"dsp-ff-low","reference_bytes":408974,"reference_sha256":"f5eed88fa1dbecb5b641bfe6a622c65b4187923f3383d57c04e6210ec8867d1e","binding_lines_including_duplicates":88,"partial_fixture_controls":[{"python_hash_seed":"0","bytes":408971,"sha256":"9919f79f0d28a465eea08b7c9d51c07b0682e63c3072d89531a1e234117531f4"},{"python_hash_seed":"1","bytes":408971,"sha256":"9919f79f0d28a465eea08b7c9d51c07b0682e63c3072d89531a1e234117531f4"}],"synthetic_negatives":[{"synthetic":"lut","exit":0,"output_sha256":"1c272f4d6a86f66c7275c041f933af6d0aaf41be09c9fa25680f9828fba9508c","exact_output_rejected":true},{"synthetic":"init","exit":0,"output_sha256":"cb4d2ee0194b047da3f372d46f3c7c8ebd0ffa4508102b7c6a4bdbf9de24373c","exact_output_rejected":true},{"synthetic":"truncated","exit":1,"output_sha256":"495dcd06940008baafb5732db1a53b3d504f141b74a8805cc4797da506ffdbb6","exact_output_rejected":true}]},{"family":"dsp-ff-high","reference_bytes":364313,"reference_sha256":"de638a4e6ba8edcbd49f2740dee99f887408b45f251e468648ecf7a5407a94ad","binding_lines_including_duplicates":88,"partial_fixture_controls":[{"python_hash_seed":"0","bytes":364310,"sha256":"4cc87053b7ead15d2239ae7cff5241632f9c3ee4357023b3e3c50ad9311a6d28"},{"python_hash_seed":"1","bytes":364310,"sha256":"4cc87053b7ead15d2239ae7cff5241632f9c3ee4357023b3e3c50ad9311a6d28"}],"synthetic_negatives":[{"synthetic":"lut","exit":0,"output_sha256":"e44d4cebef52c31a715b2ef2b0e2aabf208d822ca0d198d2aa353a730b6d12ae","exact_output_rejected":true},{"synthetic":"init","exit":0,"output_sha256":"bfb3f1c2761daf87edb869f0e924eb6b98e606c7d2a9353c327065742dc6b2f5","exact_output_rejected":true},{"synthetic":"truncated","exit":1,"output_sha256":"495dcd06940008baafb5732db1a53b3d504f141b74a8805cc4797da506ffdbb6","exact_output_rejected":true}]}]}')
+              if stable != expected_stable:
+                  raise SystemExit('Reviewed complete stable report control outcomes differ')
+              for item in stable['families']:
+                  members = [i for i in entries if i.filename.endswith('/' + item['family'] + '-canonical-reference.txt')]
+                  if len(members) != 1:
+                      raise SystemExit('Missing/duplicate canonical physical report')
+                  data = archive.read(members[0])
+                  if len(data) != item['reference_bytes'] or hashlib.sha256(data).hexdigest() != item['reference_sha256']:
+                      raise SystemExit('Reviewed canonical physical report bytes differ')
+          print(json.dumps({'prerequisites': observed, 'command_controls': controls, 'stable_report_controls': stable}, indent=2))
           PY
 
       - name: Download the independently inspected source-bound proof
@@ -432,10 +463,10 @@ jobs:
       - name: Require the independently reviewed complete bounded physical report before routing
         run: |
           set -euo pipefail
-          test "$(git hash-object --no-filters .github/scripts/inspect-late-decoder-predecessors.py)" = 952a31c843cfe86a796afeca208a0148c8c5eb1a
-          python3 .github/scripts/inspect-late-decoder-predecessors.py basex "$RUNNER_TEMP/basex-srtc-late-bits-isolated-native-export/srtc-late-bits-map.xdl" | tee "$RUNNER_TEMP/basex-srtc-late-bits-isolated-native-expanded-basex.txt"
+          test "$(git hash-object --no-filters .github/scripts/inspect-late-decoder-stable.py)" = 25fd5038678f0edff556fb7b12d7b005ca6691ab
+          python3 .github/scripts/inspect-late-decoder-stable.py basex "$RUNNER_TEMP/basex-srtc-late-bits-isolated-native-export/srtc-late-bits-map.xdl" | tee "$RUNNER_TEMP/basex-srtc-late-bits-isolated-native-expanded-basex.txt"
           test "$(wc -c < "$RUNNER_TEMP/basex-srtc-late-bits-isolated-native-expanded-basex.txt")" = 253550
-          test "$(sha256sum "$RUNNER_TEMP/basex-srtc-late-bits-isolated-native-expanded-basex.txt" | cut -d' ' -f1)" = 66a4525dee74e50f7e8fae87cf2e62641ed277460e430f19693d61365be7d92a
+          test "$(sha256sum "$RUNNER_TEMP/basex-srtc-late-bits-isolated-native-expanded-basex.txt" | cut -d' ' -f1)" = 174fbb7b93b55740756ab19448a570150c077e6187d5c6b126012f6790eb7cbe
 
       - name: Run one original PAR and TRACE trial after every prerequisite and mapping gate
         id: route

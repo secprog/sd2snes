@@ -1,0 +1,64 @@
+name: Validate deterministic late-decoder report ordering
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: stable-late-decoder-report-order-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      PYTHONOPTIMIZE: '0'
+    steps:
+      - uses: actions/checkout@v6
+      - name: Pin diagnostic-only sources and inventory every tracked input
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD:verilog)" = 01ce8b6b4509a5a72e0ad739e06bf19e548a2fc1
+          test "$(git hash-object --no-filters .github/scripts/inspect-dsp-retained-map.py)" = 2b3b867372717b5729e26cb4880cb1af0b01a965
+          test "$(git hash-object --no-filters .github/scripts/inspect-late-decoder-predecessors.py)" = 952a31c843cfe86a796afeca208a0148c8c5eb1a
+          test "$(git hash-object --no-filters .github/scripts/inspect-late-decoder-stable.py)" = 25fd5038678f0edff556fb7b12d7b005ca6691ab
+          test "$(git hash-object --no-filters .github/scripts/check-late-decoder-report-order.py)" = 0fc310b33719151044e4dc3876aad9c8393ac0f7
+          git ls-files -z | xargs -0 sha256sum > "$RUNNER_TEMP/stable-report-before.sha256"
+          git ls-files --stage > "$RUNNER_TEMP/stable-report-before-index.txt"
+          git diff --exit-code
+          git diff --cached --exit-code
+      - name: Verify authentic failure cause and all four corrected report producers
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/check-late-decoder-report-order.py | tee "$RUNNER_TEMP/stable-report-check.log"
+      - name: Require unchanged tracked SHA and index after diagnostics
+        if: always()
+        run: |
+          set -euo pipefail
+          sha256sum --check "$RUNNER_TEMP/stable-report-before.sha256" > "$RUNNER_TEMP/stable-report-final-check.txt"
+          git ls-files -z | xargs -0 sha256sum > "$RUNNER_TEMP/stable-report-after.sha256"
+          git ls-files --stage > "$RUNNER_TEMP/stable-report-after-index.txt"
+          cmp "$RUNNER_TEMP/stable-report-before.sha256" "$RUNNER_TEMP/stable-report-after.sha256"
+          cmp "$RUNNER_TEMP/stable-report-before-index.txt" "$RUNNER_TEMP/stable-report-after-index.txt"
+          git diff --exit-code
+          git diff --cached --exit-code
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: stable-late-decoder-report-order-reports
+          path: |
+            ${{ runner.temp }}/stable-report-order/*
+            ${{ runner.temp }}/stable-report-*.sha256
+            ${{ runner.temp }}/stable-report-*-index.txt
+            ${{ runner.temp }}/stable-report-final-check.txt
+            ${{ runner.temp }}/stable-report-check.log
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 6

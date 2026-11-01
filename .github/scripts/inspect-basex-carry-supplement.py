@@ -4,6 +4,11 @@
 The original 67-part collection and every old failure remain unchanged. This
 separate task closes seven explicitly observed CIN-source record boundaries.
 It follows physical pin references only; it never evaluates LUT equations.
+
+The first supplement41326159712 failed on a globally applied dependency-source
+predicate for CLKIN. This revision retains that exact record before selection,
+keeps global physical-pin checks, and requires source cardinality only when a
+CIN/operand dependency is actually queried. The old failure stays a failure.
 """
 import hashlib
 import importlib.util
@@ -19,6 +24,12 @@ MAX_SELECTED_COMPONENTS = 400
 MAX_SELECTED_NETS = 4000
 MAX_CARRY_DEPTH = 32
 OPERAND_PINS = {f'{s}{i}' for s in 'FG' for i in range(1, 5)} | {'BX', 'BY', 'FXINA', 'FXINB'}
+# Complete record identities independently checked against BOTH retained A/B
+# ordered-record indexes. Actual CLKIN syntax/cardinality is not assumed.
+CLKIN_DIAGNOSTIC = (
+    ('inst', 'CLKIN', 975, '9614534bb1ed8687a6a17ee43f6205942ad2a2b7ac6a04b3316448325d7a08d6'),
+    ('net', 'CLKIN', 53, '1411dd02bfc63b621e4c78adc16b65bf416ec50799563ae9053e4bf730619010'),
+)
 
 
 def require(ok, message):
@@ -47,14 +58,89 @@ def load_collector():
     return module
 
 
+class NetRecordError(ValueError):
+    """A concrete net-boundary failure with complete available raw statements."""
+    def __init__(self, message, names, nets, scope):
+        super().__init__(message)
+        self.scope = scope
+        self.net_names = tuple(sorted(set(names)))
+        self.records = [(name, nets[name]) for name in self.net_names if name in nets]
+        self.missing = [name for name in self.net_names if name not in nets]
+
+
 def source(name, nets, pins):
-    require(name in nets, f'Missing complete net: {name}')
+    if name not in nets:
+        raise NetRecordError(f'Missing complete net: {name}', [name], nets, 'dependency-source')
     outputs = [(c, p) for kind, c, p in pins[name] if kind == 'outpin']
     if re.match(r'^net\s+"[^"\n]+"\s+(?:vcc|gnd)\s*,', nets[name]):
-        require(not outputs, f'Constant net has a source pin: {name}')
+        if outputs:
+            raise NetRecordError(f'Constant net has a source pin: {name}', [name], nets, 'dependency-source')
         return None
-    require(len(outputs) == 1, f'Nonunique source: {name}')
+    if len(outputs) != 1:
+        raise NetRecordError(f'Nonunique source: {name}', [name], nets, 'dependency-source')
     return outputs[0]
+
+
+def index_physical_pins(instances, nets, pins):
+    # Global referenced-COMP existence and physical-pin uniqueness remain exact.
+    # A net is not a CIN/operand dependency merely because it occurs in the XDL.
+    pin_nets, incident = {}, {c: set() for c in instances}
+    for name, values in pins.items():
+        for kind, comp, pin in values:
+            if comp not in instances:
+                raise NetRecordError(f'Net refers to missing COMP: {name}/{comp}',
+                                     [name], nets, 'global-physical-index')
+            if (comp, pin) in pin_nets:
+                raise NetRecordError(f'Duplicate physical pin: {comp}.{pin}',
+                                     [name, pin_nets[(comp, pin)]], nets, 'global-physical-index')
+            pin_nets[(comp, pin)] = name
+            incident[comp].add(name)
+    return pin_nets, incident
+
+
+def write_diagnostic_records(output, basename, records):
+    # Complete statements only; this diagnostic does not claim full incident
+    # closure or source acceptance. The normal raw selection is separate.
+    require(len(records) <= 40, 'Diagnostic complete-record bound exceeded')
+    data = ''.join(statement + '\n' for kind, name, statement in records).encode('utf-8')
+    require(len(data) <= 3_000_000, 'Diagnostic raw file exceeds3MB; no truncation')
+    existing = sum(p.stat().st_size for p in output.glob('*.txt'))
+    require(existing + len(data) <= 96_000_000, 'Diagnostic plus selected raw aggregate exceeds96MB')
+    path = output / (basename + '.txt')
+    require(not path.exists(), 'Refuse to overwrite diagnostic raw evidence')
+    path.write_bytes(data)
+    rows = [{'kind': kind, 'name': name, 'bytes': len(statement.encode('utf-8')),
+             'sha256': sha(statement.encode('utf-8'))} for kind, name, statement in records]
+    print(f'BEGIN COMPLETE DIAGNOSTIC RAW {path.name}')
+    print(data.decode('utf-8'), end='')
+    print(f'END COMPLETE DIAGNOSTIC RAW {path.name}')
+    return {'name': path.name, 'bytes': len(data), 'sha256': sha(data), 'records': rows}
+
+
+def retain_clkin_diagnostic(output, instances, nets, pins):
+    records = []
+    for kind, name, size, digest in CLKIN_DIAGNOSTIC:
+        source_records = instances if kind == 'inst' else nets
+        require(name in source_records, 'Pinned CLKIN diagnostic record missing')
+        statement = source_records[name]
+        require(len(statement.encode('utf-8')) == size and sha(statement.encode('utf-8')) == digest,
+                'Pinned CLKIN whole record differs from both retained export indexes')
+        records.append((kind, name, statement))
+    report = write_diagnostic_records(output, 'diagnostic-clkin-raw', records)
+    report.update(parsedNetPins=pins['CLKIN'],
+                  purpose='Retain unavailable first-failure records before indexing/selection; no source-cardinality or circuit-validity assumption.',
+                  firstFailedRun=41326159712, oldFailureUnchanged=True)
+    write_json(output / 'diagnostic-clkin-records.json', report)
+    return report
+
+
+def retain_net_error(output, error):
+    records = [('net', name, statement) for name, statement in error.records]
+    report = write_diagnostic_records(output, 'diagnostic-failed-net-raw', records)
+    report.update(error=str(error), scope=error.scope, requestedNetNames=list(error.net_names),
+                  missingNetNames=error.missing, failureRemainsFailure=True,
+                  sourceCardinalityNotWaived=True)
+    write_json(output / 'diagnostic-failed-net-records.json', report)
 
 
 def carry_active(statement):
@@ -86,8 +172,9 @@ def collect_selection(instances, nets, pins, pin_nets, seed_components, progress
             require(re.search(r'(?<!\S)CYINIT::CIN(?=\s)', instances[comp]),
                     f'Observed CIN pin without selected CIN configuration: {comp}')
             driver = source(name, nets, pins)
-            require(driver is not None and driver[1] in ('COUT', 'XB', 'YB'),
-                    f'CIN source is not an actual carry output: {comp}/{name}/{driver}')
+            if driver is None or driver[1] not in ('COUT', 'XB', 'YB'):
+                raise NetRecordError(f'CIN source is not an actual carry output: {comp}/{name}/{driver}',
+                                     [name], nets, 'dependency-source')
             comp = driver[0]
         else:
             raise ValueError('A requested CIN chain exceeds32 complete stages; no truncation')
@@ -147,7 +234,7 @@ net "qdata", outpin "q" X, inpin "a" F1, inpin "b" F1;
 '''
     inst, nets = reader.parse(text)
     pins = {n: reader.net_pins(s) for n, s in nets.items()}
-    pin_nets = {(c, p): n for n, values in pins.items() for kind, c, p in values}
+    pin_nets, _ = index_physical_pins(inst, nets, pins)
     selected, paths, operands = collect_selection(inst, nets, pins, pin_nets, {'b'})
     require(selected == {'a', 'b', 'q'}, 'Complete two-stage/operand positive fixture differs')
     require(collect_selection(dict(reversed(list(inst.items()))), dict(reversed(list(nets.items()))),
@@ -186,7 +273,55 @@ net "qdata", outpin "q" X, inpin "a" F1, inpin "b" F1;
             pass
         else:
             raise ValueError(f'Carry supplement negative fixture{number} was accepted')
+    # Explicitly synthetic off-scope nets, NOT inferred CLKIN raw syntax.
+    unrelated = '''inst "off0" "SLICEL", cfg " CYINIT::#OFF ";
+inst "off1" "SLICEL", cfg " CYINIT::#OFF ";
+inst "off2" "SLICEL", cfg " CYINIT::#OFF ";
+net "off-zero", inpin "off0" F1;
+net "off-multiple", outpin "off1" X, outpin "off2" X;
+'''
+    def setup(fixture_text):
+        ci, nn = reader.parse(fixture_text)
+        pp = {n: reader.net_pins(st) for n, st in nn.items()}
+        pn, _ = index_physical_pins(ci, nn, pp)
+        return ci, nn, pp, pn
+    combined = text + unrelated
+    ci, nn, pp, pn = setup(combined)
+    require(collect_selection(ci, nn, pp, pn, {'b'}) == (selected, paths, operands),
+            'Unqueried synthetic net cardinalities changed exact carry selection')
+    for bad_name in ('off-zero', 'off-multiple'):
+        for role in ('CIN', 'operand'):
+            if role == 'CIN':
+                active = combined.replace('net "ab", outpin "a" COUT, inpin "b" CIN;\n', '')
+                target = 'inpin "b" CIN'
+            else:
+                active = combined.replace('inpin "a" F1, ', '')
+                target = 'inpin "a" F1'
+            active = re.sub(r'(net "' + re.escape(bad_name) + r'"[^;]*);',
+                            lambda match: match.group(1) + ', ' + target + ';', active)
+            ci, nn, pp, pn = setup(active)
+            try:
+                collect_selection(ci, nn, pp, pn, {'b'})
+            except NetRecordError as error:
+                require(error.scope == 'dependency-source' and error.net_names == (bad_name,)
+                        and error.records == [(bad_name, nn[bad_name])] and not error.missing,
+                        'Active source negative did not retain the exact failing complete net')
+            else:
+                raise ValueError(f'Active {role} accepted synthetic {bad_name} source cardinality')
+    for extra, expected_names in (
+        ('net "duplicate", inpin "a" F1;\n', ('duplicate', 'qdata')),
+        ('net "missing", inpin "absent" F1;\n', ('missing',)),
+    ):
+        try:
+            setup(combined + extra)
+        except NetRecordError as error:
+            require(error.scope == 'global-physical-index' and error.net_names == expected_names
+                    and len(error.records) == len(expected_names) and not error.missing,
+                    'Global pin negative lost complete offending net records')
+        else:
+            raise ValueError('Global missing-COMP/duplicate-pin negative was accepted')
     print('Hosted carry-source, operand completeness, determinism, missing seed/record/net, wrong-output, cycle,32/33-stage and400/401-COMP controls passed; text fixtures only.')
+    print('Hosted synthetic off-scope zero/multiple-source fixtures preserve selection; the same active CIN/operand dependencies fail strictly with exact offending raw nets; global missing-COMP/duplicate-pin negatives pass. Actual CLKIN syntax is not assumed.')
 
 
 def inspect(export_path, prior_root, output, fixture, collector, reader):
@@ -210,15 +345,10 @@ def inspect(export_path, prior_root, output, fixture, collector, reader):
             'Prior successful collection outcome differs')
     instances, nets = reader.parse(text)
     require((len(instances), len(nets)) == (3611, 8928), 'Exact full export inventory differs')
+    output.mkdir(parents=True, exist_ok=False)
     pins = {n: reader.net_pins(s) for n, s in nets.items()}
-    pin_nets, incident = {}, {c: set() for c in instances}
-    for name, values in pins.items():
-        source(name, nets, pins)
-        for kind, comp, pin in values:
-            require(comp in instances, f'Net refers to missing COMP: {name}/{comp}')
-            require((comp, pin) not in pin_nets, f'Duplicate physical pin: {comp}.{pin}')
-            pin_nets[(comp, pin)] = name
-            incident[comp].add(name)
+    clkin_diagnostic = retain_clkin_diagnostic(output, instances, nets, pins)
+    pin_nets, incident = index_physical_pins(instances, nets, pins)
     old_inst, old_nets = {}, {}
     manifest = json.loads((prior / 'raw-record-manifest.json').read_text(encoding='utf-8'))
     require(len(manifest) == 67, 'Prior raw partition count differs')
@@ -248,7 +378,6 @@ def inspect(export_path, prior_root, output, fixture, collector, reader):
                 and sha(nets[name].encode('utf-8')) == row['netSha256'], 'Pinned boundary net differs')
         seeds.append(comp)
     require(len(set(seeds)) == len(seeds) == 7, 'Expected exactly seven unique source seeds')
-    output.mkdir(parents=True, exist_ok=False)
     selected, paths, operands, parts, errors, progress = set(), [], [], [], [], {}
     try:
         selected, paths, operands = collect_selection(instances, nets, pins, pin_nets, seeds, progress)
@@ -260,7 +389,7 @@ def inspect(export_path, prior_root, output, fixture, collector, reader):
             'newComponentsOutsideReviewedUnion': sorted(selected - old_inst.keys()),
             'newNetsOutsideReviewedUnion': sorted(selected_nets - old_nets.keys()),
             'interpretation': 'Physical adjacency to a bounded fixed point only; no Boolean evaluation or sequential equivalence.'})
-        total = 0
+        total = clkin_diagnostic['bytes']
         for comps, net_names in collector.partition_plan(instances, nets, incident, selected):
             data = collector.record_bytes(instances, nets, comps, net_names)
             collector.check_part_bounds(comps, net_names, data, len(parts), total)
@@ -276,12 +405,16 @@ def inspect(export_path, prior_root, output, fixture, collector, reader):
         require({n for p in parts for n in p['nets']} == selected_nets, 'Missing complete supplement incident net')
     except (ValueError, KeyError) as error:
         errors.append(str(error))
+        if isinstance(error, NetRecordError):
+            retain_net_error(output, error)
     finally:
         write_json(output / 'selection-progress.json', progress)
         write_json(output / 'raw-record-manifest.json', parts)
         result = {
             'newSeparateTask': 'Seven observed CIN source boundaries; recursive physical carry/operand source closure',
-            'historicalFailuresUnchanged': [41316512383, 41319824540],
+            'historicalFailuresUnchanged': [41316512383, 41319824540, 41326159712],
+            'clkinFailureDiagnostic': clkin_diagnostic,
+            'sourceCardinalityScope': 'Every queried CIN/operand dependency and selected carry closure; all global COMP references/physical pins still checked.',
             'originalFinalZeroAliasStillMissing': True,
             'priorCollection': {k: fixture[k] for k in ('collectionRun', 'collectionJob', 'collectionHead', 'collectionArtifact')},
             'all88PriorFilesExact': True, 'all9957PriorRawRecordsExact': True,
@@ -313,7 +446,14 @@ def main():
     require(fixture['limits'] == {'partComponents': 40, 'partNets': 6000, 'partBytes': 3_000_000,
             'totalRawBytes': 96_000_000, 'parts': 128, 'supplementComponents': MAX_SELECTED_COMPONENTS,
             'supplementNets': MAX_SELECTED_NETS, 'maximumCarryDepth': MAX_CARRY_DEPTH}, 'Explicit supplement limits differ')
-    inspect(Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3]), fixture, collector, reader)
+    try:
+        inspect(Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3]), fixture, collector, reader)
+    except NetRecordError as error:
+        # Only concrete net-validation failures before the regular result block
+        # reach this handler. Retain exact raw statements, then re-raise; do not
+        # convert programming, file, identity or parsing errors into acceptance.
+        retain_net_error(Path(sys.argv[3]), error)
+        raise
 
 
 if __name__ == '__main__':

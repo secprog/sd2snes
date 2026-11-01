@@ -1,0 +1,284 @@
+{
+  "run": {
+    "id": 41319824540,
+    "head_sha": "6d581dc4c82afa3ad8cb0838ed34a4997a33e69b",
+    "head_branch": "master",
+    "path": ".github/workflows/inspect-successor-retained-map.yml",
+    "event": "workflow_dispatch",
+    "status": "completed",
+    "conclusion": "failure",
+    "run_attempt": 1,
+    "created_at": "2026-11-01T15:10:03Z",
+    "run_started_at": "2026-11-01T15:10:03Z"
+  },
+  "jobs": [
+    {
+      "id": 124887450055,
+      "run_id": 41319824540,
+      "head_sha": "6d581dc4c82afa3ad8cb0838ed34a4997a33e69b",
+      "head_branch": "master",
+      "status": "completed",
+      "conclusion": "failure",
+      "run_attempt": 1,
+      "name": "Read-only retained dsp MAP partitions",
+      "started_at": "2026-11-01T15:10:08Z",
+      "completed_at": "2026-11-01T15:14:02Z",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-01T15:10:09Z",
+          "completed_at": "2026-11-01T15:10:10Z"
+        },
+        {
+          "name": "Run actions/checkout@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-01T15:10:10Z",
+          "completed_at": "2026-11-01T15:10:14Z"
+        },
+        {
+          "name": "Locate isolated evidence directories on the hosted runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-01T15:10:14Z",
+          "completed_at": "2026-11-01T15:10:14Z"
+        },
+        {
+          "name": "Pin all diagnostic sources and inventory every tracked input",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-11-01T15:10:14Z",
+          "completed_at": "2026-11-01T15:10:15Z"
+        },
+        {
+          "name": "Validate hosted parser and partition controls before reading retained design",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-01T15:10:15Z",
+          "completed_at": "2026-11-01T15:10:15Z"
+        },
+        {
+          "name": "Bind exact failed runs, all outcomes and digest-verified retained evidence",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-01T15:10:15Z",
+          "completed_at": "2026-11-01T15:10:18Z"
+        },
+        {
+          "name": "Run ./.github/actions/prepare-build-image",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-11-01T15:10:18Z",
+          "completed_at": "2026-11-01T15:13:53Z"
+        },
+        {
+          "name": "Convert the exact retained NCD using read-only isolated XDL",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 8,
+          "started_at": "2026-11-01T15:13:53Z",
+          "completed_at": "2026-11-01T15:13:56Z"
+        },
+        {
+          "name": "Retain complete bounded partitions and preserve every original failure",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 9,
+          "started_at": "2026-11-01T15:13:56Z",
+          "completed_at": "2026-11-01T15:13:56Z"
+        },
+        {
+          "name": "Require all tracked bytes, indexes and retained inputs unchanged",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "started_at": "2026-11-01T15:13:56Z",
+          "completed_at": "2026-11-01T15:13:58Z"
+        },
+        {
+          "name": "Retain small read-only reports",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11,
+          "started_at": "2026-11-01T15:13:58Z",
+          "completed_at": "2026-11-01T15:13:59Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 22,
+          "started_at": "2026-11-01T15:13:59Z",
+          "completed_at": "2026-11-01T15:14:00Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 23,
+          "started_at": "2026-11-01T15:14:00Z",
+          "completed_at": "2026-11-01T15:14:00Z"
+        }
+      ]
+    },
+    {
+      "id": 124887450234,
+      "run_id": 41319824540,
+      "head_sha": "6d581dc4c82afa3ad8cb0838ed34a4997a33e69b",
+      "head_branch": "master",
+      "status": "completed",
+      "conclusion": "failure",
+      "run_attempt": 1,
+      "name": "Read-only retained basex MAP partitions",
+      "started_at": "2026-11-01T15:10:08Z",
+      "completed_at": "2026-11-01T15:14:40Z",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-01T15:10:09Z",
+          "completed_at": "2026-11-01T15:10:09Z"
+        },
+        {
+          "name": "Run actions/checkout@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-01T15:10:09Z",
+          "completed_at": "2026-11-01T15:10:13Z"
+        },
+        {
+          "name": "Locate isolated evidence directories on the hosted runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-01T15:10:13Z",
+          "completed_at": "2026-11-01T15:10:13Z"
+        },
+        {
+          "name": "Pin all diagnostic sources and inventory every tracked input",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-11-01T15:10:13Z",
+          "completed_at": "2026-11-01T15:10:14Z"
+        },
+        {
+          "name": "Validate hosted parser and partition controls before reading retained design",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-01T15:10:14Z",
+          "completed_at": "2026-11-01T15:10:14Z"
+        },
+        {
+          "name": "Bind exact failed runs, all outcomes and digest-verified retained evidence",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-01T15:10:14Z",
+          "completed_at": "2026-11-01T15:10:17Z"
+        },
+        {
+          "name": "Run ./.github/actions/prepare-build-image",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-11-01T15:10:17Z",
+          "completed_at": "2026-11-01T15:14:33Z"
+        },
+        {
+          "name": "Convert the exact retained NCD using read-only isolated XDL",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 8,
+          "started_at": "2026-11-01T15:14:33Z",
+          "completed_at": "2026-11-01T15:14:36Z"
+        },
+        {
+          "name": "Retain complete bounded partitions and preserve every original failure",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 9,
+          "started_at": "2026-11-01T15:14:36Z",
+          "completed_at": "2026-11-01T15:14:36Z"
+        },
+        {
+          "name": "Require all tracked bytes, indexes and retained inputs unchanged",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "started_at": "2026-11-01T15:14:36Z",
+          "completed_at": "2026-11-01T15:14:37Z"
+        },
+        {
+          "name": "Retain small read-only reports",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11,
+          "started_at": "2026-11-01T15:14:37Z",
+          "completed_at": "2026-11-01T15:14:38Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 22,
+          "started_at": "2026-11-01T15:14:38Z",
+          "completed_at": "2026-11-01T15:14:39Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 23,
+          "started_at": "2026-11-01T15:14:39Z",
+          "completed_at": "2026-11-01T15:14:39Z"
+        }
+      ]
+    }
+  ],
+  "artifacts": [
+    {
+      "id": 13089460604,
+      "name": "successor-retained-map-basex-reports",
+      "size_in_bytes": 338201,
+      "digest": "sha256:d794099796aff80a776a78cd7b176078019df1f3e183b67a40cf0a6ae2ae03e7",
+      "expired": false,
+      "workflow_run": {
+        "id": 41319824540,
+        "repository_id": 1433388489,
+        "head_repository_id": 1433388489,
+        "head_branch": "master",
+        "head_sha": "6d581dc4c82afa3ad8cb0838ed34a4997a33e69b"
+      }
+    },
+    {
+      "id": 13089066009,
+      "name": "successor-retained-map-dsp-reports",
+      "size_in_bytes": 338660,
+      "digest": "sha256:4a0e18692dbe83b38bf648d5de072e36ab5ad4d1f82547a2ab521b46b5725640",
+      "expired": false,
+      "workflow_run": {
+        "id": 41319824540,
+        "repository_id": 1433388489,
+        "head_repository_id": 1433388489,
+        "head_branch": "master",
+        "head_sha": "6d581dc4c82afa3ad8cb0838ed34a4997a33e69b"
+      }
+    }
+  ],
+  "originalOutcome": "Both jobs failed step8 after successful conversion and matching NCD hash; step9 collectors skipped. No new XDL bytes or observed hashes were retained.",
+  "interpretation": "Historical cause remains unknown. Two fresh identical-input exports can characterize current reproducibility only, not establish equality with unavailable historical full exports."
+}

@@ -1,0 +1,579 @@
+{
+  "basex": {
+    "run": {
+      "id": 41316512383,
+      "head_sha": "5ffc853511cb8f6808dd0609a94bded32665aff5",
+      "head_branch": "master",
+      "path": ".github/workflows/compare-basex-normal-unshared-isolated-map.yml",
+      "event": "workflow_dispatch",
+      "status": "completed",
+      "conclusion": "failure",
+      "run_attempt": 1,
+      "created_at": "2026-11-01T14:30:18Z",
+      "run_started_at": "2026-11-01T14:30:18Z"
+    },
+    "jobs": [
+      {
+        "id": 124877607506,
+        "run_id": 41316512383,
+        "head_sha": "5ffc853511cb8f6808dd0609a94bded32665aff5",
+        "head_branch": "master",
+        "status": "completed",
+        "conclusion": "failure",
+        "run_attempt": 1,
+        "name": "Basex unshared normal mapper, isolated IP and MAP only seed 46",
+        "started_at": "2026-11-01T14:30:23Z",
+        "completed_at": "2026-11-01T14:39:07Z",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-11-01T14:30:23Z",
+            "completed_at": "2026-11-01T14:30:24Z"
+          },
+          {
+            "name": "Run actions/checkout@v6",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-11-01T14:30:24Z",
+            "completed_at": "2026-11-01T14:30:28Z"
+          },
+          {
+            "name": "Require the independently reviewed CoreGen isolation validation",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-11-01T14:30:28Z",
+            "completed_at": "2026-11-01T14:30:29Z"
+          },
+          {
+            "name": "Require exact independently reviewed mapping, physical inspection and command controls",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4,
+            "started_at": "2026-11-01T14:30:29Z",
+            "completed_at": "2026-11-01T14:30:33Z"
+          },
+          {
+            "name": "Bind exact retained failures, successful physical inspections and full parent proof provenance",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5,
+            "started_at": "2026-11-01T14:30:33Z",
+            "completed_at": "2026-11-01T14:30:39Z"
+          },
+          {
+            "name": "Download the independently inspected source-bound proof",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 6,
+            "started_at": "2026-11-01T14:30:39Z",
+            "completed_at": "2026-11-01T14:30:39Z"
+          },
+          {
+            "name": "Download the exact independently reviewed successful component proof",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 7,
+            "started_at": "2026-11-01T14:30:39Z",
+            "completed_at": "2026-11-01T14:30:41Z"
+          },
+          {
+            "name": "Download the original basex timing report for comparison",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 8,
+            "started_at": "2026-11-01T14:30:41Z",
+            "completed_at": "2026-11-01T14:30:41Z"
+          },
+          {
+            "name": "Require the full parent S-RTC proof before selecting the final patch candidate",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 9,
+            "started_at": "2026-11-01T14:30:41Z",
+            "completed_at": "2026-11-01T14:30:42Z"
+          },
+          {
+            "name": "Bind the complete independently reviewed successor proof and measured failure",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 10,
+            "started_at": "2026-11-01T14:30:42Z",
+            "completed_at": "2026-11-01T14:30:45Z"
+          },
+          {
+            "name": "Select exactly the proved runner-only source",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 11,
+            "started_at": "2026-11-01T14:30:45Z",
+            "completed_at": "2026-11-01T14:30:46Z"
+          },
+          {
+            "name": "Validate hosted physical inspection parser before mapping",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 12,
+            "started_at": "2026-11-01T14:30:46Z",
+            "completed_at": "2026-11-01T14:30:46Z"
+          },
+          {
+            "name": "Run ./.github/actions/prepare-build-image",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 13,
+            "started_at": "2026-11-01T14:30:46Z",
+            "completed_at": "2026-11-01T14:34:55Z"
+          },
+          {
+            "name": "Generate candidate mapped NCD only; no PAR or TRACE result",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 14,
+            "started_at": "2026-11-01T14:34:55Z",
+            "completed_at": "2026-11-01T14:38:55Z"
+          },
+          {
+            "name": "Retain every post-build tracked difference and generated IP hash",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 15,
+            "started_at": "2026-11-01T14:38:55Z",
+            "completed_at": "2026-11-01T14:38:57Z"
+          },
+          {
+            "name": "Verify candidate, project, constraints and all tracked inputs",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 16,
+            "started_at": "2026-11-01T14:38:57Z",
+            "completed_at": "2026-11-01T14:38:57Z"
+          },
+          {
+            "name": "Verify actual synthesis and MAP options; forbid routing execution",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 17,
+            "started_at": "2026-11-01T14:38:57Z",
+            "completed_at": "2026-11-01T14:38:57Z"
+          },
+          {
+            "name": "Compare PCF timing statements with the original report",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 18,
+            "started_at": "2026-11-01T14:38:57Z",
+            "completed_at": "2026-11-01T14:38:57Z"
+          },
+          {
+            "name": "Retain bounded actual mapped nets, muxes and target FF bindings before evaluating names",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 19,
+            "started_at": "2026-11-01T14:38:57Z",
+            "completed_at": "2026-11-01T14:39:00Z"
+          },
+          {
+            "name": "Retain fresh normal mapper, all patch outputs, S-RTC and actual CTX carry records",
+            "status": "completed",
+            "conclusion": "failure",
+            "number": 20,
+            "started_at": "2026-11-01T14:39:00Z",
+            "completed_at": "2026-11-01T14:39:01Z"
+          },
+          {
+            "name": "Require original tracked inputs after mapping-only inspections",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 21,
+            "started_at": "2026-11-01T14:39:01Z",
+            "completed_at": "2026-11-01T14:39:02Z"
+          },
+          {
+            "name": "Upload small reports and source differences",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 22,
+            "started_at": "2026-11-01T14:39:02Z",
+            "completed_at": "2026-11-01T14:39:03Z"
+          },
+          {
+            "name": "Retain the mapped NCD separately on GitHub",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 23,
+            "started_at": "2026-11-01T14:39:03Z",
+            "completed_at": "2026-11-01T14:39:04Z"
+          },
+          {
+            "name": "Retain all same-run generated IP netlists separately",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 24,
+            "started_at": "2026-11-01T14:39:04Z",
+            "completed_at": "2026-11-01T14:39:05Z"
+          },
+          {
+            "name": "Post Run actions/checkout@v6",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 48,
+            "started_at": "2026-11-01T14:39:05Z",
+            "completed_at": "2026-11-01T14:39:05Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 49,
+            "started_at": "2026-11-01T14:39:05Z",
+            "completed_at": "2026-11-01T14:39:05Z"
+          }
+        ]
+      }
+    ],
+    "artifacts": [
+      {
+        "id": 13088220392,
+        "name": "basex-normal-unshared-isolated-map-seed-46-mapped-ncd",
+        "size_in_bytes": 913256,
+        "digest": "sha256:f69caf265c143f4ced7944615e107132475dea1ebab7f2b7bd321ae4f8f89015",
+        "expired": false,
+        "workflow_run": {
+          "id": 41316512383,
+          "repository_id": 1433388489,
+          "head_repository_id": 1433388489,
+          "head_branch": "master",
+          "head_sha": "5ffc853511cb8f6808dd0609a94bded32665aff5"
+        }
+      },
+      {
+        "id": 13087444459,
+        "name": "basex-normal-unshared-isolated-map-ip-netlists",
+        "size_in_bytes": 23917,
+        "digest": "sha256:58956b302ebce463a997176aba41d498c0cf87dd5a6ac7be5651e63759d0a2b5",
+        "expired": false,
+        "workflow_run": {
+          "id": 41316512383,
+          "repository_id": 1433388489,
+          "head_repository_id": 1433388489,
+          "head_branch": "master",
+          "head_sha": "5ffc853511cb8f6808dd0609a94bded32665aff5"
+        }
+      },
+      {
+        "id": 13087429483,
+        "name": "basex-normal-unshared-isolated-map-seed-46-reports",
+        "size_in_bytes": 721281,
+        "digest": "sha256:ec0d4223c071b929207f0560f5dc81616d61393c6dcab16afdb6930ca29533cd",
+        "expired": false,
+        "workflow_run": {
+          "id": 41316512383,
+          "repository_id": 1433388489,
+          "head_repository_id": 1433388489,
+          "head_branch": "master",
+          "head_sha": "5ffc853511cb8f6808dd0609a94bded32665aff5"
+        }
+      }
+    ],
+    "reportArtifact": "basex-normal-unshared-isolated-map-seed-46-reports",
+    "ncdArtifact": "basex-normal-unshared-isolated-map-seed-46-mapped-ncd",
+    "ncdSha256": "d7491c9fa35596d64c3ab6d6820b3c36f04769ae469467524cc17258f453dc5f",
+    "xdlSha256": "fd08df56d4253b729eb00f9cc0fcfb5b3e98a69a9812952f4c0feb0f46da839b",
+    "xdlName": "srtc-late-bits-map.xdl",
+    "failureSteps": [
+      20
+    ],
+    "productionVerilogTree": "01ce8b6b4509a5a72e0ad739e06bf19e548a2fc1",
+    "reviewedInputHead": "5ffc853511cb8f6808dd0609a94bded32665aff5"
+  },
+  "dsp": {
+    "run": {
+      "id": 41316546477,
+      "head_sha": "5ffc853511cb8f6808dd0609a94bded32665aff5",
+      "head_branch": "master",
+      "path": ".github/workflows/compare-dsp-parallel-stack-isolated-map.yml",
+      "event": "workflow_dispatch",
+      "status": "completed",
+      "conclusion": "failure",
+      "run_attempt": 1,
+      "created_at": "2026-11-01T14:30:40Z",
+      "run_started_at": "2026-11-01T14:30:40Z"
+    },
+    "jobs": [
+      {
+        "id": 124877702834,
+        "run_id": 41316546477,
+        "head_sha": "5ffc853511cb8f6808dd0609a94bded32665aff5",
+        "head_branch": "master",
+        "status": "completed",
+        "conclusion": "failure",
+        "run_attempt": 1,
+        "name": "DSPx parallel stack MAP only, original seed 68",
+        "started_at": "2026-11-01T14:30:44Z",
+        "completed_at": "2026-11-01T14:41:35Z",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-11-01T14:30:45Z",
+            "completed_at": "2026-11-01T14:30:46Z"
+          },
+          {
+            "name": "Run actions/checkout@v6",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-11-01T14:30:46Z",
+            "completed_at": "2026-11-01T14:30:51Z"
+          },
+          {
+            "name": "Require the independently reviewed CoreGen isolation validation",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-11-01T14:30:51Z",
+            "completed_at": "2026-11-01T14:30:53Z"
+          },
+          {
+            "name": "Require exact independently reviewed mapping, physical inspection and command controls",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4,
+            "started_at": "2026-11-01T14:30:53Z",
+            "completed_at": "2026-11-01T14:31:00Z"
+          },
+          {
+            "name": "Bind exact failed MAP, mixed partition outcomes and full parent proof provenance",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5,
+            "started_at": "2026-11-01T14:31:00Z",
+            "completed_at": "2026-11-01T14:31:06Z"
+          },
+          {
+            "name": "Download the independently inspected source-bound proof",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 6,
+            "started_at": "2026-11-01T14:31:06Z",
+            "completed_at": "2026-11-01T14:31:09Z"
+          },
+          {
+            "name": "Download the exact independently reviewed successful component proof",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 7,
+            "started_at": "2026-11-01T14:31:09Z",
+            "completed_at": "2026-11-01T14:31:11Z"
+          },
+          {
+            "name": "Download the original DSPx timing report for comparison",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 8,
+            "started_at": "2026-11-01T14:31:11Z",
+            "completed_at": "2026-11-01T14:31:13Z"
+          },
+          {
+            "name": "Require the full parent late-low stack proof before selecting the status candidate",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 9,
+            "started_at": "2026-11-01T14:31:13Z",
+            "completed_at": "2026-11-01T14:31:13Z"
+          },
+          {
+            "name": "Bind the complete independently reviewed new parallel-stack source proof",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 10,
+            "started_at": "2026-11-01T14:31:13Z",
+            "completed_at": "2026-11-01T14:31:19Z"
+          },
+          {
+            "name": "Select exactly the proved runner-only source",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 11,
+            "started_at": "2026-11-01T14:31:19Z",
+            "completed_at": "2026-11-01T14:31:21Z"
+          },
+          {
+            "name": "Run ./.github/actions/prepare-build-image",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 12,
+            "started_at": "2026-11-01T14:31:21Z",
+            "completed_at": "2026-11-01T14:34:42Z"
+          },
+          {
+            "name": "Generate candidate mapped NCD only; no PAR or TRACE result",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 13,
+            "started_at": "2026-11-01T14:34:42Z",
+            "completed_at": "2026-11-01T14:40:54Z"
+          },
+          {
+            "name": "Retain every post-build tracked difference and generated IP hash",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 14,
+            "started_at": "2026-11-01T14:40:54Z",
+            "completed_at": "2026-11-01T14:40:55Z"
+          },
+          {
+            "name": "Verify candidate, project, constraints and all tracked inputs",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 15,
+            "started_at": "2026-11-01T14:40:55Z",
+            "completed_at": "2026-11-01T14:40:55Z"
+          },
+          {
+            "name": "Verify actual synthesis and MAP options; forbid routing execution",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 16,
+            "started_at": "2026-11-01T14:40:55Z",
+            "completed_at": "2026-11-01T14:40:55Z"
+          },
+          {
+            "name": "Compare PCF timing statements with the original report",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 17,
+            "started_at": "2026-11-01T14:40:55Z",
+            "completed_at": "2026-11-01T14:40:55Z"
+          },
+          {
+            "name": "Retain bounded actual mapped nets, muxes and target FF bindings before evaluating names",
+            "status": "completed",
+            "conclusion": "failure",
+            "number": 18,
+            "started_at": "2026-11-01T14:40:55Z",
+            "completed_at": "2026-11-01T14:40:59Z"
+          },
+          {
+            "name": "Retain all176 stack FFs and all new parallel decoder scopes",
+            "status": "completed",
+            "conclusion": "failure",
+            "number": 19,
+            "started_at": "2026-11-01T14:40:59Z",
+            "completed_at": "2026-11-01T14:41:26Z"
+          },
+          {
+            "name": "Require original tracked inputs after mapping-only inspections",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 20,
+            "started_at": "2026-11-01T14:41:26Z",
+            "completed_at": "2026-11-01T14:41:27Z"
+          },
+          {
+            "name": "Upload small reports and source differences",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 21,
+            "started_at": "2026-11-01T14:41:27Z",
+            "completed_at": "2026-11-01T14:41:29Z"
+          },
+          {
+            "name": "Retain the mapped NCD separately on GitHub",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 22,
+            "started_at": "2026-11-01T14:41:29Z",
+            "completed_at": "2026-11-01T14:41:31Z"
+          },
+          {
+            "name": "Retain all same-run generated IP netlists separately",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 23,
+            "started_at": "2026-11-01T14:41:31Z",
+            "completed_at": "2026-11-01T14:41:32Z"
+          },
+          {
+            "name": "Post Run actions/checkout@v6",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 46,
+            "started_at": "2026-11-01T14:41:32Z",
+            "completed_at": "2026-11-01T14:41:32Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 47,
+            "started_at": "2026-11-01T14:41:32Z",
+            "completed_at": "2026-11-01T14:41:32Z"
+          }
+        ]
+      }
+    ],
+    "artifacts": [
+      {
+        "id": 13087677700,
+        "name": "dsp-parallel-stack-isolated-map-only-reports",
+        "size_in_bytes": 946238,
+        "digest": "sha256:3fb508b75d66b1673cabbe706705ebd61da434374fd9a9b874e9a3927404f90f",
+        "expired": false,
+        "workflow_run": {
+          "id": 41316546477,
+          "repository_id": 1433388489,
+          "head_repository_id": 1433388489,
+          "head_branch": "master",
+          "head_sha": "5ffc853511cb8f6808dd0609a94bded32665aff5"
+        }
+      },
+      {
+        "id": 13087463139,
+        "name": "dsp-parallel-stack-isolated-map-ip-netlists",
+        "size_in_bytes": 45768,
+        "digest": "sha256:c3d84bd1d7f53da1fa9128caecafee75f83dd72a15572265488334609ceb649e",
+        "expired": false,
+        "workflow_run": {
+          "id": 41316546477,
+          "repository_id": 1433388489,
+          "head_repository_id": 1433388489,
+          "head_branch": "master",
+          "head_sha": "5ffc853511cb8f6808dd0609a94bded32665aff5"
+        }
+      },
+      {
+        "id": 13087168644,
+        "name": "dsp-parallel-stack-isolated-map-only-mapped-ncd",
+        "size_in_bytes": 876387,
+        "digest": "sha256:cabd35702e27067f9aba3597e824c78d896a7f92494747ed3b856d7fd4339acd",
+        "expired": false,
+        "workflow_run": {
+          "id": 41316546477,
+          "repository_id": 1433388489,
+          "head_repository_id": 1433388489,
+          "head_branch": "master",
+          "head_sha": "5ffc853511cb8f6808dd0609a94bded32665aff5"
+        }
+      }
+    ],
+    "reportArtifact": "dsp-parallel-stack-isolated-map-only-reports",
+    "ncdArtifact": "dsp-parallel-stack-isolated-map-only-mapped-ncd",
+    "ncdSha256": "4f7b507e401b716cc16da5c89f2c7bfe18bdb6b33bc1dd76db36e43f7b961113",
+    "xdlSha256": "61b8d5bc20c9ce7901795981902af4b82a6047a029b9c367ce5ae3f26b947844",
+    "xdlName": "late-low-map.xdl",
+    "failureSteps": [
+      18,
+      19
+    ],
+    "productionVerilogTree": "01ce8b6b4509a5a72e0ad739e06bf19e548a2fc1",
+    "reviewedInputHead": "5ffc853511cb8f6808dd0609a94bded32665aff5"
+  }
+}

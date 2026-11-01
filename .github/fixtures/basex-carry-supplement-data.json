@@ -1,0 +1,816 @@
+{
+  "schema": 1,
+  "collectionRun": 41323541435,
+  "collectionJob": 124898621295,
+  "collectionHead": "7715718873706c6a55ab77a5aaa76becb8c2894f",
+  "collectionArtifact": {
+    "id": 13090716441,
+    "node_id": "MDg6QXJ0aWZhY3QxMzA5MDcxNjQ0MQ==",
+    "name": "successor-diagnosed-xdl-basex-reports",
+    "size_in_bytes": 4379652,
+    "url": "https://api.github.com/repos/secprog/sd2snes/actions/artifacts/13090716441",
+    "archive_download_url": "https://api.github.com/repos/secprog/sd2snes/actions/artifacts/13090716441/zip",
+    "expired": false,
+    "digest": "sha256:d71cf96aad3f3be215626e55fb66a2cbc03cc6de4207e9552b9fd0852fa3a1aa",
+    "created_at": "2026-11-01T15:54:40Z",
+    "updated_at": "2026-11-01T15:54:40Z",
+    "expires_at": "2026-11-15T15:54:39Z",
+    "workflow_run": {
+      "id": 41323541435,
+      "repository_id": 1433388489,
+      "head_repository_id": 1433388489,
+      "head_branch": "master",
+      "head_sha": "7715718873706c6a55ab77a5aaa76becb8c2894f"
+    }
+  },
+  "members": [
+    {
+      "name": "successor-diagnosed-basex-after.sha256",
+      "bytes": 235788,
+      "sha256": "a6857e87641c63e2e05faef9f4495b7fbd1d45ef569713655cd00c10d01e96aa"
+    },
+    {
+      "name": "successor-diagnosed-basex-before-index.txt",
+      "bytes": 196764,
+      "sha256": "cbf84d7f7e704f2990c99ca4a91bde18bffd1567771defad4707b35b56af4e13"
+    },
+    {
+      "name": "successor-diagnosed-basex-after-index.txt",
+      "bytes": 196764,
+      "sha256": "cbf84d7f7e704f2990c99ca4a91bde18bffd1567771defad4707b35b56af4e13"
+    },
+    {
+      "name": "successor-diagnosed-basex-before.sha256",
+      "bytes": 235788,
+      "sha256": "a6857e87641c63e2e05faef9f4495b7fbd1d45ef569713655cd00c10d01e96aa"
+    },
+    {
+      "name": "successor-diagnosed-basex-diagnosed-provenance.json",
+      "bytes": 100599,
+      "sha256": "60189d7717c752dfdb95230f444f54dfc06997987a8b278922850b7b02c734e0"
+    },
+    {
+      "name": "successor-diagnosed-basex-evidence-after.sha256",
+      "bytes": 58684,
+      "sha256": "28a3c907aaaeeb1da6fe10b61322af0bc5c3a656cf9d1f53f1e8be1a25e7e6a2"
+    },
+    {
+      "name": "successor-diagnosed-basex-evidence-before.sha256",
+      "bytes": 58684,
+      "sha256": "28a3c907aaaeeb1da6fe10b61322af0bc5c3a656cf9d1f53f1e8be1a25e7e6a2"
+    },
+    {
+      "name": "successor-diagnosed-basex-evidence-final-check.txt",
+      "bytes": 40394,
+      "sha256": "1e62b714fd293bd7b3236102b88a33d42808fc9e26d6e684eba93138730ff9e3"
+    },
+    {
+      "name": "successor-diagnosed-basex-final-manifest-check.txt",
+      "bytes": 84570,
+      "sha256": "93f294b98ce7fc3cf0415669c3c093ff9ce751525a7ddf035a0fc53599e9d42d"
+    },
+    {
+      "name": "successor-diagnosed-basex-identity.txt",
+      "bytes": 182,
+      "sha256": "02799de4f17cdde5cca6f1fc325289d66cc57d5b342d9ec4140249dbfdb3fd50"
+    },
+    {
+      "name": "successor-diagnosed-basex-inspection-console.txt",
+      "bytes": 17725843,
+      "sha256": "ab4c8552bc825484a6e43fd1385136f25bd5853c45bd0576c1c2615a0e335b76"
+    },
+    {
+      "name": "successor-diagnosed-basex-original-provenance.json",
+      "bytes": 30997,
+      "sha256": "951dcdb5b207021d8da5a260c555d8a5763cec990ff6e8d50f852718f4d2e3c9"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/bit-zero-consumer-discovery.json",
+      "bytes": 37142,
+      "sha256": "098f92a6d5e25fe6d8f32d599a9999adbfbf19d854a464ea1aa92866be63ff79"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/explicit-boundaries.json",
+      "bytes": 1555151,
+      "sha256": "396cc387c77c4fb3aef8a40c8c323a0ff4675e18c5f71b597b1c2c496275a797"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/immutable-input-binding.json",
+      "bytes": 3045,
+      "sha256": "23597cc34b187179cbba3e046d5ecb5273724eee2e19af777a38cdfd8378ec9f"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/inspection-result.json",
+      "bytes": 957,
+      "sha256": "d2aebb956865d99ccf670e8ef80d8567610fa753ba3bf0b299f03db3be5805f2"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/original-inspection-result.json",
+      "bytes": 460,
+      "sha256": "bfb62a77704459442618000592f6bba99d904edba22ddc8069af3b82a5f4d432"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/original-physical-scope-inventory.json",
+      "bytes": 444443,
+      "sha256": "c0c51c441ee6e506155f1e34218cf22f83f1c4cf36e2059dd09fd5574c6ea59f"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/original-source-discovery.json",
+      "bytes": 122602,
+      "sha256": "e23fc08fbb3aca09f58c43d14833e4b5e7e4ff4be81fa3b819a827eccc8f10d8"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/original-srtc-raw-report.txt",
+      "bytes": 311934,
+      "sha256": "b11a7ff51788757e0b163850f287c0bd7aea3eb9ce3809f0b173192c4112c322"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-000.txt",
+      "bytes": 337299,
+      "sha256": "be5d68ce7a6bb1c75ffcee7af9a3feb942bf29e82dc78e5751ec59de829342c7"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-001.txt",
+      "bytes": 275270,
+      "sha256": "612293be1304df716720a4d98bba084e996f92ad3b0fd9d7b81b4940fb961956"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-002.txt",
+      "bytes": 312881,
+      "sha256": "b466042766bfd9f3e6872997e4e4a334f2784fc04508aea16b4781bdaf7b309d"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-003.txt",
+      "bytes": 271465,
+      "sha256": "0e923b30d941aa21e2e89b66b63b601c856c098964ecc99ddfda3e107246b1bd"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-004.txt",
+      "bytes": 253684,
+      "sha256": "344574b2f5cabb9934c93b0126778f3ab5df6626a9ce2e948e3a66cbceac5a60"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-005.txt",
+      "bytes": 233682,
+      "sha256": "803428f332392176d4194c4f998cda51c04ea940e6a75ef86974f0b17dd70149"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-006.txt",
+      "bytes": 262961,
+      "sha256": "695478d93251bfb2606a7cc2c45fafd5e9f58c74a212440168da215257d57c6b"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-007.txt",
+      "bytes": 296941,
+      "sha256": "c2e541d35736d769c771505db140a93f629f767c7867176f17f2d68a2c0f80d0"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-008.txt",
+      "bytes": 282628,
+      "sha256": "c57f51d682e11962ce7f01cb10826841e9846d843e7a052e220886f33650a3de"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-009.txt",
+      "bytes": 260158,
+      "sha256": "85d67a37fa3a3b14ac18002ebe04f300aabfad5620099816a093009a32c9b94c"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-010.txt",
+      "bytes": 288604,
+      "sha256": "5d45fd73e8e81ec27851e97e2f5487e22084057e7156c1b26595cc40048b8416"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-011.txt",
+      "bytes": 239674,
+      "sha256": "7deb91ac11089b9bd1a55716f60321c88736368357e0bf3a9b73286646ba1418"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-012.txt",
+      "bytes": 298081,
+      "sha256": "be7b2f447d66c72e0b1bf44bc16370a312a7f08a9480584391dd4c70268b83a4"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-013.txt",
+      "bytes": 258809,
+      "sha256": "5936e325e42eab18046f5a4606934f7b49f76cfd0f3f64e88df075f86c84ba43"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-014.txt",
+      "bytes": 258383,
+      "sha256": "2e3c86757bbb0b7126f5c392b6b2225725d1be378f7e7bc90a4bf3bcef4bc9b2"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-015.txt",
+      "bytes": 269492,
+      "sha256": "5339c93ab2b5824438d1a7f452836f2617846a0e77691f8a9c02088016801de0"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-016.txt",
+      "bytes": 251776,
+      "sha256": "f8c5309f9c80c24ba84beeeb6a90e44e4abfc4c2d31376e7a7c59de443e27978"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-017.txt",
+      "bytes": 239307,
+      "sha256": "a2d171c924e8d142598dd177057d8f9f37d3981be90f99ef46479571887ffdf8"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-018.txt",
+      "bytes": 266068,
+      "sha256": "5b2124f44cbfd006d394741a48bb688cff42fa38789d8f160413c32474dd2ff5"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-019.txt",
+      "bytes": 244677,
+      "sha256": "1a7c77019dabfa031eca8497dd60ff3ad7315e2b96dc6979d58003968fbaf4f4"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-020.txt",
+      "bytes": 286284,
+      "sha256": "5a14b099cafec034049410b31f2e80bb8bcedfe780a52bb856cea0e63644b07c"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-021.txt",
+      "bytes": 278084,
+      "sha256": "d1a5f46c77a1e392f8dc36b44e88d22a46502ad572146ba16c3d32155d72675c"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-022.txt",
+      "bytes": 301408,
+      "sha256": "48d60e20322f5d15a84f797cd1079fa17660e32897c1ab4d2c239f4f4d8f3a6a"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-024.txt",
+      "bytes": 255782,
+      "sha256": "3985835c34784cf906edb37b404de42408864df82529340393bb0fea3abb241f"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-025.txt",
+      "bytes": 299508,
+      "sha256": "f3b0fa43792852a1d2292d344bf1a1b4b6523e30b0edb7b259ca7a713fbd5b6a"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-023.txt",
+      "bytes": 280911,
+      "sha256": "28361f455cc6a6100cbcefa0ed59b226cf35543212679285961c4d085d41f3b7"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-026.txt",
+      "bytes": 252413,
+      "sha256": "b916fdde0442468ecd43b5455946c7613bc91f95a4a159aba5daac95622443be"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-027.txt",
+      "bytes": 261086,
+      "sha256": "786dc51a45b1793fdd79a4aae7a0d75d3d960e639bcf3af8d09cf555b467d519"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-028.txt",
+      "bytes": 257923,
+      "sha256": "b3e5aea0bc3959a497eaead0d2c5ae1cc5db195d22bf1f6b6c6938cf4e3be216"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-029.txt",
+      "bytes": 269412,
+      "sha256": "eb90d1fd1c44a287dbcf887090fdb0b79a2d26d407fc9f3937ef9e7137d9c337"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-030.txt",
+      "bytes": 243697,
+      "sha256": "dd8e77c9e58ec5ca126e720027a19f6b31870cc294ee6ec9a80bc708b2d4dd1e"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-032.txt",
+      "bytes": 247697,
+      "sha256": "bccddd484903ca8f50eed6dd20e7a2d4cb995396390cef123d78982d698dd15d"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-031.txt",
+      "bytes": 256946,
+      "sha256": "4113918065a211e09810f7f8090c17c47b45efd1fe46602ae5cea0e6c2693eba"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-033.txt",
+      "bytes": 247618,
+      "sha256": "c0e9131911a9e64111ce75d3a2ebefbb2f6d750ada9d2697ceca56bb4a8bf436"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-034.txt",
+      "bytes": 258596,
+      "sha256": "e5c4a3becfaa793aedc903dba0739449c2a8798e7fd9e024e679a487cd01a451"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-035.txt",
+      "bytes": 264205,
+      "sha256": "ecc4aa141243f391dbe8a56ab8d3519f5d886916d857aa629a1b236f7dbadd5a"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-036.txt",
+      "bytes": 318457,
+      "sha256": "74413506ffc8a90b2cff7866d58ddc8c78075a5284bd9315ab1407e3b888ba0f"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-037.txt",
+      "bytes": 230054,
+      "sha256": "1b9df493af30d51aebef535e72deeb679cbeb06dfb16e79d7bffa7d178840755"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-038.txt",
+      "bytes": 215587,
+      "sha256": "1402ad87c56dd11d3a09a92e1ba785acd6efb570a956e255904e4a1204b270d6"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-039.txt",
+      "bytes": 280589,
+      "sha256": "6d663e14736000675af3131d00d38ac2bffd67656bdf65852d1eb3fffde95204"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-040.txt",
+      "bytes": 274343,
+      "sha256": "970a25827f08a8714fda711a72fa1f3e4edfe1cb6b0554d90ff48be2f4041407"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-041.txt",
+      "bytes": 267014,
+      "sha256": "b927856870a66b70f207d5e966f3a510888ac15da965bd7a0144105d0357abdc"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-042.txt",
+      "bytes": 315571,
+      "sha256": "fd6b119a6c53bf2b3f6248f0f7111aafc7cd7d20124ac7a93c9d0456c84fad37"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-043.txt",
+      "bytes": 322223,
+      "sha256": "3fbc9b0241afeab34219e9cbcbdcf71a0eefb5cc8a96ee8dc9db57cd9c74d3b0"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-044.txt",
+      "bytes": 295526,
+      "sha256": "246516c93634a125ee783d32776cbd33b153fca2be834f4cacaf595b6a33774d"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-045.txt",
+      "bytes": 304076,
+      "sha256": "a3be3fbfa65316950a1c5d1dc29cd7a2c270751233b2aaa986bd09018462275c"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-046.txt",
+      "bytes": 305525,
+      "sha256": "12b31aedea4bd8481e29359ceb237dfd1c9c4e3408fa2198e78af6a9a38be802"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-047.txt",
+      "bytes": 354179,
+      "sha256": "1dd7d9bfba023972533a6484af8204f9e93f438aa602f4514382a2af372326dc"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-048.txt",
+      "bytes": 300781,
+      "sha256": "3f253200ce90c19959de4cea5bf904d7544098794a524d8ef23b62084eea47ee"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-049.txt",
+      "bytes": 319046,
+      "sha256": "6146e4ac0473f0e040e067de1bb0f9ee1e89f1a4b94f7b65db8e0917bcf8a7c9"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-050.txt",
+      "bytes": 253681,
+      "sha256": "b934ea70bf9464bc2e10ce3c745934c905d80bfed611d4773740fcb726bb17e8"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-051.txt",
+      "bytes": 255351,
+      "sha256": "e86e27ae8c3fec7e02b903af51af86e7f4a92906088762c0b9f4a94d60f1d06e"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-052.txt",
+      "bytes": 324975,
+      "sha256": "aad196ed3d8df1c5547df7ff7079b41a62aa30b168f1a640e07d4d1ae5d526aa"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-053.txt",
+      "bytes": 255647,
+      "sha256": "b6cc6309053a6b12396d90e5ab46aebfa89b738ce488bc6a4184c823560556ca"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-054.txt",
+      "bytes": 126368,
+      "sha256": "16cd0a5facb98347a66fed10accd84a06b8ef8ecbd6f2f7767d6c446519ea2c2"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-055.txt",
+      "bytes": 167732,
+      "sha256": "741352d954dbfee59938199cfc6f42217acc6bc4c3bdf248341d077b220437af"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-056.txt",
+      "bytes": 142946,
+      "sha256": "78c78fe266bf2e8d32cc93bcdf6f057210d0b4bee6199c69675728081b7487d9"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-058.txt",
+      "bytes": 235327,
+      "sha256": "835bfee830689871d98fb541f75466491752042fbdf4ba94262b18a3f9f5b9a6"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-057.txt",
+      "bytes": 164244,
+      "sha256": "1629afc4c00f535049d467c8a71202d8c8efd1fc109e0dcfd214cf49571f571b"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-059.txt",
+      "bytes": 244265,
+      "sha256": "140885921a248014871a3d5b6292eddd5472cecc55a79288a71c181fe63f26d3"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-060.txt",
+      "bytes": 273777,
+      "sha256": "25ade11400223bc81d677b0b2eb2f3e54312de270125c4962d39c1f3443d13f1"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-061.txt",
+      "bytes": 257752,
+      "sha256": "7263398e8367b1b5795b495136ca2ff9a7b6da7cb156e290b75fc696263956a8"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-062.txt",
+      "bytes": 297151,
+      "sha256": "48251bcba33c363433cb0cb8ee39a9e62d6b9704ecfef0ccaa3b9f7d17a24e30"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-063.txt",
+      "bytes": 317047,
+      "sha256": "c50f3cd87f59570ede17ac96726331af0b56469abc6164b466935ef7f42400f0"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-064.txt",
+      "bytes": 334900,
+      "sha256": "a096abefad6770bbb4e4ff0ca87c82a214fda390dd96bd579b7f8709652fed81"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-065.txt",
+      "bytes": 129498,
+      "sha256": "a8ff32a968b2124436eda40b6f3fa72208b4ddceb6117e293bca2232b585e09c"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-part-066.txt",
+      "bytes": 172612,
+      "sha256": "c2e3749d26e45b0c82d798f41825035cbc3cb508318604489a1f27ab85d47583"
+    },
+    {
+      "name": "successor-diagnosed-parts-basex/raw-record-manifest.json",
+      "bytes": 654111,
+      "sha256": "640367b35db1edb2713307b984493c2e5a99e52d1b24a051fdc83ea8ac238949"
+    }
+  ],
+  "exportA": {
+    "bytes": 4736443,
+    "sha256": "5c2f71ed371a0639b983c57ba074ce6f7f12f27e4f89ccc45561f554b1a8788d"
+  },
+  "mappedNcdSha256": "d7491c9fa35596d64c3ab6d6820b3c36f04769ae469467524cc17258f453dc5f",
+  "seeds": [
+    {
+      "consumer": "snes_cheat/hook_enable_count<22>",
+      "consumerPin": "CIN",
+      "net": "snes_cheat/Mcount_hook_enable_count_cy<21>",
+      "netBytes": 155,
+      "netSha256": "d59d82d0542abb501379f1e40373170e78a955d489ddce145258e00c98d05ce2",
+      "source": "snes_cheat/hook_enable_count<20>",
+      "sourcePin": "COUT",
+      "sourceBytes": 1015,
+      "sourceSha256": "e53b3e97bf79b8e5aa859e1b89de6a9a5d8f901e54cdf0caee5cb31c7cb25aa6"
+    },
+    {
+      "consumer": "snes_dac/co<0><38>",
+      "consumerPin": "CIN",
+      "net": "snes_dac/Msub__sub0000_cy<5>",
+      "netBytes": 113,
+      "netSha256": "ce324a466542c5b7737c9cf7362f90c48d1b36dee5925d1c2e7d908c0f17d872",
+      "source": "snes_dac/co<0><36>",
+      "sourcePin": "COUT",
+      "sourceBytes": 821,
+      "sourceSha256": "08b507a057213b11a7e6c3083652b282953b2a2b3ddd783097ca213b95399afb"
+    },
+    {
+      "consumer": "snes_dac/co<0><6>",
+      "consumerPin": "CIN",
+      "net": "snes_dac/Msub__sub0001_cy<5>",
+      "netBytes": 111,
+      "netSha256": "bd922f88c916fb5e6efdf831e08a3842c6bb0be04f3bc8bf2ac8940506e8d6f8",
+      "source": "snes_dac/co<0><4>",
+      "sourcePin": "COUT",
+      "sourceBytes": 818,
+      "sourceSha256": "cf45a7df095cd68e1d9ece8398004a8d57920376962fde8267b8aadb6668a1f2"
+    },
+    {
+      "consumer": "snes_dac/co<1><22>",
+      "consumerPin": "CIN",
+      "net": "snes_dac/Msub__sub0003_cy<21>",
+      "netBytes": 114,
+      "netSha256": "c5211d4d63c134bc522dff197c92469487931d0a28829b3471d1ca0967ced02c",
+      "source": "snes_dac/co<1><20>",
+      "sourcePin": "COUT",
+      "sourceBytes": 828,
+      "sourceSha256": "c59591764d215efcd304af7ce8e651fbbbb4ba0173a4d4f40e126c89237a019c"
+    },
+    {
+      "consumer": "snes_dac/vol_reg<2>",
+      "consumerPin": "CIN",
+      "net": "snes_dac/Mcount_vol_reg_cy<1>",
+      "netBytes": 116,
+      "netSha256": "666efc254fc25ec6abf1e8c1bb1ad526182f0a009d95e979b657a61a8c56e2c2",
+      "source": "snes_dac/vol_reg<0>",
+      "sourcePin": "COUT",
+      "sourceBytes": 831,
+      "sourceSha256": "fc65c22f1cef7a64289b06d1b73a6eace60d2927201e337cb57a52ff2a5ea68f"
+    },
+    {
+      "consumer": "snes_rtc/dow_year_tmp_addsub0001<2>",
+      "consumerPin": "CIN",
+      "net": "snes_rtc/Msub_dow_year_tmp_addsub0001_cy<1>",
+      "netBytes": 162,
+      "netSha256": "697f3c94a24c2c53e05e4cf9eea9db0de4676a93459f291cf357859d8d7a8fa8",
+      "source": "snes_rtc/dow_year_tmp_addsub0001<0>",
+      "sourcePin": "COUT",
+      "sourceBytes": 1030,
+      "sourceSha256": "b048c6b28ce62397fa391bfdf82efc9b7985592b24303e0c3b5b2757032ac206"
+    },
+    {
+      "consumer": "snes_rtc/tick_cnt<28>",
+      "consumerPin": "CIN",
+      "net": "snes_rtc/Mcount_tick_cnt_cy<27>",
+      "netBytes": 122,
+      "netSha256": "fac01becec486fa0f758aea8cc84f66961a574aff1f09fd91d266e7dc92633b8",
+      "source": "snes_rtc/tick_cnt<26>",
+      "sourcePin": "COUT",
+      "sourceBytes": 941,
+      "sourceSha256": "bc56d752ce62c4c8a0f11828db14855de3ef64eabdd7fbeb0cff1173e233fa20"
+    }
+  ],
+  "originalDeclaredScope": {
+    "parts": 67,
+    "components": 2613,
+    "nets": 7344
+  },
+  "limits": {
+    "partComponents": 40,
+    "partNets": 6000,
+    "partBytes": 3000000,
+    "totalRawBytes": 96000000,
+    "parts": 128,
+    "supplementComponents": 400,
+    "supplementNets": 4000,
+    "maximumCarryDepth": 32
+  },
+  "limitsRationale": "Same complete-record/per-part/aggregate limits. New explicit separate supplement selection caps400COMP/4000nets; covers exactly seven observed CIN gaps, actual recursive CIN predecessor closure and physical operand-driver records. Bound failures stay failures; no truncation or whole-FPGA collection.",
+  "provenanceResponsibility": "Hosted downloader must independently verify complete fresh run/jobs/steps/artifact metadata and API ZIP digest before safe extraction, plus prior exact diagnostic/NCD/proof/source/IP provenance. Collector only consumes already retrieved exact bytes. Full XDL/native binaries remain GitHub-only.",
+  "collectionRunFields": {
+    "id": 41323541435,
+    "head_sha": "7715718873706c6a55ab77a5aaa76becb8c2894f",
+    "head_branch": "master",
+    "path": ".github/workflows/inspect-diagnosed-successor-xdl.yml",
+    "event": "workflow_dispatch",
+    "status": "completed",
+    "conclusion": "success",
+    "run_attempt": 1,
+    "run_number": 1
+  },
+  "collectionJobsTotal": 2,
+  "collectionArtifactsTotal": 2,
+  "collectionJobs": [
+    {
+      "id": 124898621295,
+      "name": "Read-only diagnosed basex XDL partitions",
+      "run_id": 41323541435,
+      "head_sha": "7715718873706c6a55ab77a5aaa76becb8c2894f",
+      "head_branch": "master",
+      "workflow_name": "Inspect exact diagnosed successor XDL partitions",
+      "status": "completed",
+      "conclusion": "success",
+      "run_attempt": 1,
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-01T15:54:12Z",
+          "completed_at": "2026-11-01T15:54:12Z"
+        },
+        {
+          "name": "Run actions/checkout@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-01T15:54:12Z",
+          "completed_at": "2026-11-01T15:54:16Z"
+        },
+        {
+          "name": "Locate isolated evidence directories on the hosted runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-01T15:54:16Z",
+          "completed_at": "2026-11-01T15:54:16Z"
+        },
+        {
+          "name": "Pin all diagnostic sources and inventory every tracked input",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-11-01T15:54:16Z",
+          "completed_at": "2026-11-01T15:54:17Z"
+        },
+        {
+          "name": "Validate hosted parser and partition controls before reading retained design",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-01T15:54:17Z",
+          "completed_at": "2026-11-01T15:54:17Z"
+        },
+        {
+          "name": "Bind original failures and the exact retained successful diagnosis",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-01T15:54:17Z",
+          "completed_at": "2026-11-01T15:54:28Z"
+        },
+        {
+          "name": "Retain complete bounded partitions and preserve every original failure",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-11-01T15:54:28Z",
+          "completed_at": "2026-11-01T15:54:37Z"
+        },
+        {
+          "name": "Require all tracked bytes, indexes and retained inputs unchanged",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "started_at": "2026-11-01T15:54:37Z",
+          "completed_at": "2026-11-01T15:54:39Z"
+        },
+        {
+          "name": "Retain small read-only reports",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-11-01T15:54:39Z",
+          "completed_at": "2026-11-01T15:54:41Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 18,
+          "started_at": "2026-11-01T15:54:41Z",
+          "completed_at": "2026-11-01T15:54:41Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 19,
+          "started_at": "2026-11-01T15:54:41Z",
+          "completed_at": "2026-11-01T15:54:41Z"
+        }
+      ]
+    },
+    {
+      "id": 124898621413,
+      "name": "Read-only diagnosed dsp XDL partitions",
+      "run_id": 41323541435,
+      "head_sha": "7715718873706c6a55ab77a5aaa76becb8c2894f",
+      "head_branch": "master",
+      "workflow_name": "Inspect exact diagnosed successor XDL partitions",
+      "status": "completed",
+      "conclusion": "success",
+      "run_attempt": 1,
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-01T15:54:11Z",
+          "completed_at": "2026-11-01T15:54:12Z"
+        },
+        {
+          "name": "Run actions/checkout@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-01T15:54:12Z",
+          "completed_at": "2026-11-01T15:54:16Z"
+        },
+        {
+          "name": "Locate isolated evidence directories on the hosted runner",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-01T15:54:16Z",
+          "completed_at": "2026-11-01T15:54:16Z"
+        },
+        {
+          "name": "Pin all diagnostic sources and inventory every tracked input",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-11-01T15:54:16Z",
+          "completed_at": "2026-11-01T15:54:17Z"
+        },
+        {
+          "name": "Validate hosted parser and partition controls before reading retained design",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-01T15:54:17Z",
+          "completed_at": "2026-11-01T15:54:17Z"
+        },
+        {
+          "name": "Bind original failures and the exact retained successful diagnosis",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-01T15:54:17Z",
+          "completed_at": "2026-11-01T15:54:23Z"
+        },
+        {
+          "name": "Retain complete bounded partitions and preserve every original failure",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-11-01T15:54:23Z",
+          "completed_at": "2026-11-01T15:54:38Z"
+        },
+        {
+          "name": "Require all tracked bytes, indexes and retained inputs unchanged",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "started_at": "2026-11-01T15:54:38Z",
+          "completed_at": "2026-11-01T15:54:40Z"
+        },
+        {
+          "name": "Retain small read-only reports",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-11-01T15:54:40Z",
+          "completed_at": "2026-11-01T15:54:41Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 18,
+          "started_at": "2026-11-01T15:54:41Z",
+          "completed_at": "2026-11-01T15:54:41Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 19,
+          "started_at": "2026-11-01T15:54:41Z",
+          "completed_at": "2026-11-01T15:54:41Z"
+        }
+      ]
+    }
+  ],
+  "collectionArtifacts": [
+    {
+      "id": 13090716441,
+      "name": "successor-diagnosed-xdl-basex-reports",
+      "size_in_bytes": 4379652,
+      "digest": "sha256:d71cf96aad3f3be215626e55fb66a2cbc03cc6de4207e9552b9fd0852fa3a1aa",
+      "expired": false,
+      "workflow_run": {
+        "id": 41323541435,
+        "repository_id": 1433388489,
+        "head_repository_id": 1433388489,
+        "head_branch": "master",
+        "head_sha": "7715718873706c6a55ab77a5aaa76becb8c2894f"
+      }
+    },
+    {
+      "id": 13090810951,
+      "name": "successor-diagnosed-xdl-dsp-reports",
+      "size_in_bytes": 1235153,
+      "digest": "sha256:cb0258226adb7edce6a612f286f1f4dcb80bde35d54acd770195141a0d2a6e8f",
+      "expired": false,
+      "workflow_run": {
+        "id": 41323541435,
+        "repository_id": 1433388489,
+        "head_repository_id": 1433388489,
+        "head_branch": "master",
+        "head_sha": "7715718873706c6a55ab77a5aaa76becb8c2894f"
+      }
+    }
+  ]
+}

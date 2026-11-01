@@ -1,0 +1,181 @@
+# Precisely close seven observed base CIN record boundaries from retained export A.
+# No FPGA regeneration, synthesis, MAP, PAR, TRACE, bitgen or timing waiver.
+name: Inspect seven basex retained carry boundaries
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: basex-carry-supplement-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - family: basex
+            collector: inspect-basex-carry-supplement.py
+            collector_blob: b4391c48568f5c780340504aaf784c4a6f3300dd
+            xdl_name: export-a.xdl
+            ncd_sha256: d7491c9fa35596d64c3ab6d6820b3c36f04769ae469467524cc17258f453dc5f
+            xdl_sha256: 5c2f71ed371a0639b983c57ba074ce6f7f12f27e4f89ccc45561f554b1a8788d
+    name: Read-only carry supplement ${{ matrix.family }} XDL partitions
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+
+      - name: Locate isolated evidence directories on the hosted runner
+        run: |
+          set -euo pipefail
+          {
+            printf 'EVIDENCE_ROOT=%s/successor-carry-input-%s\n' "$RUNNER_TEMP" '${{ matrix.family }}'
+            printf 'CHECK_PREFIX=%s/successor-carry-%s\n' "$RUNNER_TEMP" '${{ matrix.family }}'
+            printf 'OUTPUT_ROOT=%s/successor-carry-parts-%s\n' "$RUNNER_TEMP" '${{ matrix.family }}'
+          } >> "$GITHUB_ENV"
+
+      - name: Pin all diagnostic sources and inventory every tracked input
+        id: inventory
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = 32aa6686db2ce41b9aedf4d2ebe9e48f26dfa943
+          test "$(git rev-parse HEAD:verilog)" = 01ce8b6b4509a5a72e0ad739e06bf19e548a2fc1
+          test "$(git hash-object --no-filters .github/fixtures/successor-retained-map-data.json)" = 636410f9f5d073d6b8d19a04b2c6f71b34e4ed49
+          test "$(git hash-object --no-filters .github/scripts/download-successor-retained-map.py)" = b26865903a6a533a7e1e971f50e93e1cb943d10e
+          test "$(git hash-object --no-filters .github/scripts/${{ matrix.collector }})" = '${{ matrix.collector_blob }}'
+          test "$(git hash-object --no-filters .github/scripts/inspect-dsp-retained-map.py)" = 2b3b867372717b5729e26cb4880cb1af0b01a965
+          test "$(git hash-object --no-filters .github/scripts/inspect-measured-slow-path-map.py)" = 44aa3f6e7e0a708168dbb8cd8189af94ddf4f94d
+          test "$(git hash-object --no-filters .github/scripts/inspect-measured-map-partitions.py)" = c3b5e255a911e76040be585abca5e7d2a5224f31
+          test "$(git hash-object --no-filters .github/scripts/inspect-dsp-parallel-stack-map.py)" = 4d766f0cf16948051b62bd93ee6a5f2238e61a98
+          test "$(git hash-object --no-filters .github/scripts/inspect-basex-normal-unshared-map.py)" = 2ac4e2c16c86b66271bd3a5209ca0244ff42f56b
+          test "$(git hash-object --no-filters .github/fixtures/successor-xdl-diagnosis-data.json)" = 064a9b44cf3d89b0f85da08fbbbce91c5cdc8ab5
+          test "$(git hash-object --no-filters .github/fixtures/successor-xdl-export-failure-data.json)" = 1ca4a8fae7d092fd5b9f586327947be86c8be9f9
+          test "$(git hash-object --no-filters .github/scripts/download-diagnosed-successor-xdl.py)" = 907d20106829403210fc981387748d884ffd89a0
+          test "$(git hash-object --no-filters .github/fixtures/basex-carry-supplement-data.json)" = d6757fe6ce4d8f96327d86051c167d65c7befa13
+          test "$(git hash-object --no-filters .github/scripts/inspect-basex-diagnosed-partitions.py)" = 113b92304ac4f529c24080c93687b32ca84eca1e
+          git diff --exit-code
+          git diff --cached --exit-code
+          git ls-files -z | xargs -0 sha256sum > "$CHECK_PREFIX-before.sha256"
+          git ls-files -s > "$CHECK_PREFIX-before-index.txt"
+          printf 'Checkout: %s\nProduction Verilog tree: %s\nParent cleanup head: %s\n' "$GITHUB_SHA" "$(git rev-parse HEAD:verilog)" "$(git rev-parse HEAD^)" | tee "$CHECK_PREFIX-identity.txt"
+
+      - name: Validate hosted parser and partition controls before reading retained design
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/${{ matrix.collector }} --self-test
+
+      - name: Bind original failures and the exact retained successful diagnosis
+        id: evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir "$EVIDENCE_ROOT"
+          python3 .github/scripts/download-successor-retained-map.py '${{ matrix.family }}' "$EVIDENCE_ROOT/original"
+          python3 .github/scripts/download-diagnosed-successor-xdl.py '${{ matrix.family }}' "$EVIDENCE_ROOT/original" "$EVIDENCE_ROOT/diagnosed"
+          python3 - <<'PY'
+          import hashlib, importlib.util, io, json, os, stat, zipfile
+          from pathlib import Path
+          helper_path = Path('.github/scripts/download-successor-retained-map.py')
+          assert hashlib.sha256(helper_path.read_bytes()).hexdigest() == 'e1abab4ac6342b9336a81eb89f26f22db2738154a6709d9a0b150da7a125aeda'
+          spec = importlib.util.spec_from_file_location('retained', helper_path)
+          helper = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(helper)
+          fixture = json.loads(Path('.github/fixtures/basex-carry-supplement-data.json').read_text())
+          run = helper.api(f"actions/runs/{fixture['collectionRun']}")
+          helper.same_fields(run, fixture['collectionRunFields'], 'Prior complete collection run')
+          jobs = helper.api(f"actions/runs/{fixture['collectionRun']}/jobs?per_page=100")
+          assert jobs['total_count'] == len(jobs['jobs']) == fixture['collectionJobsTotal'] == 2
+          actual_jobs = {j['id']: j for j in jobs['jobs']}
+          assert set(actual_jobs) == {j['id'] for j in fixture['collectionJobs']}
+          for expected in fixture['collectionJobs']:
+              helper.same_fields(actual_jobs[expected['id']], expected, 'Every complete prior collection job/step')
+          artifacts = helper.api(f"actions/runs/{fixture['collectionRun']}/artifacts?per_page=100")
+          actual_artifacts = {a['id']: a for a in artifacts['artifacts']}
+          assert artifacts['total_count'] == len(artifacts['artifacts']) == len(actual_artifacts) == fixture['collectionArtifactsTotal'] == 2
+          assert set(actual_artifacts) == {a['id'] for a in fixture['collectionArtifacts']}
+          for expected in fixture['collectionArtifacts']:
+              helper.same_fields(actual_artifacts[expected['id']], expected, 'Every prior collection artifact')
+              assert not actual_artifacts[expected['id']]['expired']
+          artifact = actual_artifacts[fixture['collectionArtifact']['id']]
+          helper.same_fields(artifact, fixture['collectionArtifact'], 'Exact base report artifact')
+          raw, records = helper.verified_zip(artifact)
+          with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+              assert all(stat.S_ISREG(info.external_attr >> 16) for info in archive.infolist())
+          pins = {m['name']: m for m in fixture['members']}
+          assert len(pins) == len(records) == 88
+          assert {p.as_posix() for p, data in records} == set(pins)
+          assert sum(len(data) for p, data in records) == 39814556
+          for path, data in records:
+              pin = pins[path.as_posix()]
+              assert len(data) == pin['bytes'] and hashlib.sha256(data).hexdigest() == pin['sha256']
+          root = Path(os.environ['EVIDENCE_ROOT']) / 'prior-collection'
+          assert not root.exists()
+          root.mkdir()
+          for path, data in records:
+              dest = root / path
+              assert root.resolve() in dest.resolve().parents
+              dest.parent.mkdir(parents=True, exist_ok=True)
+              dest.write_bytes(data)
+          provenance = dict(run=run, jobs=jobs, artifacts=artifacts, all88FilesPinned=True,
+                            reportZipBytes=len(raw), reportZipSha256=hashlib.sha256(raw).hexdigest(),
+                            memberPins=fixture['members'], originalFailuresPreserved=True,
+                            fpgaRegeneration=False, nativeExecuted=False, timingPass=False)
+          Path(os.environ['CHECK_PREFIX'] + '-prior-collection-provenance.json').write_text(json.dumps(provenance, indent=2) + '\n')
+          print('Exact prior successful collection, both jobs/all steps, both artifacts and all88 complete report files verified; no timing result.')
+          PY
+          cp "$EVIDENCE_ROOT/original/download-provenance.json" "$CHECK_PREFIX-original-provenance.json"
+          cp "$EVIDENCE_ROOT/diagnosed/download-provenance.json" "$CHECK_PREFIX-diagnosed-provenance.json"
+          printf '%s  %s\n' '${{ matrix.ncd_sha256 }}' "$EVIDENCE_ROOT/original/input/main_map.ncd" | sha256sum --check
+          printf '%s  %s\n' '${{ matrix.xdl_sha256 }}' "$EVIDENCE_ROOT/diagnosed/exports/export-a.xdl" | sha256sum --check
+          find "$EVIDENCE_ROOT" -type f -print0 | sort -z | xargs -0 sha256sum > "$CHECK_PREFIX-evidence-before.sha256"
+
+      - name: Retain complete seven-boundary carry closure and preserve every original failure
+        run: |
+          set -euo pipefail
+          python3 -u .github/scripts/${{ matrix.collector }} "$EVIDENCE_ROOT/diagnosed/exports/export-a.xdl" "$EVIDENCE_ROOT/prior-collection" "$OUTPUT_ROOT" \
+            2>&1 | tee "$CHECK_PREFIX-inspection-console.txt"
+          printf '%s  %s\n' '${{ matrix.xdl_sha256 }}' "$EVIDENCE_ROOT/diagnosed/exports/export-a.xdl" | sha256sum --check
+
+      - name: Require all tracked bytes, indexes and retained inputs unchanged
+        if: always() && steps.inventory.outcome == 'success'
+        run: |
+          set -euo pipefail
+          git diff --exit-code
+          git diff --cached --exit-code
+          git ls-files -z | xargs -0 sha256sum > "$CHECK_PREFIX-after.sha256"
+          cmp "$CHECK_PREFIX-before.sha256" "$CHECK_PREFIX-after.sha256"
+          sha256sum --check "$CHECK_PREFIX-before.sha256" > "$CHECK_PREFIX-final-manifest-check.txt"
+          git ls-files -s > "$CHECK_PREFIX-after-index.txt"
+          cmp "$CHECK_PREFIX-before-index.txt" "$CHECK_PREFIX-after-index.txt"
+          if [[ '${{ steps.evidence.outcome }}' == success ]]; then
+            find "$EVIDENCE_ROOT" -type f -print0 | sort -z | xargs -0 sha256sum > "$CHECK_PREFIX-evidence-after.sha256"
+            cmp "$CHECK_PREFIX-evidence-before.sha256" "$CHECK_PREFIX-evidence-after.sha256"
+            sha256sum --check "$CHECK_PREFIX-evidence-before.sha256" > "$CHECK_PREFIX-evidence-final-check.txt"
+            printf '%s  %s\n' '${{ matrix.ncd_sha256 }}' "$EVIDENCE_ROOT/original/input/main_map.ncd" | sha256sum --check
+          fi
+
+
+      - name: Retain small read-only reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: successor-carry-supplement-${{ matrix.family }}-reports
+          path: |
+            ${{ runner.temp }}/successor-carry-${{ matrix.family }}-*.txt
+            ${{ runner.temp }}/successor-carry-${{ matrix.family }}-*.json
+            ${{ runner.temp }}/successor-carry-${{ matrix.family }}-*.sha256
+            ${{ runner.temp }}/successor-carry-parts-${{ matrix.family }}/**/*.txt
+            ${{ runner.temp }}/successor-carry-parts-${{ matrix.family }}/**/*.json
+          if-no-files-found: error
+          retention-days: 14

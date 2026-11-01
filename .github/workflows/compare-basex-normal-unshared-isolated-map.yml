@@ -320,7 +320,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git hash-object --no-filters .github/scripts/download-measured-successor-proof.py)" = 7f455983cebc51a6f371e66b74f59a333ece6845
-          test "$(git hash-object --no-filters .github/fixtures/measured-successor-proof-data.json)" = 784ab43f8d80df39bf3d5810836e0e25784feded
+          test "$(git hash-object --no-filters .github/fixtures/measured-successor-proof-data.json)" = bd3283f17658b7883e9a5513cdc19061eaea6456
           test "$(git hash-object --no-filters .github/scripts/prepare-basex-normal-unshared-proof.py)" = b9e4c2bb6ce09edc27883477e58c325c2ee3e166
           test "$(git hash-object --no-filters .github/scripts/run-basex-normal-unshared-proof.sh)" = 83f0ae470274dddd6c36e5b1dfe465f0043c79fb
           test "$(git hash-object --no-filters .github/scripts/inspect-basex-normal-unshared-map.py)" = 2ac4e2c16c86b66271bd3a5209ca0244ff42f56b

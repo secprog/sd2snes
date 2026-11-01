@@ -317,7 +317,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git hash-object --no-filters .github/scripts/download-measured-successor-proof.py)" = 7f455983cebc51a6f371e66b74f59a333ece6845
-          test "$(git hash-object --no-filters .github/fixtures/measured-successor-proof-data.json)" = 784ab43f8d80df39bf3d5810836e0e25784feded
+          test "$(git hash-object --no-filters .github/fixtures/measured-successor-proof-data.json)" = bd3283f17658b7883e9a5513cdc19061eaea6456
           test "$(git hash-object --no-filters .github/scripts/prepare-dsp-stack-parallel-address-proof.py)" = 5539d45bb08518eb2d86e6826db02200dafbd681
           test "$(git hash-object --no-filters .github/workflows/prove-dsp-stack-parallel-address.yml)" = 4ae10399bf1c95d381bbba28f8373a55ec4884c8
           test "$(git hash-object --no-filters .github/scripts/inspect-dsp-parallel-stack-map.py)" = 4d766f0cf16948051b62bd93ee6a5f2238e61a98

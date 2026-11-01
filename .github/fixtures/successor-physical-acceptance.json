@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 1,
+  "scope": "Root acceptance of bounded independently reviewed physical evidence for input preparation only",
+  "productionVerilogTree": "01ce8b6b4509a5a72e0ad739e06bf19e548a2fc1",
+  "collection": {
+    "run": 41323541435,
+    "head": "7715718873706c6a55ab77a5aaa76becb8c2894f",
+    "outcome": "success",
+    "sourceEntries": 2439
+  },
+  "references": [
+    {
+      "file": "diagnosed-collection-integrity-independent-review.json",
+      "sha256": "d9872213495048c581037904a3f6a51feacc909a86d87520d47b18bcae3bc44d"
+    },
+    {
+      "file": "diagnosed-collection-console-root-review.json",
+      "sha256": "344865c615295a48c625a4c712321e0b8ae0c7b77a5a4f778a9500b4d425ee22"
+    }
+  ],
+  "families": {
+    "dsp": {
+      "physicalReviewComplete": true,
+      "nativeInputPreparationEligible": true,
+      "collectionJob": 124898621413,
+      "mappedNcdSha256": "4f7b507e401b716cc16da5c89f2c7bfe18bdb6b33bc1dd76db36e43f7b961113",
+      "candidateSha256": "3a0af6c79f2e0d775414503780c0d6d12f89bdfd119fedcf9d382df723c9c357",
+      "proofRun": 41246577034,
+      "review": {
+        "file": "dsp-diagnosed-collection-independent-physical-review.json",
+        "bytes": 11476880,
+        "sha256": "768acb7a2fdc3bc76b3e2a0b94ccd7b40a99ac6dd07dd1136c2d2485908e6568"
+      },
+      "completeRawInstances": 541,
+      "completeRawNets": 2003,
+      "stackBits": 176,
+      "statusBits": 9,
+      "completeStackCeLoadLists": 32,
+      "missingRequiredRecords": [],
+      "reason": "All declared new physical collection gaps closed; exact candidate component proof and actual mapped records support a first controlled native preparation, not a timing prediction."
+    },
+    "basex": {
+      "physicalReviewComplete": false,
+      "nativeInputPreparationEligible": false,
+      "collectionJob": 124898621295,
+      "mappedNcdSha256": "d7491c9fa35596d64c3ab6d6820b3c36f04769ae469467524cc17258f453dc5f",
+      "candidateSha256": "3495a360ab7c4f881bda3819decfe495d2de601e389ba378c14b6c9d346c524d",
+      "proofRun": 41246306208,
+      "reason": "Seven observed incidental CIN predecessor chains need exact supplemental raw collection/review before root native acceptance; initial complete collection and its old failures are preserved.",
+      "missingSourceComponents": [
+        "snes_cheat/hook_enable_count<20>",
+        "snes_dac/co<0><36>",
+        "snes_dac/co<0><4>",
+        "snes_dac/co<1><20>",
+        "snes_dac/vol_reg<0>",
+        "snes_rtc/dow_year_tmp_addsub0001<0>",
+        "snes_rtc/tick_cnt<26>"
+      ]
+    }
+  },
+  "conditions": [
+    "All original proof/source/IP/image/MAC/XST/MAP/PCF and historical failure gates remain mandatory.",
+    "First validate actual retained-input command plan on GitHub; independent review required before native execution.",
+    "Original common.mk and native command checker remain unchanged; no generation, repeated rejected candidate, seed sweep or timing waiver.",
+    "Native acceptance requires successful native exits, fully routed PAR score/setup/hold/component zero and TRACE setup/hold zero."
+  ],
+  "limitations": {
+    "wholeMappedSequentialEquivalenceProved": false,
+    "retimingNeutralityProved": false,
+    "historicalXdlMismatchCauseKnown": false,
+    "nativeTimingAccepted": false,
+    "productionPromotionAuthorizedByThisReceipt": false,
+    "integrationPassed": false,
+    "hardwareQualified": false,
+    "allThreePackagesComplete": false
+  }
+}

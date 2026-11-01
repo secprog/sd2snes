@@ -1,0 +1,187 @@
+{
+  "families": {
+    "basex": {
+      "candidatePath": "verilog/sd2snes_base/address.v",
+      "core": "basex",
+      "inputs": [
+        {
+          "bytes": 38975,
+          "path": "verilog/sd2snes_base/address.v",
+          "sha256": "3495a360ab7c4f881bda3819decfe495d2de601e389ba378c14b6c9d346c524d"
+        },
+        {
+          "path": "verilog/sd2snes_basex/main_map.ncd",
+          "sha256": "d7491c9fa35596d64c3ab6d6820b3c36f04769ae469467524cc17258f453dc5f"
+        },
+        {
+          "bytes": 173323,
+          "path": "verilog/sd2snes_basex/main.pcf",
+          "sha256": "eee9bbe6d4a47794f79ab5e9aca8dba8d96d7e6e7d73804e9762dec81cb60f13"
+        },
+        {
+          "path": "verilog/sd2snes_base/ip/mk2/build/dac_buf.ngc",
+          "sha256": "7f6fb798fe3a2c2583ef4101095eb6c7579f45f6c04af45e57d1e6f3239ca649"
+        },
+        {
+          "path": "verilog/sd2snes_base/ip/mk2/build/msu_databuf.ngc",
+          "sha256": "dbd9000d20b94bc187e059092dde8b75dda3de90e9b061d6f778de8ead1f8970"
+        },
+        {
+          "path": "verilog/sd2snes_base/ip/mk2/build/snescmd_buf.ngc",
+          "sha256": "75a37486a5a6ed2e263763c97ec9e9672ab50c93d05b70da6c1bda0a1761f34a"
+        }
+      ],
+      "par": "/opt/Xilinx/14.7/ISE_DS/ISE/bin/lin64/par -w -ol high -xe c -t 46 main_map.ncd main.ncd main.pcf",
+      "seed": 46,
+      "trace": "/opt/Xilinx/14.7/ISE_DS/ISE/bin/lin64/trce -v 10 -n 10 -u 10 -fastpaths main.ncd main.pcf -o main.twr"
+    },
+    "dsp": {
+      "candidatePath": "verilog/sd2snes_dsp/upd77c25.v",
+      "core": "dspx",
+      "inputs": [
+        {
+          "bytes": 55901,
+          "path": "verilog/sd2snes_dsp/upd77c25.v",
+          "sha256": "3a0af6c79f2e0d775414503780c0d6d12f89bdfd119fedcf9d382df723c9c357"
+        },
+        {
+          "path": "verilog/sd2snes_dspx/main_map.ncd",
+          "sha256": "4f7b507e401b716cc16da5c89f2c7bfe18bdb6b33bc1dd76db36e43f7b961113"
+        },
+        {
+          "bytes": 148282,
+          "path": "verilog/sd2snes_dspx/main.pcf",
+          "sha256": "d5754ef5c27a9f987bfb44eae3006fe781c786c29bb86c2ef2b2ea7915754f01"
+        },
+        {
+          "path": "verilog/sd2snes_dsp/ip/mk2/build/dac_buf.ngc",
+          "sha256": "63f7f37b565bbced3d4d9db84a3a7938f6487225d8610bbcf18a6fa81597df12"
+        },
+        {
+          "path": "verilog/sd2snes_dsp/ip/mk2/build/msu_databuf.ngc",
+          "sha256": "491cbfff42c7d2957a65c41023d1782d0fd1d9e6ca7abc2764a8c87965fcc3d6"
+        },
+        {
+          "path": "verilog/sd2snes_dsp/ip/mk2/build/snescmd_buf.ngc",
+          "sha256": "86e98180586d42e2fccf01a030eda81de6c13b4764c7475786d612b7212bfab1"
+        },
+        {
+          "path": "verilog/sd2snes_dsp/ip/mk2/build/upd77c25_datram.ngc",
+          "sha256": "ac6c77320e13d1b4294550c53c0f9356e37331a5b7b2f03a377543304fba9d79"
+        },
+        {
+          "path": "verilog/sd2snes_dsp/ip/mk2/build/upd77c25_datrom.ngc",
+          "sha256": "7c4eccffcbcf702bb24bac9382a0cc84a71243a08345469a817ccdcec12141ad"
+        },
+        {
+          "path": "verilog/sd2snes_dsp/ip/mk2/build/upd77c25_pgmrom.ngc",
+          "sha256": "5e8dfad555b01c399fcf6c17f9bab9078b5996abd388071b272ab5d3a9c97193"
+        }
+      ],
+      "par": "/opt/Xilinx/14.7/ISE_DS/ISE/bin/lin64/par -w -ol high -xe c -t 68 main_map.ncd main.ncd main.pcf",
+      "seed": 68,
+      "trace": "/opt/Xilinx/14.7/ISE_DS/ISE/bin/lin64/trce -v 10 -n 10 -u 10 -fastpaths main.ncd main.pcf -o main.twr"
+    }
+  },
+  "image": "sha256:5e3bbb00649997abca8843b1d82d8529eda99a0f2868d37ad9777e0ad5fd50e8",
+  "mac": "08:00:27:68:c9:35",
+  "productionVerilogTree": "01ce8b6b4509a5a72e0ad739e06bf19e548a2fc1",
+  "schemaVersion": 1,
+  "sourcePins": [
+    {
+      "bytes": 13295,
+      "path": "verilog/common.mk",
+      "sha256": "a7d9bafa7c3e0694069045bce98446818740381ea52daa689dff6d94e354d92e"
+    },
+    {
+      "bytes": 753,
+      "path": "verilog/settings.mk",
+      "sha256": "022631cd117719d103800983321cf7f0a87d2cb2b744e8c14033dcf0e8df56b0"
+    },
+    {
+      "bytes": 579,
+      "path": "verilog/sd2snes_basex/Makefile",
+      "sha256": "3d83a532e164c398c9e5e3dfc39604ca0f40026f0258f751484162c1517a038f"
+    },
+    {
+      "bytes": 602,
+      "path": "verilog/sd2snes_dspx/Makefile",
+      "sha256": "6abb8a4b389816d418a796e2818fe6e74c1723f5984788285b8cf60bbb848b60"
+    },
+    {
+      "bytes": 53833,
+      "path": "verilog/sd2snes_basex/sd2snes_basex.xise",
+      "sha256": "5f4b42625c1d0c43cc6362a5f744d36dde52385161e151429990af992eae5e89"
+    },
+    {
+      "bytes": 44321,
+      "path": "verilog/sd2snes_dspx/sd2snes_dspx.xise",
+      "sha256": "8eb8adbf09b8b14c619fd87fc761a0c491b727c7c26c522930368ebe93d77934"
+    },
+    {
+      "bytes": 14478,
+      "path": "verilog/sd2snes_base/main.ucf",
+      "sha256": "bac1b6940dc5a948160b24aaa152e2d95d13e8ca2ae7a94163d1a1b4ae28b55e"
+    },
+    {
+      "bytes": 15011,
+      "path": "verilog/sd2snes_dsp/main.ucf",
+      "sha256": "83513d8c25357d488d171f36082ad21162271f8287a2791564018037cee5688c"
+    },
+    {
+      "bytes": 470,
+      "path": "verilog/xilinx_scripts/xgenparcmd.tcl",
+      "sha256": "a436df9059f5a22d7e4f0e9a1d3049a6b92921d056ce6f3001c7141dd177f474"
+    },
+    {
+      "bytes": 3850,
+      "path": "verilog/xilinx_scripts/xgetparopts.tcl",
+      "sha256": "bc65f84a96d8b91b86fcf8bfe368ec7b2b000b7e94264bd85eb0e6a41e77f715"
+    },
+    {
+      "bytes": 232,
+      "path": "verilog/xilinx_scripts/xcommon.tcl",
+      "sha256": "736f65f1c00d1d9d89255240e8bbfffb9d68d2dedd3da83abf9fd2f296ff151f"
+    },
+    {
+      "bytes": 4226,
+      "path": ".github/scripts/check-native-route-commands.py",
+      "sha256": "ae5a288be4c95161155cdc247e6fb6328d404aa85521681f04c4c61e31b0dada"
+    },
+    {
+      "bytes": 710,
+      "path": ".github/scripts/report-activity.sh",
+      "sha256": "97d70ab3d31eeb855f4b6e17eaf8aa66c5ce0d019edfb188f699e2f5b708a0ba"
+    },
+    {
+      "bytes": 4815,
+      "path": ".github/actions/prepare-build-image/action.yml",
+      "sha256": "ab1d8a44ecaa5491b05cbdc9ced5b2ed221e961a19a1ba13553d142587cb646c"
+    },
+    {
+      "bytes": 1539,
+      "path": ".github/docker/mk2.Dockerfile",
+      "sha256": "d493bcb125a70050a865f6001dec22c460810abe251f41e37a321f7a7e9d0279"
+    },
+    {
+      "bytes": 965,
+      "path": ".github/docker/trim-ise.sh",
+      "sha256": "308d504d92a67e6cc4826fd25c992118a7d180b3f4a151d9ad825b315efd488e"
+    },
+    {
+      "bytes": 8053,
+      "path": ".github/scripts/download-successor-retained-map.py",
+      "sha256": "e1abab4ac6342b9336a81eb89f26f22db2738154a6709d9a0b150da7a125aeda"
+    },
+    {
+      "bytes": 6645,
+      "path": ".github/scripts/download-measured-successor-proof.py",
+      "sha256": "906d4b91d1ad8aad72df02e496036affa48c9de9342ad7cb2cb489f61cc9f65c"
+    },
+    {
+      "bytes": 51734,
+      "path": ".github/fixtures/measured-successor-proof-data.json",
+      "sha256": "e946d921debd1150aa06c716d97e8d9406a2fc3dcb81ef9bfde45599456a36f2"
+    }
+  ]
+}

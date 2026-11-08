@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "status": "accepted-for-packaging",
+  "boot": {
+    "bytes": 2304,
+    "crc32": "8113b4d8",
+    "sha256": "f767b8e7e510a255f81328c89dba6e0c996b370e1bc86aebb8584a7da47a5bba"
+  },
+  "license": {
+    "bytes": 1076,
+    "sha256": "625e39d02285f37b6b89a60ec6fabd8afc780a052b179442ce0676eed299858a"
+  },
+  "evidence": {
+    "repository": "LIJI32/SameBoy",
+    "source_commit": "208ba4afabffab9edde416f2dbb8ae459e34adb8",
+    "run_id": "42504433661",
+    "artifact_id": "13625819878",
+    "artifact_sha256": "62e176334043203a0baf5672c27836c5d412d89d05501b93bd502dd17efb7a2f",
+    "root_receipt_sha256": "87e4248e66ba72660b1c8df83cffe358ab9a32b88c417405f5bc81cbcfba1ab0"
+  }
+}

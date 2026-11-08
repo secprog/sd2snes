@@ -10,6 +10,10 @@ on:
         type: choice
         options: [all, software, menus, fpga]
         default: all
+      ignore_timing:
+        description: Build and upload timing-unverified packages; native tool failures still fail
+        type: boolean
+        default: false
       fpga_run_id:
         description: Run containing fpga-mk3 (required for software checks)
         type: string
@@ -32,9 +36,12 @@ permissions:
   contents: read
   actions: read
 
+env:
+  IGNORE_TIMING: ${{ github.event_name == 'workflow_dispatch' && inputs.ignore_timing && '1' || '0' }}
+
 concurrency:
-  group: firmware-${{ github.ref }}-${{ inputs.build || 'all' }}-${{ inputs.release_target || 'all' }}-${{ inputs.build == 'fpga' && github.run_id || inputs.build == 'software' && github.sha || 'latest' }}
-  cancel-in-progress: true
+  group: firmware-${{ github.ref }}-${{ inputs.build || 'all' }}-${{ inputs.release_target || 'all' }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'latest' }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 jobs:
   package-contract:
@@ -141,7 +148,7 @@ jobs:
           bash .github/scripts/report-activity.sh "$container_name" &
           activity_pid=$!
           trap 'kill "$activity_pid" 2>/dev/null || true; wait "$activity_pid" 2>/dev/null || true' EXIT
-          docker run "${args[@]}" --env ISE_CTABLE --entrypoint /bin/bash "sd2snes-ci:$BOARD" \
+          docker run "${args[@]}" --env ISE_CTABLE --env IGNORE_TIMING --entrypoint /bin/bash "sd2snes-ci:$BOARD" \
             .github/scripts/build.sh "$BOARD" "$CORE" 2>&1 | tee "$RUNNER_TEMP/fpga-build.log"
 
       - name: Collect FPGA image
@@ -234,6 +241,36 @@ jobs:
           docker run --rm --user 0:0 --volume "$GITHUB_WORKSPACE:/work" --workdir /work \
             sd2snes-ci:software /bin/bash .github/scripts/build.sh menus
 
+      - name: Provision the accepted SameBoy boot and license
+        id: bootprovision
+        run: |
+          set -euo pipefail
+          # The fresh player record is owned by the root menu-build container.
+          # Provision in that same image/user context; forward no credentials.
+          docker run --rm --user 0:0 --volume "$GITHUB_WORKSPACE:/work" \
+            --volume "$RUNNER_TEMP:/reports" --workdir /work \
+            --env GITHUB_ACTIONS=true --env PYTHONDONTWRITEBYTECODE=1 \
+            --entrypoint python3 sd2snes-ci:software \
+            .github/scripts/provision-sameboy-boot.py /reports/sameboy-provision
+          test ! -e "$RUNNER_TEMP/sameboy-provision/provision-failure.json"
+          python3 - "$RUNNER_TEMP/sameboy-provision/provision-result.json" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          if json.loads(Path(sys.argv[1]).read_text())['provisioned'] is not True:
+              raise SystemExit('SameBoy provisioning did not complete')
+          PY
+
+      - name: Preserve SameBoy boot provisioning evidence
+        if: always() && steps.bootprovision.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sameboy-boot-provision-reports
+          path: ${{ runner.temp }}/sameboy-provision/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+
       - uses: actions/upload-artifact@v4
         with:
           name: menus
@@ -312,9 +349,11 @@ jobs:
           target: mk2
       - name: Compile only the mini FPGA image
         run: |
+          set -euo pipefail
+          case "$IGNORE_TIMING" in 0|1) ;; *) exit 2 ;; esac
           docker run --rm --user 0:0 --mac-address 08:00:27:68:c9:35 \
-            --volume "$GITHUB_WORKSPACE:/work" --workdir /work --entrypoint /bin/bash \
-            sd2snes-ci:mk2 -c 'make host-tools && make -C verilog/sd2snes_mini mk2 HOST=LINUX XILINX_ENV= IGNORE_TIMING=0'
+            --volume "$GITHUB_WORKSPACE:/work" --workdir /work --env IGNORE_TIMING --entrypoint /bin/bash \
+            sd2snes-ci:mk2 -c 'make host-tools && make -C verilog/sd2snes_mini mk2 HOST=LINUX XILINX_ENV= IGNORE_TIMING="$IGNORE_TIMING"'
       - uses: actions/upload-artifact@v4
         with:
           name: fpga-mk2-mini
@@ -470,11 +509,58 @@ jobs:
           docker run --rm --user 0:0 --volume "$GITHUB_WORKSPACE:/work" --workdir /work \
             sd2snes-ci:software /bin/bash .github/scripts/build.sh firmware "$BOARD"
 
+      - name: Record package identity and timing qualification
+        env:
+          BOARD: ${{ matrix.board }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import shutil
+          board = os.environ['BOARD']
+          policy = os.environ['IGNORE_TIMING']
+          if board not in ('mk2', 'mk3', 'mk3-stm32') or policy not in ('0', '1'):
+              raise SystemExit('Invalid board or timing policy')
+          packages = list(Path('release').glob('v*/sd2snes_firmware_v*.zip'))
+          if len(packages) != 1 or not packages[0].is_file() or packages[0].is_symlink():
+              raise SystemExit('Expected exactly one regular board package')
+          package = packages[0]
+          body = package.read_bytes()
+          if not body:
+              raise SystemExit('Empty board package')
+          receipt = {
+              'schema': 'sd2snes-package-build-qualification-v1',
+              'board': board, 'sourceCommit': os.environ['GITHUB_SHA'],
+              'runId': os.environ['GITHUB_RUN_ID'], 'runAttempt': os.environ['GITHUB_RUN_ATTEMPT'],
+              'ignoreTiming': policy == '1', 'timingThresholdsRequired': policy == '0',
+              'timingStatus': 'unverified-user-waiver' if policy == '1' else 'normal-build-gates-required',
+              'nativeToolFailuresIgnored': False, 'buildAndPackageChecksPassed': True,
+              'hardwareQualified': False,
+              'package': {'name': package.name, 'bytes': len(body), 'sha256': hashlib.sha256(body).hexdigest()},
+          }
+          # Container-created release directories are root-owned. Copy the exact
+          # package to a fresh runner-owned upload directory before writing its receipt.
+          upload = Path(os.environ['RUNNER_TEMP']) / ('package-' + board)
+          upload.mkdir()
+          shutil.copyfile(package, upload / package.name)
+          if (upload / package.name).read_bytes() != body:
+              raise SystemExit('Upload copy differs from checked package')
+          (upload / 'build-qualification.json').write_text(json.dumps(receipt, indent=2, sort_keys=True) + '\n')
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+              summary.write(board + ': package built and checked at ' + os.environ['GITHUB_SHA'] + '.\n\n')
+              summary.write(('Timing thresholds were explicitly ignored. This package is timing-unverified. '
+                             if policy == '1' else 'Normal build timing gates were required. ')
+                            + 'Native tool failures were not ignored. Hardware qualification was not performed.\n')
+          PY
+
       - name: Upload board firmware package
         uses: actions/upload-artifact@v4
         with:
-          name: sd2snes-firmware-${{ matrix.board }}-${{ github.sha }}
-          path: release/v*/sd2snes_firmware_v*.zip
+          name: sd2snes-firmware-${{ matrix.board }}-${{ github.sha }}${{ env.IGNORE_TIMING == '1' && '-timing-unverified' || '' }}
+          path: ${{ runner.temp }}/package-${{ matrix.board }}/
           if-no-files-found: error
           retention-days: 14
 

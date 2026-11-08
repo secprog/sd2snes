@@ -3,6 +3,14 @@ set -euo pipefail
 
 cd "$(dirname "$0")/../.."
 
+# Explicit release builds may opt out of timing thresholds. Tool failures
+# still propagate from the original make recipes in either mode.
+ignore_timing=${IGNORE_TIMING:-0}
+case "$ignore_timing" in
+  0|1) ;;
+  *) echo "IGNORE_TIMING must be exactly 0 or 1" >&2; exit 2 ;;
+esac
+
 case "${1:-}" in
   mk2)
     # The container exports ISE's environment without the removed EDK/PlanAhead.
@@ -11,7 +19,7 @@ case "${1:-}" in
       [[ "$2" =~ ^[a-z0-9_]+$ ]]
       target="verilog/sd2snes_$2/fpga_$2.bit"
     fi
-    make -j2 "$target" HOST=LINUX XILINX_ENV= IGNORE_TIMING=0
+    make -j2 "$target" HOST=LINUX XILINX_ENV= IGNORE_TIMING="$ignore_timing"
     ;;
   mk3)
     target=fpga-mk3
@@ -19,7 +27,7 @@ case "${1:-}" in
       [[ "$2" =~ ^[a-z0-9_]+$ ]]
       target="verilog/sd2snes_$2/fpga_$2.bi3"
     fi
-    make -j2 "$target" HOST=LINUX INTEL_BIN=/opt/quartus_lite/quartus/bin IGNORE_TIMING=0
+    make -j2 "$target" HOST=LINUX INTEL_BIN=/opt/quartus_lite/quartus/bin IGNORE_TIMING="$ignore_timing"
     ;;
   firmware)
     case "${2:-all}" in

@@ -133,7 +133,7 @@
   "name_59": "Ficheiros de tipos de letra",
   "text_59": "Muda as letras do menu escolhendo um ficheiro |.sfn| na lista, como um tema: só as letras mudam. Cria o teu no |Font Editor| do site ou escolhe um da galeria de tipos de letra. Em {browser}, {restorefont} repõe o tipo de letra original.",
   "name_60": "Atari 2600 no Mk.II",
-  "text_60": "Os jogos Atari 2600 também funcionam no |sd2snes Mk.II|, num núcleo próprio. Nas duas placas, [L] muda a dificuldade (Fácil, Normal, Difícil), [R] pausa, [X] alterna cor/preto e branco e [Y] muda a paleta, com o nome no ecrã. Atuam ao soltar a tecla e apenas quando premida sozinha; as combinações não mudam definições.",
+  "text_60": "Os jogos Atari 2600 também funcionam no |sd2snes Mk.II|, num núcleo próprio. Nas duas placas, [L] muda a dificuldade (Fácil, Normal, Difícil), [R] pausa, [X] alterna cor/preto e branco e [Y] muda a paleta, com o nome no ecrã. Atuam ao soltar a tecla e apenas quando premida sozinha. As combinações não mudam definições.",
   "name_61": "Limpar PPU no arranque",
   "text_61": "Algumas ROMs modificadas deixam restos do menu na memória de vídeo, causando falhas gráficas na consola. O |sd2snes+| limpa essa memória antes de cada jogo.",
   "name_62": "Compatibilidade do bus",

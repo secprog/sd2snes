@@ -36,7 +36,9 @@
 #include "snes.h"      /* the real src/snes.h: SNES_BUTTON_*, mcu_status_t */
 
 extern cfg_t CFG;
-extern const cfg_t CFG_DEFAULT;
+void cfg_defaults(cfg_t *c);
+cfg_t CFG_DEFAULT_img;
+#define CFG_DEFAULT CFG_DEFAULT_img
 
 /* cfg.c declares this; nothing it does touches it, but the definition keeps
    the link honest if that ever changes. */
@@ -443,6 +445,10 @@ static void cfg_make_allchanged(void) {
   CFG.gb_rotate_buttons = 1;                     /* SNES B plays the Game Boy's A */
   CFG.stop_music_game_info = 1;                  /* the menu music stops on the game info screen */
   memcpy(CFG.lock_code, "\x12\x34\x56\x70", 4);   /* a change lock of 7 buttons: BYsSudl */
+  strcpy((char *)CFG.font_name, "/fonts/round.sfn"); /* a font picked in the browser */
+  CFG.theme_use_font = 0;                            /* the box's answers, all off */
+  CFG.theme_use_sound = 0;
+  CFG.theme_use_music = 0;
 }
 
 /* ---- the alternating-booleans config ------------------------------------
@@ -631,6 +637,7 @@ static int mode_roundtrip(const char *in, const char *out) {
 }
 
 int main(int argc, char **argv) {
+  cfg_defaults(&CFG_DEFAULT_img);
   const char *mode;
 
   if (argc < 2) {

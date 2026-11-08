@@ -6,6 +6,7 @@
 #include "spi.h"
 #include "fpga_spi.h"
 #include "cli.h"
+#include "theme.h"
 #include "fileops.h"
 #include "msu1.h"
 #include "snes.h"
@@ -608,8 +609,15 @@ static uint8_t menusfx_paused = 0;         /* menu_music_pause: a seek must not 
 #define MENUQOA_RESUME   0x8000UL   /* ... until the decoder is this far ahead again */
 #define MENUQOA_STEP     80         /* sample frames per decode step: 320 B of stack */
 #define MENUQOA_TICK_B   (176400UL / MS_TO_TICKS(1000))    /* DAC bytes per timer tick */
-#define MENUQOA_TICK_LO  (MENUQOA_TICK_B * 63 / 64)         /* ... give or take 1.6 %, in case */
-#define MENUQOA_TICK_HI  (MENUQOA_TICK_B * 65 / 64)         /*     the DAC clock is not exact */
+#define MENUQOA_TICK_HI  (MENUQOA_TICK_B * 65 / 64)         /* ... plus 1.6 %, in case the DAC clock is not exact */
+/* The pump knows the DAC's position by one bit, DAC_READ_MSB (the half of dac_buf it reads),
+   and a pump later than a half-buffer (~5.8 ms) used to miss two flips at a time: the count
+   fell behind the fetcher (~0.5 s in 95 s while an NSF rendered), and at the end of a run the
+   fetcher played silence until the late count reached the re-kick.  The bit gives the parity
+   of the flips and the cycle counter the time since the last pump, which together give the
+   count.  (Not the timer: on the LPC175x a tick is 10.4 ms, the SysTick reload is the 100 MHz
+   TENMS calibration.) */
+#define MENUQOA_HALF_CYC ((uint32_t)((uint64_t)CONFIG_CPU_FREQUENCY * (MSU_DAC_BUFSIZE / 2) / 176400))
 #define MENUQOA_STALL    1          /* menuqoa_hold: the decoder fell behind the fetcher */
 #define MENUQOA_PAUSED   2          /* menuqoa_hold: menu_music_pause */
 #define MENUQOA_START    4          /* menuqoa_hold: opened, the lead-in not decoded yet */
@@ -625,6 +633,7 @@ static uint32_t  menuqoa_pos;       /* run byte the last kick started the fetche
 static uint32_t  menuqoa_halves;    /* DAC half-buffers (1 KB) played since the last kick */
 static tick_t    menuqoa_t0;        /* tick of the last kick, pushed forward by every hold */
 static tick_t    menuqoa_held_at;   /* tick the current hold began */
+static uint32_t  menuqoa_cyc;       /* cycle count of the last pump, or of the DAC starting again */
 /* An endless generator (the NSF player, nsfhost.c) plays through the same fetcher with the
    area as a RING: menu_music_work has gen fill it ahead of the DAC, wrapping onto bytes the
    DAC already played, and the end-of-run re-kick takes the fetcher back to the top once a
@@ -697,6 +706,25 @@ typedef struct {
 static menusfx_slot_t menusfx_slots[MENU_SFX_SLOTS];  /* .bss: zero-init = all free */
 static uint32_t menusfx_next = SRAM_MENU_SFX_ADDR;    /* bump allocator: next free byte */
 
+/* Keep only L of a body whose channels are identical: the fetcher repeats it on R (sfxdma.v,
+   mono bodies), so the effect costs half the shared window and sounds exactly the same.
+   0 = L != R somewhere, or a read failed: the caller falls back to the stereo path. */
+static __attribute__((noinline)) int menusfx_stream_mono(FIL *fp, uint32_t addr, uint32_t size) {
+  uint16_t *p = (uint16_t*)file_buf;
+  while(size) {
+    UINT br = 0, i;
+    if(f_read(fp, file_buf, size < 512 ? size : 512, &br) != FR_OK || !br || (br & 3)) return 0;
+    for(i = 0; i < br / 4; i++) {
+      if(p[2 * i] != p[2 * i + 1]) return 0;
+      p[i] = p[2 * i];
+    }
+    sram_writeblock(file_buf, addr, br / 2);
+    addr += br / 2;
+    size -= br;
+  }
+  return 1;
+}
+
 /* Stream one effect's PCM body (offset 8..EOF) into its PSRAM slot, once.
    Bounded + fail-safe (never hangs the MCU): any error marks the slot silent.
    The FIL is on the stack: it is open only inside this call, which runs from the idle
@@ -708,14 +736,16 @@ static __attribute__((noinline)) void menusfx_preload(menusfx_slot_t *s) {
   UINT br = 0;
   uint8_t magic[4];
   DWORD fsz;
-  uint32_t need;
+  uint32_t need, start = 0, region = 0;
   s->ready = -1;                                    /* pessimistic until fully streamed */
   ff_sd_offload = 0; sd_offload = 0;                /* the magic read below is a normal RAM read */
-  if(f_open(&menusfx_pre_fil, (const TCHAR*)s->name, FA_READ) != FR_OK) return;
+  /* the chosen theme's own effect first; everything below reads the same from either */
+  if(theme_sfx_open(&menusfx_pre_fil, s->name, &region)) start = menusfx_pre_fil.fptr;
+  else if(f_open(&menusfx_pre_fil, (const TCHAR*)s->name, FA_READ) != FR_OK) return;
   if(f_read(&menusfx_pre_fil, magic, 4, &br) != FR_OK || br != 4 || memcmp(magic, "MSU1", 4)) {
     f_close(&menusfx_pre_fil); return;              /* not a valid MSU-1 PCM */
   }
-  fsz = f_size(&menusfx_pre_fil);
+  fsz = region ? region : f_size(&menusfx_pre_fil);
   if(fsz <= MSU_PCM_OFFSET_WAVEDATA) {
     f_close(&menusfx_pre_fil); return;              /* header only, no body */
   }
@@ -724,7 +754,22 @@ static __attribute__((noinline)) void menusfx_preload(menusfx_slot_t *s) {
      NEXT effect still starts on a frame boundary.  Written as "space left" rather than
      "end >= next + need" so it cannot overflow.  No room -> ready stays -1, i.e. this
      effect is silent and the menu is otherwise unaffected (same fail-safe as before,
-     only now it takes a genuinely oversized set of effects to hit it). */
+     only now it takes a genuinely oversized set of effects to hit it).  A body with L == R
+     on a core that plays mono bodies takes half of that; bytelen then carries the flag
+     fpga_sfx_play wants, so menu_sfx_play needs no second field. */
+  need = ((s->bytelen >> 1) + 3) & ~(uint32_t)3;
+  if(!(s->bytelen & 3) && (fpga_sfx_status() & FPGA_SFX_ST_MONO)
+     && need <= (SRAM_MENU_SFX_ADDR + MENU_SFX_WINDOW) - menusfx_next) {
+    f_lseek(&menusfx_pre_fil, start + MSU_PCM_OFFSET_WAVEDATA);
+    if(menusfx_stream_mono(&menusfx_pre_fil, menusfx_next, s->bytelen)) {
+      f_close(&menusfx_pre_fil);
+      s->base = menusfx_next;
+      s->bytelen = (s->bytelen >> 1) | FPGA_SFX_MONO;
+      menusfx_next += need;
+      s->ready = 1;
+      return;
+    }
+  }
   need = (s->bytelen + 3) & ~(uint32_t)3;
   if(need > (SRAM_MENU_SFX_ADDR + MENU_SFX_WINDOW) - menusfx_next) {
     f_close(&menusfx_pre_fil); return;
@@ -738,7 +783,7 @@ static __attribute__((noinline)) void menusfx_preload(menusfx_slot_t *s) {
      freeze on the first blip.  sram_writeblock uses MCU writes that interleave in free
      slots (never taking ROM_ADDR from the live SNES), exactly like the cover load that
      already streams to PSRAM on every browse without ever freezing. */
-  f_lseek(&menusfx_pre_fil, MSU_PCM_OFFSET_WAVEDATA);
+  f_lseek(&menusfx_pre_fil, start + MSU_PCM_OFFSET_WAVEDATA);
   if(!psram_stream(&menusfx_pre_fil, s->base, s->bytelen, 0)) {
     f_close(&menusfx_pre_fil); return;              /* read error -> stay silent */
   }
@@ -850,11 +895,39 @@ static uint32_t menuqoa_fetch_max(void) {
   return menuqoa_pos + RUNB(MSU_DAC_BUFSIZE + (played > counted ? played : counted));
 }
 
+/* Bring menuqoa_halves up to date with the DAC: the half-buffers played since the last
+   count, from the cycle counter, with the parity fixed by the flip bit of the status word
+   (floor(time / half) or one more, whichever has the parity).  Held, the DAC stands still:
+   at most the flip it was in. */
+static void menuqoa_count(void) {
+  uint16_t now = fpga_status();
+  uint32_t cyc = getcycles();
+  uint32_t flip = ((now ^ menusfx_fpga_prev) & MSU_FPGA_STATUS_DAC_READ_MSB) ? 1 : 0;
+  if(menuqoa_hold) menuqoa_halves += flip;
+  else {
+    uint32_t n = (cyc - menuqoa_cyc) / MENUQOA_HALF_CYC;
+    menuqoa_halves += n + ((n ^ flip) & 1);
+  }
+  menuqoa_cyc = cyc;
+  menusfx_fpga_prev = now;
+}
+
 static void menuqoa_hold_set(uint8_t bit, int on) {
   uint8_t was = menuqoa_hold;
   if(on) menuqoa_hold |= bit; else menuqoa_hold &= ~bit;
-  if(!was && menuqoa_hold) { dac_pause(); menuqoa_held_at = getticks(); }
-  else if(was && !menuqoa_hold) { menuqoa_t0 += getticks() - menuqoa_held_at; dac_play(); }
+  if(!was && menuqoa_hold) {
+    /* count up to the pause first: the menu loop pumps every ~20 ms (3 half-buffers),
+       and the halves between the last pump and here were lost before, so every
+       pause/resume left the DAC's position behind by that much */
+    menuqoa_count();
+    dac_pause();
+    menuqoa_held_at = getticks();
+  }
+  else if(was && !menuqoa_hold) {
+    menuqoa_t0 += getticks() - menuqoa_held_at;
+    menuqoa_cyc = getcycles();
+    dac_play();
+  }
 }
 
 /* (Re)start the fetcher at run byte `pos`, with the pad after the run in its range.  At the
@@ -875,6 +948,7 @@ static void menuqoa_kick(uint32_t pos) {
   menuqoa_pos = pos;
   menuqoa_halves = 0;
   menusfx_fpga_prev = fpga_status();
+  menuqoa_cyc = getcycles();
   menuqoa_t0 = getticks();
   if(menuqoa_hold) menuqoa_held_at = menuqoa_t0;   /* paused before the clip even started */
   else dac_play();
@@ -956,17 +1030,9 @@ static int menuqoa_play(void) {
 /* Cheap enough for every pump site (no SD access): follow the DAC, hold it if the decoder
    fell behind, and re-kick at the end of the run. */
 static void menuqoa_pump(void) {
-  uint16_t now = fpga_status();
   uint32_t at;
-  if((now ^ menusfx_fpga_prev) & MSU_FPGA_STATUS_DAC_READ_MSB) menuqoa_halves++;
-  menusfx_fpga_prev = now;
+  menuqoa_count();
   if(menuqoa_hold) return;
-  {
-    /* a pump that came too late to see every flip: the timer says at least this many */
-    tick_t el = getticks() - menuqoa_t0;
-    uint32_t lb = el > 2 ? (uint32_t)(el - 2) * MENUQOA_TICK_LO / (MSU_DAC_BUFSIZE / 2) : 0;
-    if(lb > menuqoa_halves) menuqoa_halves = lb;
-  }
   at = menuqoa_pos + RUNB(menuqoa_halves * (MSU_DAC_BUFSIZE / 2));   /* the DAC's run byte */
   /* the FMV frame clock: samples fed (2 KB ahead of the DAC, like the .pcm path) into
      the current copy of the clip */

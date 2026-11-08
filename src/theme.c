@@ -3,7 +3,7 @@
  * .thm format (little-endian), produced by utils/pack_theme.py:
  *     off  size  field
  *     0    8     magic  "FXTHEME1"
- *     8    1     version (=THEME_VERSION)
+ *     8    1     version (1, or 2 when the theme has an animated background)
  *     9    1     N = number of regions
  *     10   2     flags  (bit0 = has logo; bit1 = outline off; bit2 = AA off,
  *                        see the font remap notes below)
@@ -16,6 +16,22 @@
  *   5 oam_data_l  6 oam_data_h  7 palette  8 logo_tiles
  * The table is read from the loaded menu PSRAM so this survives menu rebuilds;
  * only theme_slot_max (the per-region byte cap) is build-coupled.
+ *
+ * Version 2 adds the animated background of the menu body. Its four parts do not live in
+ * the menu image: they go to SRAM_THEME_BG_ADDR, which the menu reads when it sets the
+ * background up, and count only when all four are there.
+ *   9 bg_pal (32)  10 bg_tiles (<=2048)  11 bg_map (2048)  12 bg_params (8)
+ *
+ * The catalog appends what a theme brings with it, after the visuals so theme_apply seeks over
+ * it. None of it is extracted: it is read from the .thm whenever the menu needs it, so the
+ * user's own files stay as they are and changing theme undoes everything.
+ *   13 font (32 B mask + 4096 B of tiles, a .sfn without its header)  14 music (.spc)
+ *   15-18 effects (MSU-1 .pcm: cursor, confirm, back, error)  19 picture for the menu's box (.cov)
+ * Slot 20 is a look, so it is applied with the rest and the menu's box does not ask about it:
+ *   20 gradient of the game info screen and the in-game menu (same format as slot 4, 55 B). A theme
+ *      with a slot 4 and without this one uses its slot 4 on those two screens.
+ * The TOC's reserved byte is bits 16-23 of the length: an .spc does not fit in 16 bits, and every
+ * older .thm has it at 0.
  */
 
 #include "config.h"
@@ -27,13 +43,21 @@
 #include "cfg.h"
 #include "theme.h"
 #include "psram_io.h"
+#include "cover.h"
+#include "msu1.h"
 
 extern cfg_t CFG;
 
 static const char THEME_MAGIC[8]  = { 'F','X','T','H','E','M','E','1' };
 static const char GFXPTR_MAGIC[8] = { '_','G','F','X','P','T','R','_' };
-#define THEME_VERSION   1
-#define THEME_NSLOTS    9
+#define THEME_NSLOTS    9       /* _GFXPTR_ entries */
+#define THEME_SLOT_BG   9
+#define THEME_SLOT_MENU_GRAD  4
+#define THEME_GRAD_LEN  55u     /* == theme_slot_max[THEME_SLOT_MENU_GRAD] */
+
+/* The background's parts: slot - THEME_SLOT_BG -> offset and cap in SRAM_THEME_BG_ADDR. */
+static const uint16_t theme_bg_off[4] = { 0x10, 0x40, 0x840, 0x04 };
+static const uint16_t theme_bg_max[4] = { 32, 2048, 2048, 8 };
 
 /* Font edge remaps: .thm header flags bit1/bit2 ask the MCU to edit the menu
    font's edge pixels, matching what the official editor does to the tiles it
@@ -145,19 +169,25 @@ static int theme_stream_logo_left(uint32_t dest, uint32_t cap) {
 /* Locate "_GFXPTR_" in the loaded menu PSRAM and read its THEME_NSLOTS word
  * pointers (16-bit bank-$C0 offsets) into gfxptr[]. Also reads the byte after
  * the 9 words (`.byt ^font` in snes/const.a65) into *font_bank -- slot 0 (font)
- * lives in bank $C1, so its .word alone can't carry the bank. Returns 1 on ok. */
-static int theme_read_gfxptr(uint16_t gfxptr[THEME_NSLOTS], uint8_t *font_bank) {
+ * lives in bank $C1, so its .word alone can't carry the bank. Past it, "GI" and the
+ * word of the game info gradient, into *gi_grad (0 in an image without them, the tour).
+ * Returns 1 on ok. */
+static int theme_read_gfxptr(uint16_t gfxptr[THEME_NSLOTS], uint8_t *font_bank, uint16_t *gi_grad) {
   uint8_t buf[512];
   const uint32_t step = sizeof(buf) - 8;   /* overlap so the magic isn't split */
   for(uint32_t off = THEME_GFXPTR_SCAN_START; off < THEME_GFXPTR_SCAN_END; off += step) {
     sram_readblock(buf, SRAM_MENU_ADDR + off, sizeof(buf));
     for(uint32_t i = 0; i + 8 <= sizeof(buf); i++) {
       if(!memcmp(buf + i, GFXPTR_MAGIC, 8)) {
-        uint8_t words[THEME_NSLOTS * 2 + 1];   /* 9 words + font bank byte */
+        uint8_t words[THEME_NSLOTS * 2 + 1 + 4];   /* 9 words + font bank byte + "GI" + word */
         sram_readblock(words, SRAM_MENU_ADDR + off + i + 8, sizeof(words));
         for(int k = 0; k < THEME_NSLOTS; k++)
           gfxptr[k] = (uint16_t)words[k * 2] | ((uint16_t)words[k * 2 + 1] << 8);
         *font_bank = words[THEME_NSLOTS * 2];  /* .byt ^font after the 9 words */
+        {
+          const uint8_t *g = words + THEME_NSLOTS * 2 + 1;
+          *gi_grad = (g[0] == 'G' && g[1] == 'I') ? (uint16_t)g[2] | ((uint16_t)g[3] << 8) : 0;
+        }
         return 1;
       }
     }
@@ -203,7 +233,59 @@ void theme_font_pass(uint32_t dst, uint32_t src, uint32_t save,
   }
 }
 
-void theme_apply(void) {
+/* Open `path` into file_handle and read its `n`-byte header, which must start with
+   the 8-byte `magic` and carry `ver` right after it. 0 (and the file closed) when
+   the file is missing, short or not of that kind; the .thm and the .sfn share it. */
+static __attribute__((noinline)) int theme_open(const char *path, uint8_t *hdr, UINT n,
+                                                const char *magic, uint8_t ver) {
+  UINT got;
+  file_open((const uint8_t*)path, FA_READ);
+  if(!file_res) file_res = f_read(&file_handle, hdr, n, &got);
+  if(file_res || got != n || memcmp(hdr, magic, 8) || !hdr[8] || hdr[8] > ver) {
+    printf("theme: %s rejected\n", path);
+    file_close();
+    return 0;
+  }
+  return 1;
+}
+
+/* The music of the chosen theme on the SPC staging area; 1 when it is there. */
+int theme_music_load(void) {
+  FIL f;
+  uint32_t len, base;
+  if(!theme_sound_open(&f, THEME_SLOT_MUSIC, &len)) return 0;
+  base = f.fptr;
+  f_close(&f);
+  return load_spc_region(CFG.skin_name, base, len, SRAM_SPC_DATA_ADDR, SRAM_SPC_HEADER_ADDR) != 0;
+}
+
+/* The menu is about to ask about the .thm at `path`: publish what it brings and stage its
+   picture where the covers go. No picture is an answer too: the box opens without one. */
+void theme_info(const char *path) {
+  uint8_t mask = 0, e[16];
+  UINT got;
+  uint32_t off, cov_off = 0;
+  if(theme_open(path, e, sizeof(e), THEME_MAGIC, THEME_VERSION)) {
+    uint8_t n = e[9] <= THEME_NREGIONS ? e[9] : 0;
+    off = 16 + (uint32_t)n * 4;
+    for(; n; n--) {
+      if(f_read(&file_handle, e, 4, &got) != FR_OK || got != 4) break;
+      if(e[0] == THEME_SLOT_FONT) mask |= THEME_HAS_FONT;
+      else if(e[0] >= THEME_SLOT_MUSIC && e[0] < THEME_SLOT_PREVIEW) mask |= THEME_HAS_SOUND;
+      else if(e[0] == THEME_SLOT_PREVIEW) cov_off = off;
+      off += theme_toc_len(e);
+    }
+    file_close();
+  }
+  if(cov_off && load_cover_region(path, cov_off, SRAM_COVER_ADDR)) mask |= THEME_HAS_PICTURE;
+  else load_cover_region(NULL, 0, SRAM_COVER_ADDR);
+  uint8_t info[3] = { mask, THEME_INFO_MAGIC[0], THEME_INFO_MAGIC[1] };
+  sram_writeblock(info, SRAM_COVER_ADDR + THEME_INFO_OFF, sizeof(info));
+}
+
+/* noinline: under LTO this is inlined into its single caller and its path buffer
+   would sit in that caller's frame for the whole menu loop, under every call chain. */
+void __attribute__((noinline)) theme_apply(void) {
   const char *skin = (const char*)CFG.skin_name;
   /* Every exit below leaves the font untouched, so start from "no theme flags":
      theme_font_edges then sees the user toggles only. */
@@ -211,29 +293,22 @@ void theme_apply(void) {
   /* ...and from "no pristine copy": this is a fresh menu image, so whatever
      SRAM_FONT_ORIG_ADDR holds belongs to the previous one. */
   theme_font_orig_ok = 0;
+  /* ...and from "no background": the magic goes back only once a theme's four parts are in */
+  sram_memset(SRAM_THEME_BG_ADDR, 4, 0);
   /* skin_name holds the FULL SD path of the chosen .thm (captured from the
      browser selection, so themes can live in any visible folder). Anything not
      an absolute path -- empty, or the "sd2snes.skin" sentinel -- means
      "no theme / baked-in default look". */
   if(skin[0] != '/') return;
 
-  file_open((const uint8_t*)skin, FA_READ);
-  if(file_res) { printf("theme: open %s failed res=%d\n", skin, file_res); return; }
-
   uint8_t hdr[16];
   UINT got;
-  file_res = f_read(&file_handle, hdr, sizeof(hdr), &got);
-  if(file_res || got != sizeof(hdr)
-     || memcmp(hdr, THEME_MAGIC, 8) || hdr[8] != THEME_VERSION) {
-    printf("theme: bad header in %s\n", skin);
-    file_close();
-    return;
-  }
+  if(!theme_open(skin, hdr, sizeof(hdr), THEME_MAGIC, THEME_VERSION)) return;
   uint16_t flags = (uint16_t)hdr[10] | ((uint16_t)hdr[11] << 8);
   uint8_t n = hdr[9];
-  if(n == 0 || n > THEME_NSLOTS) { file_close(); return; }
+  if(n == 0 || n > THEME_NREGIONS) { file_close(); return; }
 
-  uint8_t toc[THEME_NSLOTS * 4];
+  uint8_t toc[THEME_NREGIONS * 4];
   file_res = f_read(&file_handle, toc, (UINT)n * 4, &got);
   if(file_res || got != (UINT)n * 4) { file_close(); return; }
 
@@ -242,21 +317,39 @@ void theme_apply(void) {
      but stale logo tiles). Bail before touching menu PSRAM if the file is short. */
   uint32_t need = 16 + (uint32_t)n * 4;
   for(int r = 0; r < n; r++) {
-    need += (uint16_t)toc[r * 4 + 2] | ((uint16_t)toc[r * 4 + 3] << 8);
+    need += theme_toc_len(toc + r * 4);
   }
   if(need > file_handle.fsize) { file_close(); return; }
 
   uint16_t gfxptr[THEME_NSLOTS];
   uint8_t  font_bank = 0;
-  if(!theme_read_gfxptr(gfxptr, &font_bank)) {
+  uint16_t gi_grad = 0;
+  if(!theme_read_gfxptr(gfxptr, &font_bank, &gi_grad)) {
     printf("theme: _GFXPTR_ not found in menu image\n");
     file_close();
     return;
   }
 
+  uint8_t bg_parts = 0;
+  uint8_t has_menu_grad = 0, has_gi_grad = 0;
   for(int r = 0; r < n; r++) {
     uint8_t  slot = toc[r * 4];
-    uint16_t len  = (uint16_t)toc[r * 4 + 2] | ((uint16_t)toc[r * 4 + 3] << 8);
+    uint32_t len  = theme_toc_len(toc + r * 4);
+    if(slot >= THEME_SLOT_BG && slot < THEME_SLOT_BG + 4) {
+      uint8_t  k   = slot - THEME_SLOT_BG;
+      uint32_t dst = SRAM_THEME_BG_ADDR + theme_bg_off[k];
+      /* tiles shorter than the region: the rest blank, so a cell past the theme's shows nothing */
+      if(len < theme_bg_max[k]) sram_memset(dst + len, theme_bg_max[k] - len, 0);
+      if(!theme_stream(dst, len, theme_bg_max[k])) { file_close(); return; }
+      bg_parts |= 1 << k;
+      continue;
+    }
+    if(slot == THEME_SLOT_GAME_GRAD) {
+      if(!theme_stream(SRAM_MENU_ADDR + gi_grad, len, gi_grad ? THEME_GRAD_LEN : 0)) { file_close(); return; }
+      has_gi_grad = 1;
+      continue;
+    }
+    if(slot == THEME_SLOT_MENU_GRAD) has_menu_grad = 1;
     uint16_t cap  = (slot < THEME_NSLOTS) ? theme_slot_max[slot] : 0;
     if(cap == 0 || gfxptr[slot] == 0) {
       /* unknown/unthemable slot: consume payload, keep file aligned */
@@ -280,12 +373,29 @@ void theme_apply(void) {
     }
   }
 
+  /* A theme made before slot 20 keeps its gradient on the game info screen and in the in-game menu. */
+  if(has_menu_grad && !has_gi_grad && gi_grad) {
+    uint8_t grad[THEME_GRAD_LEN];
+    sram_readblock(grad, SRAM_MENU_ADDR + gfxptr[THEME_SLOT_MENU_GRAD], sizeof(grad));
+    sram_writeblock(grad, SRAM_MENU_ADDR + gi_grad, sizeof(grad));
+  }
+
   /* Font edge remaps (flags bit1 outline-off / bit2 AA-off) are NOT done here:
      they have to compose with the user toggles, which also apply when there is
      no theme at all. Publish what this file asked for and let theme_font_edges
      (main.c, right after us) do the single remap pass. Published only on the
      success path, so a theme that bailed halfway leaves the flags at 0. */
   theme_font_flags = flags & (THEME_FLAG_OUTLINE_OFF | THEME_FLAG_AA_OFF);
+
+  /* "TBG1": the theme's background; "TBG0": a theme without one, made for the plain
+     gradient (the menu shows no background, not its built-in one) */
+  {
+    static const uint8_t magic[4] = { 'T', 'B', 'G', '1' };
+    uint8_t m[4];
+    memcpy(m, magic, 4);
+    if(bg_parts != 0x0f) m[3] = '0';
+    sram_writeblock(m, SRAM_THEME_BG_ADDR, 4);
+  }
 
   file_close();
   printf("theme: applied %s\n", skin);
@@ -325,7 +435,8 @@ static __attribute__((noinline)) int theme_font_locate(uint32_t *font_addr) {
      no theme, so redo it here through the same helper. */
   uint16_t gfxptr[THEME_NSLOTS];
   uint8_t  font_bank = 0;
-  if(!theme_read_gfxptr(gfxptr, &font_bank)) {
+  uint16_t gi_grad;
+  if(!theme_read_gfxptr(gfxptr, &font_bank, &gi_grad)) {
     printf("theme: _GFXPTR_ not found in menu image\n");
     return 0;
   }
@@ -371,14 +482,82 @@ void theme_font_edges(void) {
   }
 }
 
-void theme_select(const char *name) {
-  if(!name || name[0] == 0) {
-    strcpy((char*)CFG.skin_name, THEME_DEFAULT);
-  } else {
-    /* strncpy for the zero padding: the whole cfg_t goes to the shared BSRAM,
-       tail included (see CK_STR in cfg.c). */
-    strncpy((char*)CFG.skin_name, name, sizeof(CFG.skin_name) - 1);
-    CFG.skin_name[sizeof(CFG.skin_name) - 1] = 0;
+/* .sfn: a menu font on its own, picked in the browser like a .thm.  Format:
+ *     off  size  field
+ *     0    8     magic "SD2SFNT1"
+ *     8    1     version (=SFN_VERSION)
+ *     9    7     reserved
+ *     16   32    mask: bit (t & 7) of byte (t >> 3) set = the file brings tile t
+ *     48   4096  the 256 tiles, 2bpp x 16 B, in snes/font.a65 order
+ * Written over the font of the just-loaded menu image in PSRAM (menu and tour), so it
+ * costs no memory of its own.  The mask is what keeps a font drawn against another
+ * build from repainting the icons, window borders and control codes: utils/pack_font.py
+ * sets only the text tiles unless told otherwise. */
+static const char SFN_MAGIC[8] = { 'S','D','2','S','F','N','T','1' };
+#define SFN_VERSION   1
+#define SFN_HDR_LEN   48
+#define SFN_TILE_LEN  16
+
+void theme_font_file(void) {
+  const char *path = (const char*)CFG.font_name;
+  uint32_t font_addr, len = 0;
+  uint8_t hdr[SFN_HDR_LEN];
+  const uint8_t *mask = hdr + 16;
+  UINT got;
+  /* the theme's own font first: it was asked for after any .sfn (picking one turns this off) */
+  int embedded = CFG.theme_use_font && CFG.skin_name[0] == '/'
+                 && theme_region_open(&file_handle, (const char*)CFG.skin_name, THEME_SLOT_FONT, &len);
+  if(!theme_font_locate(&font_addr)) { if(embedded) file_close(); return; }
+  if(embedded) {
+    mask = hdr;
+    if(len < 32 + THEME_FONT_LEN || f_read(&file_handle, hdr, 32, &got) != FR_OK || got != 32) {
+      file_close();
+      embedded = 0;
+      mask = hdr + 16;
+    }
   }
+  if(!embedded) {
+    if(path[0] != '/') return;
+    if(!theme_open(path, hdr, sizeof(hdr), SFN_MAGIC, SFN_VERSION)) return;
+  }
+  /* the whole body up front, like theme_apply: a short file never leaves half a font */
+  if(embedded || file_handle.fsize >= SFN_HDR_LEN + THEME_FONT_LEN) {
+    /* a tile the mask leaves out is skipped (theme_stream with cap 0 seeks past it) */
+    for(int t = 0; t < 256; t++) {
+      uint32_t cap = ((mask[t >> 3] >> (t & 7)) & 1) ? SFN_TILE_LEN : 0;
+      if(!theme_stream(font_addr + (uint32_t)t * SFN_TILE_LEN, SFN_TILE_LEN, cap)) break;
+    }
+  }
+  file_close();
+  /* the font in PSRAM is a new one: theme_font_edges has to capture it as the pristine copy */
+  theme_font_orig_ok = 0;
+}
+
+static void theme_set_str(uint8_t *dst, const char *name, const char *none) {
+  /* strncpy for the zero padding: the whole cfg_t goes to the shared BSRAM,
+     tail included (see CK_STR in cfg.c). */
+  strncpy((char*)dst, (name && name[0]) ? name : none, sizeof(CFG.skin_name) - 1);
+  dst[sizeof(CFG.skin_name) - 1] = 0;   /* every CK_STR field has this length (cfg.c) */
   cfg_save();
+}
+
+void font_select(const char *name) {
+  CFG.theme_use_font = 0;
+  theme_set_str(CFG.font_name, name, "");
+}
+
+void theme_clear(int font) {
+  if(font) font_select(NULL);
+  else theme_select(NULL);
+}
+
+void theme_pick(const char *name) {
+  const char *ext = strrchr(name, '.');
+  if(ext && !strcasecmp(ext + 1, "SFN")) font_select(name);
+  else theme_select(name);
+}
+
+void theme_select(const char *name) {
+  theme_set_str(CFG.skin_name, name, THEME_DEFAULT);
+  menu_sfx_forget();   /* the cache outlives the reload and would keep the old theme's effects */
 }

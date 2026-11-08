@@ -26,6 +26,7 @@ utils/derle
 *.s
 # assembly sources (a case-insensitive filesystem would match them by *.s)
 !src/xc_soc/*.S
+!snes/atari/*.s
 *.txt
 # the CJK fonts' licenses ship with them
 !snes/fonts/*.txt
@@ -110,6 +111,9 @@ src/utils/genhdr.o
 src/utils/genhdr
 src/utils/lpcchksum.o
 src/utils/lpcchksum
+src/utils/rled
+src/utils/bootimg
+src/utils/zx0c
 src/bootldr/obj
 others/*
 verilog/*/ip/mk2/*/*
@@ -190,3 +194,6 @@ bin/*.fnt
 
 # NES renderer: measurement build tree (make -C snes/nes perf)
 snes/nes/perf_build/
+# card overlays + the Mk.II boot-screen program (src/ovl, built with the firmware)
+bin/ovl[0-9].*
+bin/bootscr.img

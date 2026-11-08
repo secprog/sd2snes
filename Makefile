@@ -20,7 +20,7 @@ FPGAPATH := verilog
 MK2EXT := bit
 MK3EXT := bi3
 # MkII needs separate extended-mapper, competition-cart and SGB/MSU variants.
-MK2CORES := base basex bootleg col20 cx4 dsp dspx gsu gsu3 obc1 sa1 sdd1 sgb sgb_msu spc7110 st0011 st0018 test xc
+MK2CORES := atari base basex bootleg col20 cx4 dsp dspx gsu gsu3 obc1 sa1 sdd1 sgb sgb_msu spc7110 st0011 st0018 test xc
 # Both MkIII MCU variants load these same Cyclone IV images.
 MK3CORES := a26 base bootleg col20 cx4 dsp gbc gsu gsu3 nes nes_k nes_mmc3 nes_mmc5 obc1 sa1 sdd1 sgb sms spc7110 st0011 st0018 test xc
 

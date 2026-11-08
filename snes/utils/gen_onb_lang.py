@@ -103,7 +103,7 @@ STRINGS = {
     "onb_ui_enable":    ("ENABLE?", "ATIVAR?", "¿ACTIVAR?", "AKTIV?", "ACTIVER ?", "ATTIVARE?", "ВКЛЮЧИТЬ?", "AANZETTEN?"),
     "onb_ui_choose":    ("CHOOSE", "ESCOLHA", "ELIGE", "WÄHLEN", "CHOIX", "SCEGLI", "ВЫБОР", "KIES"),
     "onb_ui_pick":      ("SELECT", "ESCOLHER", "ELEGIR", "WÄHLEN", "CHOISIR", "SCEGLI", "ВЫБОР", "KIEZEN"),
-    "onb_ui_more":      ("SEE ALSO", "VEJA TAMBÉM", "VER TAMBIÉN", "SIEHE AUCH", "VOIR AUSSI", "VEDI ANCHE", "СМ. ТАКЖЕ", "ZIE OOK"),
+    "onb_ui_more":      ("SEE ALSO", "VEJA TAMBÉM", "VER TAMBIÉN", "SIEHE AUCH", "VOIR AUSSI", "VEDI ANCHE", "СМОТРИ ТАКЖЕ", "ZIE OOK"),
     "onb_ui_next":      ("NEXT", "AVANÇAR", "AVANZAR", "WEITER", "SUIVANT", "AVANTI", "ДАЛЕЕ", "VERDER"),
     "onb_ui_back":      ("BACK", "VOLTAR", "ATRÁS", "ZURÜCK", "RETOUR", "TORNA", "НАЗАД", "TERUG"),
     "onb_ui_exit":      ("EXIT", "SAIR", "SALIR", "ENDE", "QUITTER", "ESCI", "ВЫХОД", "STOPPEN"),
@@ -132,8 +132,8 @@ for _m in range(3, 19):
                                            for l in LANGS)
 
 # The descriptors in tour order, by name: the base tour's cards (1-32, "and more" last),
-# the 2.17 and 2.18 sections (33-40 and 41-54: each its separator card, then the release's cards), then the
-# "and more" items (55-62, ONB_MORE_FIRST in onboarding_main.a65). Per language.
+# the 2.17, 2.18 and 2.19 sections (33-40, 41-55 and 56-60: each its separator card, then the release's
+# cards), then the "and more" items (61-68, ONB_MORE_FIRST in onboarding_main.a65). Per language.
 NAMES = [
   # 1 language
   ('Language', 'Idioma', 'Idioma', 'Sprache', 'Langue', 'Lingua', 'Язык', 'Taal'),
@@ -259,22 +259,32 @@ NAMES = [
   ('NTT Data Keypad',)*8,
   # 55 the parental lock: a code of 4 buttons before what changes the card or the settings (2.18)
   ('Parental lock', 'Bloqueio parental', 'Bloqueo parental', 'Kindersicherung', 'Contrôle parental', 'Blocco parentale', 'Родительский контроль', 'Kinderslot'),
-  # 50 the PPU is cleared before every game boots
+  # 56 the 2.19 section: what is new in this release
+  ("What's new in 2.19", 'Novidades da 2.19', 'Novedades de la 2.19', 'Neu in 2.19', 'Nouveautés de la 2.19', 'Novità della 2.19', 'Новое в 2.19', 'Nieuw in 2.19'),
+  # 57 the animated menu background, a theme's own, off in Japanese and Chinese (2.19)
+  ('Animated background', 'Fundo animado', 'Fondo animado', 'Animierter Hintergrund', 'Fond animé', 'Sfondo animato', 'Анимированный фон', 'Bewegende achtergrond'),
+  # 58 a theme's font, music, effects and preview picture, the Apply font / Apply sounds window (2.19)
+  ('Font and sounds in themes', 'Fonte e sons no tema', 'Fuente y sonidos en temas', 'Schrift und Sounds im Theme', 'Police et sons du thème', 'Font e suoni nel tema', 'Шрифт и звуки в теме', 'Lettertype en geluid in thema'),
+  # 59 font files (.sfn), picked in the browser like a theme (2.19)
+  ('Font files', 'Arquivos de fonte', 'Archivos de fuente', 'Schriftdateien', 'Fichiers de police', 'File di font', 'Файлы шрифтов', 'Lettertypebestanden'),
+  # 60 the Atari 2600 on the Mk.II too, and the same pad keys on both boards (2.19)
+  ('Atari 2600 on the Mk.II', 'Atari 2600 no Mk.II', 'Atari 2600 en el Mk.II', 'Atari 2600 auf dem Mk.II', 'Atari 2600 sur le Mk.II', 'Atari 2600 sul Mk.II', 'Atari 2600 на Mk.II', 'Atari 2600 op de Mk.II'),
+  # 61 the PPU is cleared before every game boots
   ('Clear PPU on boot', 'Limpar PPU no boot', 'Limpiar PPU al arrancar', 'PPU beim Start löschen', 'Effacer le PPU au boot', "Pulisci PPU all'avvio", 'Очистка PPU при загрузке', 'Leeg PPU bij starten'),
-  # 51 bus timing compat
+  # 62 bus timing compat
   ('Bus timing compat', 'Compat. de barramento', 'Compat. de bus', 'Bus-Timing-Kompat.', 'Compat. timing bus', 'Compat. timing bus', 'Совместимость шины', 'Compat. bustiming'),
-  # 52 the hardware model in System Information
+  # 63 the hardware model in System Information
   ('Hardware model', 'Modelo do hardware', 'Modelo de hardware', 'Hardware-Modell', 'Modèle du matériel', "Modello dell'hardware", 'Модель картриджа', 'Hardwaremodel'),
-  # 48 BS-X and the Memory Pack
+  # 64 BS-X and the Memory Pack
   ('BS-X and Memory Pack', 'BS-X e Memory Pack', 'BS-X y Memory Pack', 'BS-X und Memory Pack', 'BS-X et Memory Pack', 'BS-X e Memory Pack', 'BS-X и Memory Pack', 'BS-X en Memory Pack'),
-  # 53 delete files and saves
-  ('Delete files and saves', 'Apagar arquivos e saves', 'Borrar archivos y saves', 'Dateien/Saves löschen', 'Effacer fichiers/saves', 'Eliminare file e save', 'Удаление файлов и сейвов', 'Bestanden/saves wissen'),
-  # 54 missing BIOS warning
-  ('Missing BIOS warning', 'Aviso de BIOS faltando', 'Aviso de BIOS que falta', 'Fehlendes BIOS melden', 'Alerte de BIOS manquant', 'Avviso di BIOS mancante', 'Предупреждение: нет BIOS', 'Melding: BIOS ontbreekt'),
-  # 55 the clock question on boot and the date format
-  ('Clock and date', 'Relógio e data', 'Reloj y fecha', 'Uhr und Datum', 'Horloge et date', 'Orologio e data', 'Часы и дата', 'Klok en datum'),
-  # 56 a description for each option
-  ('Option descriptions', 'Descrição das opções', 'Descripción de opciones', 'Optionsbeschreibungen', 'Description des options', 'Descrizione opzioni', 'Описание опций', 'Uitleg bij opties'),
+  # 65 delete files and saves
+  ('Delete files and saves', 'Apagar arquivos e saves', 'Borrar archivos y saves', 'Dateien/Saves löschen', 'Effacer fichiers/saves', 'Eliminare file e save', 'Удалить файлы/сохранения', 'Bestanden/saves wissen'),
+  # 66 missing BIOS warning
+  ('Missing BIOS warning', 'Aviso de BIOS faltando', 'Aviso de BIOS que falta', 'Fehlendes BIOS melden', 'Alerte de BIOS manquant', 'Avviso di BIOS mancante', 'Инфо: BIOS не найден', 'Melding: BIOS ontbreekt'),
+  # 67 the clock question on boot and the date format
+  ('Clock and date', 'Relógio e data', 'Reloj y fecha', 'Uhr und Datum', 'Horloge et date', 'Orologio e data', 'Дата и время', 'Klok en datum'),
+  # 68 a description for each option
+  ('Option descriptions', 'Descrição das opções', 'Descripción de opciones', 'Optionsbeschreibungen', 'Description des options', 'Descrizione opzioni', 'Описание опций настроек', 'Uitleg bij opties'),
 ]
 
 
@@ -296,14 +306,14 @@ TEXTS = [
    'Меню и этот тур на 11-ти языках, Меню в игре на 9-ми. Переместите курсор, чтобы попробовать: тур переключится мгновенно. Позже это можно изменить в разделе |Настройки|.',
    'Het menu en deze rondleiding in 11 talen, het in-game menu in 9. Beweeg de balk om te proberen: de rondleiding wisselt meteen. Later te wijzigen in |Configuratie|.'),
   # 2 themes: the |sd2snes+| theme, a |.thm| from the list, restoring it or the classic one
-  ("Change the menu's logo, colours and gradient: pick a |.thm| in the list to apply it. Make your own in the |Theme Creator| or take one from the site's gallery. In {browser}, {restoretheme} brings back |sd2snes+|, the factory theme, and {restoreclassic} the old teal look (|classic.thm|).",
-   'Troque o logo, as cores e o gradiente do menu: escolha um |.thm| na lista para aplicar. Crie o seu no |Theme Creator| ou pegue um na galeria do site. Em {browser}, {restoretheme} volta ao |sd2snes+|, o tema de fábrica, e {restoreclassic} ao visual verde-azulado antigo (|classic.thm|).',
-   'Cambia el logo, los colores y el degradado del menú: elige un |.thm| en la lista para aplicarlo. Crea el tuyo en el |Theme Creator| o baja uno de la galería del sitio. En {browser}, {restoretheme} vuelve a |sd2snes+|, el tema de fábrica, y {restoreclassic} al aspecto turquesa de antes (|classic.thm|).',
-   'Ändere Logo, Farben und Verlauf des Menüs: eine |.thm| in der Liste wählen wendet sie an. Eigene im |Theme Creator| oder aus der Galerie der Website. In {browser} holt {restoretheme} das Werks-Theme |sd2snes+| zurück, {restoreclassic} den alten türkisen Look (|classic.thm|).',
-   "Change logo, couleurs et dégradé du menu avec un |.thm| choisi dans la liste. Crée le tien dans le |Theme Creator| ou pioche dans la galerie du site. {restoretheme} ({browser}) remet |sd2snes+|, le thème d'origine, et {restoreclassic} l'ancien look turquoise (|classic.thm|).",
-   'Cambia logo, colori e sfumatura del menu: scegli un |.thm| nella lista per applicarlo. Crea il tuo nel |Theme Creator| o prendine uno dalla galleria del sito. In {browser}, {restoretheme} torna a |sd2snes+|, il tema di fabbrica, e {restoreclassic} al vecchio aspetto turchese (|classic.thm|).',
-   'Меняй логотип, цвета и градиент меню: выбери файл |.thm| в списке, чтобы применить. Создай свою тему в |Theme Creator| или возьми из галереи на сайте. В разделе {browser} пункт {restoretheme} вернёт заводскую тему |sd2snes+|, а {restoreclassic} старый бирюзовый вид (|classic.thm|).',
-   'Wijzig logo, kleuren en verloop van het menu: een |.thm| in de lijst kiezen past het toe. Maak je eigen in de |Theme Creator| of haal er een op de site. {restoretheme} ({browser}) zet het standaardthema |sd2snes+| terug, {restoreclassic} de oude turquoise look (|classic.thm|).'),
+  ("Change the menu's logo, colours and gradient: pick a |.thm| in the list to apply it. Make your own in the |Theme Creator| or take one from the site's gallery. In {browser}, {restoretheme} brings back |sd2snes+|, the factory theme, and {restoreclassic} the same with a still background (|classic.thm|).",
+   'Troque o logo, as cores e o gradiente do menu: escolha um |.thm| na lista para aplicar. Crie o seu no |Theme Creator| ou pegue um na galeria do site. Em {browser}, {restoretheme} volta ao |sd2snes+|, o tema de fábrica, e {restoreclassic} ao mesmo sem o fundo animado (|classic.thm|).',
+   'Cambia el logo, los colores y el degradado del menú: elige un |.thm| en la lista para aplicarlo. Crea el tuyo en el |Theme Creator| o baja uno de la galería del sitio. En {browser}, {restoretheme} vuelve a |sd2snes+|, el tema de fábrica, y {restoreclassic} al mismo sin fondo animado (|classic.thm|).',
+   'Ändere Logo, Farben und Verlauf des Menüs: eine |.thm| in der Liste wählen wendet sie an. Eigene im |Theme Creator| oder aus der Galerie der Website. In {browser} holt {restoretheme} das Werks-Theme |sd2snes+| zurück, {restoreclassic} dasselbe ohne bewegten Hintergrund (|classic.thm|).',
+   "Change logo, couleurs et dégradé du menu avec un |.thm| choisi dans la liste. Crée le tien dans le |Theme Creator| ou pioche dans la galerie du site. {restoretheme} ({browser}) remet |sd2snes+|, le thème d'origine, et {restoreclassic} le même sans fond animé (|classic.thm|).",
+   'Cambia logo, colori e sfumatura del menu: scegli un |.thm| nella lista per applicarlo. Crea il tuo nel |Theme Creator| o prendine uno dalla galleria del sito. In {browser}, {restoretheme} torna a |sd2snes+|, il tema di fabbrica, e {restoreclassic} allo stesso senza sfondo animato (|classic.thm|).',
+   'Меняй логотип, цвета и градиент меню: выбери файл |.thm| в списке, чтобы применить. Создай свою тему в |Theme Creator| или возьми из галереи на сайте. В разделе {browser} пункт {restoretheme} вернёт заводскую тему |sd2snes+|, а {restoreclassic} её же без живого фона (|classic.thm|).',
+   'Wijzig logo, kleuren en verloop van het menu: een |.thm| in de lijst kiezen past het toe. Maak je eigen in de |Theme Creator| of haal er een op de site. {restoretheme} ({browser}) zet het standaardthema |sd2snes+| terug, {restoreclassic} hetzelfde zonder animatie (|classic.thm|).'),
   # 3 text outline: theme / on / off
   ('The dark edge around each letter of the menu. {theme} follows what the theme asks for, {on} always draws it, {off} drops it and lets the background show through. Move the bar to try one: this text changes at once, and [A] keeps it for the menu.',
    'A borda escura em volta de cada letra do menu. {theme} segue o que o tema pede, {on} sempre desenha, {off} tira a borda e deixa o fundo aparecer. Mova a barra para experimentar: este texto muda na hora, e [A] grava a escolha para o menu.',
@@ -520,24 +530,24 @@ TEXTS = [
    'Le cartucce Campus Challenge 92 e PowerFest 94 giocano un round a tempo, come ai tornei originali. Scegli quanto dura, da 3 a 18 minuti: i tornei usavano 6. Anche in {chipopts}.',
    'В картриджах |Campus Challenge 92| и |PowerFest 94| раунд идёт по внутреннему таймеру, как на настоящих турнирах. Выбери его продолжительность от 3 до 18 минут (на турнирах было 6). Настраивается в {chipopts}.',
    'De cartridges Campus Challenge 92 en PowerFest 94 spelen een ronde op tijd, zoals op de echte toernooien. Kies hoe lang die duurt, 3 tot 18 minuten: de toernooien gebruikten 6. Ook in {chipopts}.'),
-  # 27 other consoles: NES, Master System, Game Boy Color, Atari 2600 (Mk.III only, experimental)
-  ('NES, Master System, Game Boy Color and Atari 2600 games run on their own FPGA cores, |FXPAK PRO (Mk.III)| only, and open like any ROM. These cores are experimental: some games may glitch or not run. On the NES, [L]+[R]+[Start]+[Up] repaints the palette if the colours look wrong.',
-   'Jogos de NES, Master System, Game Boy Color e Atari 2600 rodam em cores de FPGA próprios, só no |FXPAK PRO (Mk.III)|, e abrem como qualquer ROM. Esses cores são experimentais: alguns jogos podem ter falhas ou não rodar. No NES, [L]+[R]+[Start]+[Cima] repinta a paleta se as cores saírem erradas.',
-   'Los juegos de NES, Master System, Game Boy Color y Atari 2600 corren en sus propios cores FPGA, solo en |FXPAK PRO (Mk.III)|, y abren como cualquier ROM. Estos cores son experimentales: algunos juegos pueden fallar o no arrancar. En la NES, [L]+[R]+[Start]+[Arriba] repinta la paleta si los colores salen mal.',
-   'NES-, Master-System-, Game-Boy-Color- und Atari-2600-Spiele laufen auf eigenen FPGA-Cores, nur auf |FXPAK PRO (Mk.III)|. Die Cores sind experimentell: manche Spiele haben Fehler oder laufen nicht. Beim NES malt [L]+[R]+[Start]+[Oben] die Palette neu, wenn Farben falsch sind.',
-   "Les jeux NES, Master System, Game Boy Color et Atari 2600 tournent sur leurs propres cores FPGA, sur |FXPAK PRO (Mk.III)| seulement. Ces cores sont expérimentaux : certains jeux peuvent bugger ou ne pas démarrer. Sur NES, [L]+[R]+[Start]+[Haut] redessine la palette si les couleurs sont fausses.",
-   'I giochi NES, Master System, Game Boy Color e Atari 2600 girano su core FPGA dedicati, solo su |FXPAK PRO (Mk.III)|, e si aprono come una ROM. Questi core sono sperimentali: alcuni giochi possono avere difetti o non partire. Sul NES, [L]+[R]+[Start]+[Su] ridisegna la tavolozza se i colori sono sbagliati.',
-   'Игры NES, Master System, Game Boy Color и Atari 2600 идут на своих ядрах FPGA, только на |FXPAK PRO (Mk.III)|, и открываются как любой ROM-файл. Эти ядра экспериментальные: некоторые игры могут сбоить или не запускаться. У NES комбинация кнопок [L]+[R]+[Start]+[Вверх] перерисовывает палитру, если цвета неверны.',
-   'NES-, Master System-, Game Boy Color- en Atari 2600-spellen draaien op eigen FPGA-cores, alleen op |FXPAK PRO (Mk.III)|, en openen als elke ROM. Deze cores zijn experimenteel: sommige spellen haperen of starten niet. Op de NES tekent [L]+[R]+[Start]+[Omhoog] het palet opnieuw als de kleuren fout zijn.'),
-  # 28 the Atari 2600's console switches on the pad, and its picture width
-  ("The console's switches are on controller 1: [Start] is RESET and [Select] is SELECT while held, [X] flips Color and B/W, [L] and [R] flip the two difficulty switches. {a26w} in {chipopts} picks 160 px (1:1) or 256 px (wide), |FXPAK PRO (Mk.III)| only.",
-   'As chaves do console ficam no controle 1: [Start] é o RESET e [Select] o SELECT enquanto segurados, [X] alterna Cor e P/B, [L] e [R] alternam as duas chaves de dificuldade. {a26w} em {chipopts} escolhe 160 px (1:1) ou 256 px (esticado), só no |FXPAK PRO (Mk.III)|.',
-   'Los interruptores de la consola están en el mando 1: [Start] es RESET y [Select] es SELECT mientras se mantienen, [X] cambia Color y B/N, [L] y [R] los dos de dificultad. {a26w} en {chipopts} elige 160 px (1:1) o 256 px (ancho), solo en |FXPAK PRO (Mk.III)|.',
-   'Die Schalter der Konsole liegen auf Controller 1: [Start] ist RESET und [Select] SELECT, solange gehalten, [X] wechselt Farbe und S/W, [L] und [R] die zwei Schwierigkeitsschalter. {a26w} in {chipopts}: 160 px (1:1) oder 256 px (breit), nur |FXPAK PRO (Mk.III)|.',
-   "Sur la manette 1, [Start] est RESET et [Select] SELECT tant qu'ils sont tenus, [X] bascule Couleur et N/B, [L] et [R] les deux interrupteurs de difficulté. {a26w} ({chipopts}) choisit 160 px (1:1) ou 256 px (large), |FXPAK PRO (Mk.III)| seulement.",
-   'Gli interruttori della console sono sul controller 1: [Start] è RESET e [Select] è SELECT finché tenuti, [X] alterna Colore e B/N, [L] e [R] i due interruttori di difficoltà. {a26w} in {chipopts}: 160 px (1:1) o 256 px (largo), solo |FXPAK PRO (Mk.III)|.',
-   'Переключатели консоли на контроллере 1: кнопка [Start] выполняет функцию [RESET], а кнопка [Select] - функцию [SELECT] (пока кнопка удерживается). Кнопка [X] переключает режим отображения (цветной или чёрно-белый), а кнопки [L] и [R] управляют двумя переключателями сложности. {a26w} в {chipopts}: 160 пикселей (1:1) или 256 пикселей (широко), только для |FXPAK PRO (Mk.III)|.',
-   'De schakelaars van de console zitten op controller 1: [Start] is RESET en [Select] SELECT zolang ingedrukt, [X] wisselt Kleur en Z/W, [L] en [R] de twee moeilijkheidsschakelaars. {a26w} in {chipopts}: 160 px (1:1) of 256 px (breed), alleen |FXPAK PRO (Mk.III)|.'),
+  # 27 other consoles: NES, Master System, Game Boy Color (Mk.III only), Atari 2600 (both boards), experimental
+  ('NES, Master System, Game Boy Color and Atari 2600 games run on their own FPGA cores. They are experimental: some games may glitch or not run. On the NES, [L]+[R]+[Start]+[Up] repaints the palette if the colours look wrong. Only on |FXPAK PRO (Mk.III)|, except the Atari 2600: available on the |sd2snes Mk.II| from version 2.19.',
+   'Jogos de NES, Master System, Game Boy Color e Atari 2600 rodam em cores de FPGA próprios. São experimentais: alguns jogos podem ter falhas ou não rodar. No NES, [L]+[R]+[Start]+[Cima] repinta a paleta se as cores saírem erradas. Só no |FXPAK PRO (Mk.III)|, menos o Atari 2600: disponível no |sd2snes Mk.II| a partir da versão 2.19.',
+   'Los juegos de NES, Master System, Game Boy Color y Atari 2600 corren en sus propios cores FPGA. Son experimentales: algunos juegos pueden fallar o no arrancar. En la NES, [L]+[R]+[Start]+[Arriba] repinta la paleta si los colores salen mal. Solo en |FXPAK PRO (Mk.III)|, salvo el Atari 2600: disponible en |sd2snes Mk.II| desde la versión 2.19.',
+   'NES-, Master-System-, Game-Boy-Color- und Atari-2600-Spiele laufen auf eigenen FPGA-Cores. Sie sind experimentell: manche Spiele haben Fehler oder laufen nicht. Beim NES malt [L]+[R]+[Start]+[Oben] die Palette neu, wenn Farben falsch sind. Nur auf |FXPAK PRO (Mk.III)|, außer Atari 2600: auf |sd2snes Mk.II| ab Version 2.19 verfügbar.',
+   "Les jeux NES, Master System, Game Boy Color et Atari 2600 tournent sur leurs propres cores FPGA. Ils sont expérimentaux : des jeux peuvent bugger ou ne pas démarrer. Sur NES, [L]+[R]+[Start]+[Haut] redessine la palette si les couleurs sont fausses. Seulement sur |FXPAK PRO (Mk.III)|, sauf l'Atari 2600 : disponible sur |sd2snes Mk.II| dès la version 2.19.",
+   "I giochi NES, Master System, Game Boy Color e Atari 2600 girano su core FPGA dedicati. Sono sperimentali: alcuni giochi possono avere difetti o non partire. Sul NES, [L]+[R]+[Start]+[Su] ridisegna la tavolozza se i colori sono sbagliati. Solo su |FXPAK PRO (Mk.III)|, tranne l'Atari 2600: disponibile su |sd2snes Mk.II| dalla versione 2.19.",
+   'Игры NES, Master System, Game Boy Color и Atari 2600 идут на своих ядрах FPGA. Ядра экспериментальные: некоторые игры могут сбоить или не запускаться. У NES кнопки [L]+[R]+[Start]+[Вверх] перерисовывают палитру, если цвета неверны. Только на |FXPAK PRO (Mk.III)|, кроме Atari 2600: доступен на |sd2snes Mk.II| начиная с версии 2.19.',
+   'NES-, Master System-, Game Boy Color- en Atari 2600-spellen draaien op eigen FPGA-cores. Ze zijn experimenteel: sommige spellen haperen of starten niet. Op de NES tekent [L]+[R]+[Start]+[Omhoog] het palet opnieuw als de kleuren fout zijn. Alleen op |FXPAK PRO (Mk.III)|, behalve de Atari 2600: op |sd2snes Mk.II| beschikbaar vanaf versie 2.19.'),
+  # 28 the Atari 2600's console switches and player keys on the pad (both boards), and its picture width (Mk.III)
+  ("The console's switches are on controller 1: [Start] is RESET and [Select] is SELECT while held, [L] steps the difficulty (Easy, Normal, Hard), [R] pauses, [X] flips Color and B/W, [Y] changes the palette. {a26w} in {chipopts} picks 160 px (1:1) or 256 px (wide), |FXPAK PRO (Mk.III)| only.",
+   'As chaves do console ficam no controle 1: [Start] é o RESET e [Select] o SELECT enquanto segurados, [L] passa a dificuldade (Easy, Normal, Hard), [R] pausa, [X] alterna Cor e P/B, [Y] troca a paleta. {a26w} em {chipopts} escolhe 160 px (1:1) ou 256 px (esticado), só no |FXPAK PRO (Mk.III)|.',
+   'Los interruptores de la consola están en el mando 1: [Start] es RESET y [Select] es SELECT mientras se mantienen, [L] cambia la dificultad (Easy, Normal, Hard), [R] pausa, [X] cambia Color y B/N, [Y] la paleta. {a26w} en {chipopts} elige 160 px (1:1) o 256 px (ancho), solo en |FXPAK PRO (Mk.III)|.',
+   'Die Schalter der Konsole liegen auf Controller 1: [Start] ist RESET und [Select] SELECT, solange gehalten, [L] wechselt die Schwierigkeit (Easy, Normal, Hard), [R] pausiert, [X] wechselt Farbe und S/W, [Y] die Palette. {a26w} in {chipopts}: 160 px (1:1) oder 256 px (breit), nur |FXPAK PRO (Mk.III)|.',
+   "Sur la manette 1, [Start] est RESET et [Select] SELECT tant qu'ils sont tenus, [L] change la difficulté (Easy, Normal, Hard), [R] met en pause, [X] bascule Couleur et N/B, [Y] change la palette. {a26w} ({chipopts}) choisit 160 px (1:1) ou 256 px (large), |FXPAK PRO (Mk.III)| seulement.",
+   'Gli interruttori della console sono sul controller 1: [Start] è RESET e [Select] è SELECT finché tenuti, [L] cambia la difficoltà (Easy, Normal, Hard), [R] mette in pausa, [X] alterna Colore e B/N, [Y] cambia la tavolozza. {a26w} in {chipopts}: 160 px (1:1) o 256 px (largo), solo |FXPAK PRO (Mk.III)|.',
+   'Переключатели консоли на контроллере 1: кнопка [Start] выполняет функцию RESET, а кнопка [Select] - функцию SELECT (пока кнопка удерживается). [L] меняет сложность (Easy, Normal, Hard), [R] ставит паузу, [X] переключает цветной и чёрно-белый режим, [Y] меняет палитру. {a26w} в {chipopts}: 160 пикселей (1:1) или 256 (широко), только для |FXPAK PRO (Mk.III)|.',
+   'De schakelaars van de console zitten op controller 1: [Start] is RESET en [Select] SELECT zolang ingedrukt, [L] wisselt de moeilijkheid (Easy, Normal, Hard), [R] pauzeert, [X] wisselt Kleur en Z/W, [Y] het palet. {a26w} in {chipopts}: 160 px (1:1) of 256 px (breed), alleen |FXPAK PRO (Mk.III)|.'),
   # 29 the card's folders: 2-letter buckets, console folders, |Organize|
   ('Saves, states, cheats, info cards and patch settings of each game live in |/sd2snes/<area>/<2 letters>/|, plus a console folder (|sgb, sft, nes, sms, a26|). Updating only the firmware? Run |Organize| in the |Web Manager|, or old saves seem to vanish.',
    'Saves, states, cheats, fichas e ajustes de patch de cada jogo ficam em |/sd2snes/<área>/<2 letras>/|, mais uma pasta por console (|sgb, sft, nes, sms, a26|). Vai atualizar só a firmware? Rode o |Organize| do |Web Manager|, senão os saves antigos parecem sumir.',
@@ -545,7 +555,7 @@ TEXTS = [
    'Saves, States, Cheats, Infokarten und Patch-Einstellungen jedes Spiels liegen in |/sd2snes/<Bereich>/<2 Buchstaben>/|, dazu ein Konsolenordner (|sgb, sft, nes, sms, a26|). Nur die Firmware aktualisiert? |Organize| im |Web Manager| starten, sonst wirken alte Saves verschwunden.',
    'Saves, states, cheats, fiches et réglages de patch de chaque jeu sont dans |/sd2snes/<zone>/<2 lettres>/|, plus un dossier par console (|sgb, sft, nes, sms, a26|). Tu mets à jour seulement le firmware ? Lance |Organize| dans le |Web Manager|, sinon les anciens saves semblent perdus.',
    'Save, state, cheat, schede e impostazioni delle patch di ogni gioco stanno in |/sd2snes/<area>/<2 lettere>/|, più una cartella per console (|sgb, sft, nes, sms, a26|). Aggiorni solo il firmware? Usa |Organize| nel |Web Manager|, o i vecchi save sembreranno spariti.',
-   'Сохранения, сейвстейты, чит-коды, карточки и настройки патчей каждой игры лежат в |/sd2snes/<раздел>/<2 буквы>/|, плюс папка консоли (|sgb, sft, nes, sms, a26|). Обновляете только прошивку? На компьютере откройте |Web Manager| на сайте, укажите ему карту памяти и запустите |Organize|, иначе старые сохранения пропадут из виду.',
+   'Сохранения, сейвстейты, чит-коды, карточки и настройки патчей каждой игры лежат в |/sd2snes/<раздел>/<2 буквы>/|, плюс папка консоли (|sgb, sft, nes, sms, a26|). Обновляете только прошивку? Откройте |Web Manager| на сайте, укажите ему карту памяти и запустите |Organize|, иначе старые сохранения пропадут из виду.',
    'Saves, states, cheats, spelinfo en patch-instellingen van elk spel staan in |/sd2snes/<gebied>/<2 letters>/|, plus een consolemap (|sgb, sft, nes, sms, a26|). Werk je alleen de firmware bij? Draai |Organize| in de |Web Manager|, anders lijken oude saves weg.'),
   # 30 the memory test of the main menu
   ("{memtest}, in the main menu, checks the cartridge's memory right on the console: [A] runs the full test, the wiring test included, in about 60 seconds. The console resets at the end.",
@@ -664,7 +674,7 @@ TEXTS = [
    'Steck eine SNES Mouse in einen der beiden Ports, und das Menü zeigt einen Zeiger. Linksklick [ML] ist [A], Rechtsklick [MR] ist [B], beide zusammen [MB] sind [X], rechts gedrückt halten [MRH] ist [Y]. In den Musik-Playern springt links gedrückt halten [MLH] zum nächsten Titel und [MRH] zum vorherigen. Schieb den Zeiger an den oberen oder unteren Rand, um die Liste zu blättern.',
    "Branche une SNES Mouse sur l'un des ports et le menu affiche un pointeur. Le clic gauche [ML] fait [A], le clic droit [MR] fait [B], les deux ensemble [MB] font [X] et le droit maintenu [MRH] fait [Y]. Dans les lecteurs de musique, le gauche maintenu [MLH] passe à la piste suivante et [MRH] revient à la précédente. Pousse le pointeur contre le bord haut ou bas pour faire défiler la liste.",
    'Collega un SNES Mouse a una delle due porte e il menu mostra un puntatore. Il clic sinistro [ML] è [A], il destro [MR] è [B], i due insieme [MB] sono [X] e tenere premuto il destro [MRH] è [Y]. Nei lettori musicali, tenere premuto il sinistro [MLH] passa alla traccia successiva e [MRH] torna alla precedente. Spingi il puntatore contro il bordo in alto o in basso per scorrere la lista.',
-   'Подключи мышь для SNES к любому порту, и в меню появится курсор. Левая кнопка [ML] работает как [A], правая [MR] как [B], обе [MB] как [X], а удержание правой [MRH] как [Y]. В проигрывателях удержание левой [MLH] включает следующий трек, а [MRH] - предыдущий. Упри курсор в верхний или нижний край, чтобы прокрутить список.',
+   'Подключи мышь для SNES к любому порту, и в меню появится курсор. Левая кнопка [ML] работает как [A], правая [MR] - как [B], обе [MB] - как [X], а удержание правой [MRH] - как [Y]. В проигрывателях удержание левой [MLH] включает следующий трек, а удержание правой [MRH] - предыдущий. Сдвинь курсор до упора в верхний или нижний край, чтобы прокрутить список.',
    'Sluit een SNES Mouse aan op een van beide poorten en het menu toont een aanwijzer. Linksklikken [ML] is [A], rechtsklikken [MR] is [B], beide samen [MB] is [X] en rechts ingedrukt houden [MRH] is [Y]. In de muziekspelers gaat links ingedrukt houden [MLH] naar het volgende nummer en [MRH] naar het vorige. Duw de aanwijzer tegen de boven- of onderrand om door de lijst te scrollen.'),
   # 44 the music players: |.pcm| (seek, playlist) and |.spc| (2.18)
   ("A |.pcm| or |.spc| in the list opens its player, and the folder is a playlist: the next track plays when one ends, [L]/[R] skip tracks. On a |.pcm|, [Left]/[Right] jump 5 s (hold for more) and a click on the bar seeks. An |.spc| shows its length, then moves on.",
@@ -718,7 +728,7 @@ TEXTS = [
    '{goptrow} speichert Einstellungen für ein Spiel, aufgebaut wie {cfg}, nur mit dem, was das Spiel nutzt. {gdefault} folgt der globalen Option. Öffnen mit [Y] auf einem Spiel, [L] auf der Infokarte oder [Y] auf der Ingame-Tab-Leiste, dort ist im Spiel Gesperrtes grau.',
    "{goptrow} garde des réglages pour un seul jeu, rangés comme {cfg}, avec seulement ce que le jeu utilise. {gdefault} suit l'option globale. Ouvrez avec [Y] sur un jeu, [L] sur la fiche ou [Y] sur les onglets du menu en jeu, où ce qui est bloqué en jeu est grisé.",
    "{goptrow} salva impostazioni per un solo gioco, come in {cfg}, solo con ciò che il gioco usa. {gdefault} segue l'opzione globale. Apri con [Y] su un gioco, [L] sulla scheda o [Y] sulle schede del menu in gioco, dove ciò che è bloccato in gioco è grigio.",
-   '{goptrow} содержит настройки, относящиеся к конкретной игре. Они организованы так же, как в {cfg}, и включают только те параметры, которые применимы к ней. {gdefault} соответствует общим настройкам. Открыть этот раздел можно нажатием кнопки [Y] на выбранной игре, кнопка [L] - в карточке игры или кнопка [Y] - на панели вкладок |Меню в игре|, при этом заблокированные для игры параметры отображаются серым цветом.',
+   'Пункт {goptrow} содержит настройки, относящиеся к конкретной игре. Они организованы так же, как в {cfg}, и включают только те параметры, которые применимы к ней. {gdefault} соответствует общим настройкам. Открыть этот раздел можно нажатием кнопки [Y] на выбранной игре, кнопка [L] - в карточке игры или кнопка [Y] - на панели вкладок |Меню в игре|, при этом заблокированные для игры параметры отображаются серым цветом.',
    '{goptrow} bewaart instellingen voor één spel, ingedeeld zoals {cfg}, met alleen wat dat spel gebruikt. {gdefault} volgt de algemene optie. Open met [Y] op een spel, [L] op de spelinfo of [Y] op de tabbalk van het in-game menu, waar wat vastligt grijs is.'),
   # 50 Repeat in the .spc / .pcm / .nsf players (2.18)
   ('In the |.spc|, |.pcm| and |.nsf| players, [X] turns {repeat} on: when the track ends it starts again instead of moving to the next one. An |.nsf| song ends after 3 s of silence. {repeat} starts off and the player remembers it.',
@@ -773,9 +783,59 @@ TEXTS = [
    '{lockrow} in {cfg} fragt vor allem, was die Karte oder die Einstellungen ändert, einen Code aus 4 bis 10 Tasten ab (3 s warten beendet einen kürzeren): {cfg}, Dateien löschen, umbenennen und verschieben, Spielstände, {goptrow}, Cheats bearbeiten, Autoboot und Themes, auch im Ingame-Menü. [B] 3 s halten bricht ab. Code vergessen? LockCode in |/sd2snes/config.yml| löschen.',
    '{lockrow}, dans {cfg}, demande un code de 4 à 10 boutons (attendez 3 s pour finir avant 10) avant ce qui change la carte ou les réglages : {cfg}, effacer, renommer et déplacer des fichiers, sauvegardes, {goptrow}, éditer les cheats, autoboot et thèmes, aussi dans le menu en jeu. Maintenir [B] 3 s annule. Code oublié ? Effacez LockCode dans |/sd2snes/config.yml|.',
    '{lockrow}, in {cfg}, chiede un codice da 4 a 10 tasti (aspetta 3 s per finire prima di 10) prima di ciò che cambia la scheda o le impostazioni: {cfg}, cancellare, rinominare e spostare file, salvataggi, {goptrow}, modificare i cheat, autoboot e temi, anche nel menu in gioco. Tenere [B] 3 s annulla. Codice dimenticato? Cancella LockCode in |/sd2snes/config.yml|.',
-   '{lockrow} в {cfg} спрашивает код из 4-10 кнопок (подождите 3 с, чтобы закончить раньше) перед всем, что меняет карту памяти или настройки: {cfg}, удаление, переименование и перемещение файлов, сохранения, {goptrow}, правка чит-кодов, автозапуск и темы, в том числе в |Меню в игре|. Удержание кнопки [B] 3 с - отмена. Забыли код? Удалите LockCode в |/sd2snes/config.yml|.',
+   '{lockrow} в {cfg} запрашивает код, состоящий из комбинации 4-10 кнопок, перед любым действием, меняющим данные на карте памяти или настройки: {cfg}, удалением, переименованием и перемещением файлов, сохранениями, {goptrow}, правкой чит-кодов, автозапуском и темами, в том числе в |Меню в игре|. Если в коде менее 10 кнопок, подождите 3 секунды, чтобы закончить ввод раньше. Удержание кнопки [B] в течение 3 секунд - отмена. Забыли код? Удалите строку LockCode в файле |/sd2snes/config.yml|.',
    "{lockrow} in {cfg} vraagt een code van 4 tot 10 knoppen (wacht 3 s om eerder te stoppen) voor alles wat de kaart of de instellingen wijzigt: {cfg}, bestanden wissen, hernoemen en verplaatsen, saves, {goptrow}, cheats bewerken, autoboot en thema's, ook in het in-game menu. [B] 3 s vasthouden annuleert. Code vergeten? Wis LockCode in |/sd2snes/config.yml|."),
-  # 50 the PPU is cleared before every game boots
+  # 56 the 2.19 section: what is new in this release
+  ('Version 2.19 is out. The next cards show what is new.',
+   'A versão 2.19 chegou. Os próximos cards mostram o que há de novo.',
+   'Ya está aquí la versión 2.19. Las siguientes pantallas muestran las novedades.',
+   'Version 2.19 ist da. Die nächsten Karten zeigen, was neu ist.',
+   'La version 2.19 est là. Les prochains écrans montrent les nouveautés.',
+   'La versione 2.19 è arrivata. Le prossime schede mostrano le novità.',
+   'Вышла версия 2.19. На следующих страницах показано, что нового.',
+   'Versie 2.19 is er. De volgende kaarten tonen wat er nieuw is.'),
+  # 57 the animated menu background (2.19): the header stays still, a theme may bring its own
+  # (made in the Theme Creator), a theme without one shows only its gradient, and the CJK
+  # languages turn it off (their glyph cache uses the same video memory)
+  ('The menu has an animated background that slides behind the list while the logo stays still. A |.thm| theme can bring its own, made in the |Theme Creator|. A theme without one shows only its gradient. Japanese and Chinese have no background: their text uses the same video memory.',
+   'O menu tem um fundo animado, que desliza atrás da lista com o logo parado. Um tema |.thm| pode trazer o dele, criado no |Theme Creator|. Tema sem fundo mostra só o degradê. Em japonês e chinês não há fundo: o texto usa a mesma memória de vídeo.',
+   'El menú tiene un fondo animado que se desliza tras la lista con el logo fijo. Un tema |.thm| puede traer el suyo, creado en el |Theme Creator|. Un tema sin fondo muestra solo su degradado. En japonés y chino no hay fondo: el texto usa la misma memoria de vídeo.',
+   'Das Menü hat einen animierten Hintergrund, der hinter der Liste gleitet, das Logo steht still. Ein |.thm|-Theme kann seinen eigenen mitbringen, erstellt im |Theme Creator|. Ohne Hintergrund zeigt es nur seinen Verlauf. Japanisch und Chinesisch haben keinen: ihr Text nutzt denselben Videospeicher.',
+   "Le menu a un fond animé qui glisse derrière la liste, le logo restant fixe. Un thème |.thm| peut apporter le sien, créé dans le |Theme Creator|. Un thème sans fond montre seulement son dégradé. Le japonais et le chinois n'ont pas de fond : leur texte utilise la même mémoire vidéo.",
+   'Il menu ha uno sfondo animato che scorre dietro la lista, con il logo fermo. Un tema |.thm| può portare il suo, creato nel |Theme Creator|. Un tema senza sfondo mostra solo la sfumatura. Giapponese e cinese non hanno sfondo: il testo usa la stessa memoria video.',
+   'В меню есть анимированный фон: он движется за списком, а логотип стоит на месте. Тема |.thm| может содержать свой фон, созданный в |Theme Creator|. Тема без фона показывает только градиент. В японском и китайском фона нет: их текст использует ту же видеопамять.',
+   'Het menu heeft een bewegende achtergrond die achter de lijst schuift terwijl het logo stilstaat. Een |.thm|-thema kan een eigen meebrengen, gemaakt in de |Theme Creator|. Zonder achtergrond toont het alleen zijn verloop. Japans en Chinees hebben er geen: hun tekst gebruikt hetzelfde videogeheugen.'),
+  # 58 a theme's font, music, effects and preview picture (2.19): picking it opens a window with
+  # the picture and the Apply font / Apply sounds options; nothing is extracted, changing the
+  # theme undoes it all, and the last choice wins (a .sfn picked later replaces the theme's font,
+  # a .spc its music; the theme's effects stay)
+  ("A |.thm| theme can also bring a font, music, effects and a preview. When you pick it, the preview appears with {thmfont} and {thmsound}. Nothing goes to the card, and changing the theme undoes it all. A |.sfn| or |.spc| picked later replaces the theme's font or music.",
+   'Um tema |.thm| também pode trazer fonte, música, efeitos e uma prévia. Ao escolhê-lo, a prévia aparece com {thmfont} e {thmsound}. Nada vai para o cartão, e trocar de tema desfaz tudo. Um |.sfn| ou |.spc| escolhido depois substitui a fonte ou a música do tema.',
+   'Un tema |.thm| también puede traer fuente, música, efectos y una vista previa. Al elegirlo, la vista previa sale con {thmfont} y {thmsound}. Nada va a la tarjeta, y otro tema lo deshace todo. Un |.sfn| o |.spc| elegido después sustituye la fuente o la música del tema.',
+   'Ein |.thm|-Theme kann auch Schrift, Musik, Effekte und eine Vorschau mitbringen. Beim Wählen erscheint die Vorschau mit {thmfont} und {thmsound}. Nichts kommt auf die Karte, ein anderes Theme macht alles rückgängig. Eine später gewählte |.sfn| oder |.spc| ersetzt Schrift oder Musik des Themes.',
+   "Un thème |.thm| peut aussi apporter police, musique, effets et un aperçu. Quand tu le choisis, l'aperçu s'affiche avec {thmfont} et {thmsound}. Rien ne va sur la carte, et un autre thème annule tout. Un |.sfn| ou |.spc| choisi ensuite remplace la police ou la musique du thème.",
+   "Un tema |.thm| può portare anche font, musica, effetti e un'anteprima. Quando lo scegli, l'anteprima appare con {thmfont} e {thmsound}. Niente va sulla scheda, e un altro tema annulla tutto. Un |.sfn| o |.spc| scelto dopo sostituisce il font o la musica del tema.",
+   'Тема |.thm| может содержать также шрифт, музыку, эффекты и превью. При выборе превью видно с {thmfont} и {thmsound}. На карту ничего не копируется, другая тема отменяет всё. Выбранные позже |.sfn| или |.spc| заменяют шрифт или музыку темы.',
+   'Een |.thm|-thema kan ook een lettertype, muziek, effecten en een voorbeeld meebrengen. Bij het kiezen verschijnt het voorbeeld met {thmfont} en {thmsound}. Niets gaat naar de kaart, en een ander thema maakt alles ongedaan. Een later gekozen |.sfn| of |.spc| vervangt lettertype of muziek van het thema.'),
+  # 59 font files (.sfn), picked in the browser like a theme (2.19)
+  ("Change the menu's letters with a |.sfn| font file: pick it in the list, as with a theme, and only the letters change. Draw your own in the |Font Editor| on the site or take one from its font gallery. {restorefont} in {browser} brings back the built-in font.",
+   'Troque as letras do menu com um arquivo de fonte |.sfn|: escolha na lista, como um tema, e só as letras mudam. Desenhe a sua no |Font Editor| do site ou pegue uma na galeria de fontes. {restorefont} em {browser} volta à fonte do próprio menu.',
+   'Cambia las letras del menú con un archivo de fuente |.sfn|: elígelo en la lista, como un tema, y solo cambian las letras. Dibuja la tuya en el |Font Editor| del sitio o toma una de su galería de fuentes. {restorefont} en {browser} vuelve a la fuente del menú.',
+   'Ändere die Buchstaben des Menüs mit einer Schriftdatei |.sfn|: in der Liste wählen wie ein Theme, nur die Buchstaben ändern sich. Zeichne deine eigene im |Font Editor| der Website oder nimm eine aus der Schriftgalerie. {restorefont} in {browser} holt die eingebaute Schrift zurück.',
+   "Change les lettres du menu avec un fichier de police |.sfn| : choisis-le dans la liste, comme un thème, et seules les lettres changent. Dessine la tienne dans le |Font Editor| du site ou prends-en une dans sa galerie de polices. {restorefont} ({browser}) remet la police d'origine.",
+   'Cambia le lettere del menu con un file di font |.sfn|: sceglilo nella lista, come un tema, e cambiano solo le lettere. Disegna il tuo nel |Font Editor| del sito o prendine uno dalla galleria dei font. {restorefont} in {browser} torna al font del menu.',
+   'Меняйте буквы меню файлом шрифта |.sfn|: выберите его в списке, как тему, и изменятся только буквы. Нарисуйте свой в |Font Editor| на сайте или возьмите готовый из галереи шрифтов. {restorefont} в разделе {browser} вернёт встроенный шрифт.',
+   'Verander de letters van het menu met een lettertypebestand |.sfn|: kies het in de lijst, zoals een thema, en alleen de letters veranderen. Teken je eigen in de |Font Editor| op de site of neem er een uit de lettertypegalerij. {restorefont} in {browser} zet het ingebouwde lettertype terug.'),
+  # 60 the Atari 2600 on the Mk.II too, and the same pad keys on both boards (2.19)
+  ('Atari 2600 games now run on the |sd2snes Mk.II| too, on a core of its own. And on both boards the pad works the same: [L] steps the difficulty (Easy, Normal, Hard), [R] pauses, [X] flips Color and B/W and [Y] changes the palette, each with its name on screen. They act when released and only alone, so the combos never change a setting.',
+   'Os jogos de Atari 2600 agora rodam também no |sd2snes Mk.II|, num core próprio. E nas duas placas o controle funciona igual: [L] passa a dificuldade (Easy, Normal, Hard), [R] pausa, [X] alterna Cor e P/B e [Y] troca a paleta, cada um com o nome na tela. Eles agem ao soltar e só sozinhos, então os combos nunca mudam um ajuste.',
+   'Los juegos de Atari 2600 ahora corren también en el |sd2snes Mk.II|, con un core propio. Y en las dos placas el mando funciona igual: [L] cambia la dificultad (Easy, Normal, Hard), [R] pausa, [X] cambia Color y B/N e [Y] la paleta, cada uno con su nombre en pantalla. Actúan al soltarlos y solo solos, así los combos nunca cambian un ajuste.',
+   'Atari-2600-Spiele laufen jetzt auch auf dem |sd2snes Mk.II|, mit einem eigenen Core. Und auf beiden Boards funktioniert der Controller gleich: [L] wechselt die Schwierigkeit (Easy, Normal, Hard), [R] pausiert, [X] wechselt Farbe und S/W, [Y] die Palette, jeweils mit Namen auf dem Bild. Sie wirken beim Loslassen und nur allein, Kombos ändern also nie eine Einstellung.',
+   "Les jeux Atari 2600 tournent maintenant aussi sur le |sd2snes Mk.II|, avec un core à lui. Et sur les deux cartes la manette marche pareil : [L] change la difficulté (Easy, Normal, Hard), [R] met en pause, [X] bascule Couleur et N/B, [Y] change la palette, chacun avec son nom à l'écran. Ils agissent au relâchement et seuls, donc les combos ne changent jamais un réglage.",
+   "I giochi Atari 2600 ora girano anche sul |sd2snes Mk.II|, con un core tutto suo. E su entrambe le schede il controller funziona allo stesso modo: [L] cambia la difficoltà (Easy, Normal, Hard), [R] mette in pausa, [X] alterna Colore e B/N, [Y] cambia la tavolozza, ognuno con il nome sullo schermo. Agiscono al rilascio e solo da soli, quindi le combo non cambiano mai un'impostazione.",
+   'Игры Atari 2600 теперь идут и на |sd2snes Mk.II|, на собственном ядре. А на обеих платах кнопки работают одинаково: [L] меняет сложность (Easy, Normal, Hard), [R] ставит паузу, [X] переключает цветной и чёрно-белый режим, [Y] меняет палитру, название каждой настройки видно на экране. Кнопки срабатывают при отпускании и только поодиночке, поэтому комбинации никогда не меняют настройки.',
+   "Atari 2600-spellen draaien nu ook op de |sd2snes Mk.II|, met een eigen core. En op beide borden werkt de controller hetzelfde: [L] wisselt de moeilijkheid (Easy, Normal, Hard), [R] pauzeert, [X] wisselt Kleur en Z/W, [Y] het palet, elk met de naam op het scherm. Ze werken bij loslaten en alleen los, dus combo's veranderen nooit een instelling."),
+  # 61 the PPU is cleared before every game boots
   ("Some romhacks draw their intro without clearing the video memory, and on a real console the menu's leftovers show as garbage. The |sd2snes+| wipes it before every game starts.",
    'Alguns romhacks desenham a abertura sem limpar a memória de vídeo, e num console de verdade as sobras do menu aparecem como lixo. O |sd2snes+| limpa tudo antes de qualquer jogo começar.',
    'Algunos romhacks dibujan su intro sin limpiar la memoria de vídeo, y en una consola real los restos del menú salen como basura. El |sd2snes+| la borra antes de que empiece cualquier juego.',
@@ -784,7 +844,7 @@ TEXTS = [
    "Alcune romhack disegnano l'intro senza pulire la memoria video, e su una console vera gli avanzi del menu appaiono come spazzatura. L'|sd2snes+| la pulisce prima che parta qualsiasi gioco.",
    'Некоторые ромхаки рисуют заставку, не очищая видеопамять, и на настоящей консоли остатки меню видны как мусор. |sd2snes+| очищает её перед запуском любой игры.',
    'Sommige romhacks tekenen hun intro zonder het videogeheugen te wissen, en op een echte console verschijnen restjes van het menu als rommel. De |sd2snes+| wist het voordat elk spel start.'),
-  # 51 bus timing compat
+  # 62 bus timing compat
   ('A game that freezes or glitches right after the logo on some consoles, mostly 1-CHIP ones? Try {cfg} > {ingame} > {buscompat}: it frees the cartridge bus a little earlier, like firmware 1.11.0 did.',
    'Um jogo trava ou dá glitch logo depois do logo em alguns consoles, quase sempre 1-CHIP? Tente {cfg} > {ingame} > {buscompat}: ela libera o barramento do cartucho um pouco antes, como a firmware 1.11.0 fazia.',
    '¿Un juego se cuelga o falla justo tras el logo en algunas consolas, casi siempre 1-CHIP? Prueba {cfg} > {ingame} > {buscompat}: libera el bus del cartucho un poco antes, como hacía el firmware 1.11.0.',
@@ -793,7 +853,7 @@ TEXTS = [
    "Un gioco si blocca o dà glitch subito dopo il logo su alcune console, quasi sempre 1-CHIP? Prova {cfg} > {ingame} > {buscompat}: libera il bus della cartuccia un po' prima, come il firmware 1.11.0.",
    'Игра зависает или работает со сбоями сразу после логотипа на некоторых консолях, чаще всего 1-CHIP? Попробуйте {cfg} > {ingame} > {buscompat}: шина картриджа освобождается немного раньше, как в прошивке 1.11.0.',
    'Loopt een spel vast of hapert het net na het logo op sommige consoles, meestal 1-CHIP? Probeer {cfg} > {ingame} > {buscompat}: de cartridgebus wordt iets eerder vrijgegeven, zoals firmware 1.11.0 deed.'),
-  # 52 the hardware model in System Information
+  # 63 the hardware model in System Information
   ('{sysinfo} in the main menu ([X]) now also shows which hardware it runs on: |sd2snes Mk.II|, |sd2snes Mk.III| or |FXPAK PRO STM32|.',
    '{sysinfo} no menu principal ([X]) agora mostra também em que hardware ele roda: |sd2snes Mk.II|, |sd2snes Mk.III| ou |FXPAK PRO STM32|.',
    '{sysinfo} en el menú principal ([X]) ahora también muestra en qué hardware corre: |sd2snes Mk.II|, |sd2snes Mk.III| o |FXPAK PRO STM32|.',
@@ -802,7 +862,7 @@ TEXTS = [
    '{sysinfo} nel menu principale ([X]) ora mostra anche su quale hardware gira: |sd2snes Mk.II|, |sd2snes Mk.III| o |FXPAK PRO STM32|.',
    '{sysinfo} в главном меню ([X]) теперь показывает и модель картриджа: |sd2snes Mk.II|, |sd2snes Mk.III| или |FXPAK PRO STM32|.',
    '{sysinfo} in het hoofdmenu ([X]) toont nu ook op welke hardware het draait: |sd2snes Mk.II|, |sd2snes Mk.III| of |FXPAK PRO STM32|.'),
-  # 48 BS-X and the Memory Pack
+  # 64 BS-X and the Memory Pack
   ('Satellaview games that use the 8M Memory Pack slot read it from |/sd2snes/saves| as |<rom>.mpk|: saved sound novels, downloaded races and the like. The game still boots without a pack.',
    'Jogos do Satellaview que usam o slot de Memory Pack de 8M leem o pack de |/sd2snes/saves| como |<rom>.mpk|: sound novels salvas, corridas baixadas e afins. O jogo boota mesmo sem o pack.',
    'Los juegos de Satellaview que usan el slot de Memory Pack de 8M lo leen de |/sd2snes/saves| como |<rom>.mpk|: sound novels guardadas, carreras descargadas y más. El juego arranca incluso sin pack.',
@@ -811,7 +871,7 @@ TEXTS = [
    'I giochi Satellaview che usano lo slot Memory Pack da 8M lo leggono da |/sd2snes/saves| come |<rom>.mpk|: sound novel salvate, corse scaricate e simili. Il gioco parte anche senza pack.',
    'Игры Satellaview со слотом Memory Pack 8M читают его из |/sd2snes/saves| как |<rom>.mpk|: сохранённые звуковые новеллы, скачанные гонки и прочее. Игра запускается и без Memory Pack.',
    'Satellaview-spellen met een 8M Memory Pack-slot lezen het pack uit |/sd2snes/saves| als |<rom>.mpk|: opgeslagen sound novels, gedownloade races en meer. Het spel start ook zonder pack.'),
-  # 53 delete files and saves
+  # 65 delete files and saves
   ("From the [Y] menu of the file list, {del} erases the selected file and {savesrow} opens its saves and savestates, slot by slot. Deleting a ROM also takes its cover, info card, guides and cheats along.",
    'No menu do [Y] da lista de arquivos, {del} apaga o arquivo selecionado e {savesrow} abre os saves e savestates dele, slot a slot. Apagar uma ROM leva junto a capa, a ficha, as guias e os cheats dela.',
    'Desde el menú [Y] de la lista, {del} borra el archivo elegido y {savesrow} abre sus partidas y savestates, ranura por ranura. Borrar una ROM también se lleva su carátula, ficha, guías y cheats.',
@@ -820,25 +880,26 @@ TEXTS = [
    'Dal menu [Y] della lista, {del} cancella il file scelto e {savesrow} apre i suoi salvataggi e savestate, slot per slot. Eliminare una ROM porta via anche copertina, scheda, guide e cheat.',
    'В меню кнопки [Y], доступном в списке файлов, пункт {del} удаляет выбранный файл, а {savesrow} открывает список его сохранений и сейвстейтов - по отдельным слотам. При удалении ROM-файла также удаляются сопутствующие ему обложка, карточка, руководства и чит-коды.',
    'Vanuit het [Y]-menu van de lijst wist {del} het gekozen bestand en opent {savesrow} de saves en savestates ervan, per slot. Een gewiste ROM neemt ook hoes, spelinfo, gidsen en cheats mee.'),
-  # 54 missing BIOS warning
+  # 66 missing BIOS warning
   ('Games with special chips (DSP, Super FX, SA-1, S-DD1, CX4, Super Game Boy, BS-X...) need support files on the card. If one is missing, the menu names the file and stays up, instead of freezing or starting a broken game.',
    'Jogos com chips especiais (DSP, Super FX, SA-1, S-DD1, CX4, Super Game Boy, BS-X...) precisam de arquivos de apoio no cartão. Se faltar algum, o menu diz qual é e continua de pé, em vez de travar ou abrir um jogo quebrado.',
    'Los juegos con chips especiales (DSP, Super FX, SA-1, S-DD1, CX4, Super Game Boy, BS-X...) necesitan archivos de apoyo en la tarjeta. Si falta uno, el menú dice cuál y sigue en pie, en vez de colgarse o abrir un juego roto.',
    'Spiele mit Spezialchips (DSP, Super FX, SA-1, S-DD1, CX4, Super Game Boy, BS-X...) brauchen Hilfsdateien auf der Karte. Fehlt eine, nennt das Menü die Datei und bleibt stehen, statt zu hängen oder ein kaputtes Spiel zu starten.',
    "Les jeux à puces spéciales (DSP, Super FX, SA-1, S-DD1, CX4, Super Game Boy, BS-X...) ont besoin de fichiers sur la carte. S'il en manque un, le menu dit lequel et reste ouvert, au lieu de planter ou de lancer un jeu cassé.",
    'I giochi con chip speciali (DSP, Super FX, SA-1, S-DD1, CX4, Super Game Boy, BS-X...) vogliono file di supporto sulla scheda. Se ne manca uno, il menu dice quale e resta attivo, invece di bloccarsi o avviare un gioco rotto.',
-   'Играм со специальными чипами (DSP, Super FX, SA-1, S-DD1, CX4, Super Game Boy, BS-X...) нужны файлы BIOS в папке |/sd2snes|. Если какого-то из них нет, меню показывает его название и остаётся открытым, а не зависает и не запускает нерабочую игру.',
+   'Играм со специальными чипами (DSP, Super FX, SA-1, S-DD1, CX4, Super Game Boy, BS-X и другим) нужны файлы BIOS в папке |/sd2snes|. Если какого-то из них нет, меню показывает его название и остаётся открытым, а не зависает и не запускает нерабочую игру.',
    'Spellen met speciale chips (DSP, Super FX, SA-1, S-DD1, CX4, Super Game Boy, BS-X...) hebben hulpbestanden op de kaart nodig. Ontbreekt er een, dan noemt het menu het bestand en blijft het open, in plaats van te hangen.'),
-  # 55 the clock question on boot and the date format
-  ("When the cartridge's clock is not set, the menu asks for the time on start. {askclock} in {browser} turns the question off. The date at the bottom of the list follows the language: month first in English, day first in the others.",
-   'Quando o relógio do cartucho não está acertado, o menu pede a hora ao iniciar. {askclock} em {browser} desliga a pergunta. A data no rodapé da lista segue o idioma: mês primeiro em inglês, dia primeiro nos outros.',
-   'Si el reloj del cartucho no está en hora, el menú la pide al iniciar. {askclock} en {browser} quita la pregunta. La fecha al pie de la lista sigue el idioma: primero el mes en inglés, el día en los demás.',
-   'Ist die Uhr des Moduls nicht gestellt, fragt das Menü beim Start nach der Zeit. {askclock} in {browser} schaltet die Frage ab. Das Datum unter der Liste folgt der Sprache: Monat zuerst auf Englisch, sonst der Tag.',
-   "Si l'horloge de la cartouche n'est pas réglée, le menu demande l'heure au démarrage. {askclock} dans {browser} coupe la question. La date en bas de la liste suit la langue : le mois d'abord en anglais, le jour sinon.",
-   "Se l'orologio della cartuccia non è impostato, il menu chiede l'ora all'avvio. {askclock} in {browser} toglie la domanda. La data in fondo alla lista segue la lingua: prima il mese in inglese, il giorno nelle altre.",
-   'Если часы картриджа не выставлены, меню запрашивает время при старте. {askclock} в {browser} отключает этот запрос. Дата внизу списка соответствует языку: в английском сначала месяц, в остальных - день.',
-   'Is de klok van de cartridge niet ingesteld, dan vraagt het menu bij de start om de tijd. {askclock} in {browser} zet dat uit. De datum onder de lijst volgt de taal: in het Engels eerst de maand, anders de dag.'),
-  # 56 a description for each option
+  # 67 the clock question on boot and the date format (snes/time.a65 time_date_sep: month first
+  # in English and Chinese, the year first in Japanese, the day first in the others)
+  ("When the cartridge's clock is not set, the menu asks for the time on start. {askclock} in {browser} turns the question off. The date below the list follows the language: month first in English and Chinese, year first in Japanese, day first in the others.",
+   'Quando o relógio do cartucho não está acertado, o menu pede a hora ao iniciar. {askclock} em {browser} desliga a pergunta. A data no rodapé da lista segue o idioma: mês primeiro em inglês e chinês, ano primeiro em japonês, dia primeiro nos outros.',
+   'Si el reloj del cartucho no está en hora, el menú la pide al iniciar. {askclock} en {browser} quita la pregunta. La fecha al pie de la lista sigue el idioma: primero el mes en inglés y chino, el año en japonés, el día en los demás.',
+   'Ist die Uhr des Moduls nicht gestellt, fragt das Menü beim Start nach der Zeit. {askclock} in {browser} schaltet die Frage ab. Das Datum unter der Liste folgt der Sprache: Monat zuerst auf Englisch und Chinesisch, Jahr zuerst auf Japanisch, sonst der Tag.',
+   "Si l'horloge de la cartouche n'est pas réglée, le menu demande l'heure au démarrage. {askclock} dans {browser} coupe la question. La date en bas de la liste suit la langue : le mois d'abord en anglais et en chinois, l'année en japonais, le jour sinon.",
+   "Se l'orologio della cartuccia non è impostato, il menu chiede l'ora all'avvio. {askclock} in {browser} toglie la domanda. La data in fondo alla lista segue la lingua: prima il mese in inglese e cinese, l'anno in giapponese, il giorno nelle altre.",
+   'Если часы картриджа не выставлены, меню запрашивает время при старте. {askclock} в {browser} отключает этот запрос. Дата внизу списка соответствует языку: в английском и китайском сначала месяц, в японском - год, в остальных - день.',
+   'Is de klok van de cartridge niet ingesteld, dan vraagt het menu bij de start om de tijd. {askclock} in {browser} zet dat uit. De datum onderaan volgt de taal: eerst de maand in het Engels en Chinees, het jaar in het Japans, anders de dag.'),
+  # 68 a description for each option
   ("Every option in {cfg} shows a sentence in a box on screen explaining what it does, in the menu's language, so each setting makes sense without a manual.",
    'Cada opção em {cfg} mostra uma frase numa caixa na tela explicando o que ela faz, no idioma do menu, para cada ajuste fazer sentido sem manual.',
    'Cada opción de {cfg} muestra una frase en un recuadro explicando lo que hace, en el idioma del menú, para entender cada ajuste sin manual.',
@@ -931,7 +992,7 @@ def _cells(text):
 
 
 TEXT_W = 30          # == ONB_TEXT_W: cols 1..30
-MORE_FIRST = 55      # == ONB_MORE_FIRST: the "and more" items are the descriptors from here
+MORE_FIRST = 60      # == ONB_MORE_FIRST: the "and more" items are the descriptors from here
 MORE_NAME_W = 24     # an answer row's width (onb_draw_option_value prints labels with 24)
 # How tall a card's paragraph may be depends on what the card shows under it, so the cap
 # is worked out per card from the engine's own layout (onboarding_main.a65) and the card's
@@ -989,7 +1050,8 @@ _MENU_LABELS = {"cfg": "mtext_mm_cfg", "sgbmenu": "mtext_cfg_sgb", "auto": "text
                 "hook": "mtext_ingame_enable",
                 "goptrow": "mtext_gopt_row", "lockrow": "mtext_lock_row", "onechip": "mtext_ingame_1chiptransientfixes",
                 "gdefault": "text_gopt_default", "rmdir": "mtext_fm_rmdir",
-                "fmsel": "mtext_fm_select"}
+                "fmsel": "mtext_fm_select", "restorefont": "mtext_sfn_restore",
+                "thmfont": "text_thm_font", "thmsound": "text_thm_sound"}
 _MENU_WORDS = {key: menu_text(lab) for key, lab in _MENU_LABELS.items()}
 # a sub-option's label without the menu's indent and arrow glyph (" {129}")
 _MENU_WORDS["igbuttons"] = tuple(w.replace("{129}", "").strip() for w in menu_text("mtext_ingame_buttons"))

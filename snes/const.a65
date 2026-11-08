@@ -44,6 +44,47 @@ hdma_pal_src
   .byt $00, $00, $00, $00, $00, $00, $00, $00
   .byt $00
 
+; The game info screen and the in-game menu have a gradient of their own (slot 20 of a .thm):
+; a theme without it uses its menu gradient here too (theme_apply copies it). Same format and
+; size as hdma_pal_src.
+hdma_pal_gi_src
+  .byt 56
+  .byt $00, $00
+  .byt 12
+  .byt $00, $00
+  .byt 12
+  .byt $00, $04
+  .byt 12
+  .byt $20, $08
+  .byt 12
+  .byt $40, $10
+  .byt 12
+  .byt $40, $14
+  .byt 12
+  .byt $60, $18
+  .byt 12
+  .byt $80, $20
+  .byt 12
+  .byt $80, $24
+  .byt 12
+  .byt $a0, $2c
+  .byt 12
+  .byt $c0, $30
+  .byt 12
+  .byt $e0, $34
+  .byt 12
+  .byt $e0, $3c
+  .byt 12
+  .byt $00, $41
+  .byt 12
+  .byt $20, $49
+  .byt $00
+  ; pad to the 55-byte region size: main.a65 DMAs a fixed #55 into the
+  ; hdma_pal WRAM buffer, and HDMA stops at the $00 above, so these are
+  ; never fetched -- they only keep the region (and theme_slot_max[4]) at 55.
+  .byt $00, $00, $00, $00, $00, $00, $00, $00
+  .byt $00
+
 hdma_cg_addr_src
   .byt $f0
   .byt $00, $00, $00, $00, $00, $00, $00, $00
@@ -395,7 +436,8 @@ mtext_browser_covlists            .byt " ",129,"Favorites/Recents", 0
 mtext_cfg_tour                    .byt "Tour of the new features", 0
 mtext_cfg_tour_all                .byt "From the start", 0
 mtext_cfg_tour_217                .byt "From version 2.17 on", 0
-mtext_cfg_tour_218                .byt "From version 2.18 on (current)", 0
+mtext_cfg_tour_218                .byt "From version 2.18 on", 0
+mtext_cfg_tour_219                .byt "From version 2.19 on", 0
 mtext_browser_menumusic           .byt "Menu music", 0
 mtext_browser_menumusic_random    .byt " ", 129, "Random music", 0
 mtext_browser_menusfx             .byt "Menu sounds", 0
@@ -408,6 +450,7 @@ mtext_browser_gameinfo_video      .byt " ", 129, "Show video", 0
 mtext_browser_gameinfo_music      .byt " ", 129, "Play video music", 0
 mtext_browser_restoretheme        .byt "Restore theme", 0
 mtext_browser_restoreclassic      .byt "Restore classic theme", 0
+mtext_sfn_restore                 .byt "Restore default font", 0
 mtext_browser_restoremusic        .byt "Restore music", 0
 mtext_ingame_cheats               .byt "Start with cheats enabled", 0
 mtext_ingame_shortreset           .byt "Reset to menu", 0
@@ -484,7 +527,8 @@ mdesc_cfg_gameinfo                .byt "Options for the pre-boot game info scree
 mdesc_browser_gameinfo_video      .byt "Play the animated clip on the game info screen (off shows a static snapshot)", 0
 mdesc_browser_gameinfo_music      .byt "Play the clip's soundtrack while it shows. Requires Show video.", 0
 mdesc_browser_restoretheme        .byt "Revert the menu theme to the built-in default", 0
-mdesc_browser_restoreclassic      .byt "Load the classic sd2snes look (needs /sd2snes/classic.thm on the card)", 0
+mdesc_browser_restoreclassic      .byt "The sd2snes+ look without the moving background (/sd2snes/classic.thm)", 0
+mdesc_sfn_restore                 .byt "Go back to the built-in menu font", 0
 mdesc_browser_restoremusic        .byt "Revert the menu background music to the default (menu.spc)", 0
 mdesc_browser_menumusic_random    .byt "Pick a random .spc from the music folder on each load", 0
 mdesc_browser_text_outline        .byt "Dark outline around the menu text: follow the theme, or force it", 0
@@ -513,7 +557,7 @@ mdesc_gb_rotate                   .byt "SNES B is the Game Boy A and Y is the B.
 mdesc_ingame_regionpatch          .byt "Bypass simple region protection by games", 0
 mdesc_ingame_1chiptransientfixes  .byt "Patch brightness changes to fix sync glitches, fading scanlines and missing shadow on 1CHIP/Jr. consoles", 0
 mdesc_ingame_brightlimit          .byt "Limit overall brightness (e.g. on 1CHIP consoles to meet RGB line levels)", 0
-mdesc_ingame_resetpatch           .byt "Enable reset patch to align clocks.  Fixes graphical issues in some games", 0
+mdesc_ingame_resetpatch           .byt "Enable reset patch to align clocks. Fixes graphical issues in some games", 0
 mdesc_ingame_autosave             .byt "Automatically save SRM file when Save RAM contents change", 0
 mdesc_ingame_autosave_msu1        .byt "MSU-1: Take some opportunities to auto-save SRM file. May cause brief stuttering.", 0
 mdesc_chip_cx4_speed              .byt "Set speed of Cx4 soft core", 0
@@ -596,6 +640,12 @@ text_err_supplfile  .byt "Required file not found:", 0
 text_err_noimpl     .byt "Chip not supported:", 0
 text_err_nohw       .byt "Requires Mk.III hardware:", 0
 text_err_generic    .byt "Load error:", 0
+; card-overlay popup (snes/ovlwarn.a65), line 1 when ovl1.* is on the card but refused (corrupt or
+; from another firmware build); line 2 = the file name. Lives in bank $C3's pool (FM_PREFIXES).
+text_ovl_build      .byt "Update with the firmware:", 0
+; System Information row 4 when the firmware runs without ovl1 (SI2_F_NOOVL,
+; sysinfo_render.a65); also bank $C3's pool. <= 40 cols (text_ovl_sysinfo in WIDTH_LIMITS).
+text_ovl_sysinfo    .byt "ovl1 missing or from another build", 0
 ; experimental-core warning (snes/expwarn.a65): two lines of the Yes/No box, <= 40 cols each
 text_exp_title          .byt "*Experimental* core", 0
 text_exp_l1             .byt "This core is still in development:", 0
@@ -943,6 +993,10 @@ gfxptr_info     .byt "_GFXPTR_"
 ; gfxptr[0] alone. Emit the font's bank byte here (assembler-resolved, robust to
 ; future relocations) so theme.c can address the font for the outline-off remap.
                 .byt ^font
+; the game info gradient, past what any older firmware reads. "GI" tells it from whatever
+; follows the table in an image that does not have it (the tour).
+                .byt "GI"
+                .word hdma_pal_gi_src
 
 ; ---- the browser's file manager (fileman.a65, bank $C3) ----
 ; build_const.py moves every text_fm_* / mtext_fm_* label into const_lang_fm.a65 (bank $C3,
@@ -969,6 +1023,10 @@ mtext_fm_merge_all      .byt "Merge all", 0
 mtext_fm_skip_all       .byt "Skip all", 0
 mtext_fm_keep_all       .byt "Keep both, all", 0
 text_fm_title           .byt "Files", 0
+text_thm_title          .byt "Theme", 0
+text_thm_font           .byt "Apply font", 0
+text_thm_sound          .byt "Apply sounds", 0
+text_thm_apply          .byt "Use this theme", 0
 text_fm_sel_keys        .byt "marked  A:Mark Y:Actions B:Done", 0
 text_fm_conflict        .byt "Already exists", 0
 text_fm_copying         .byt "Copying", 0
@@ -1003,6 +1061,8 @@ text_fm_deleting        .byt "Deleting", 0
 text_fm_rm_note         .byt "Saves and cheats in /sd2snes are kept", 0
 text_fm_sdel_ask        .byt "Delete the marked entries?", 0
 text_fm_err_rdonly      .byt "Read-only entries were left", 0
+text_fm_ren_ask         .byt "Rename with an unknown extension?", 0
+text_fm_ren_note        .byt "The file will no longer show in the list", 0
 mdesc_fm_copy           .byt "Put this entry on the clipboard, to paste a copy of it in another folder", 0
 mdesc_fm_cut            .byt "Put this entry on the clipboard, to move it to another folder", 0
 mdesc_fm_paste          .byt "Copy or move what is on the clipboard into this folder", 0

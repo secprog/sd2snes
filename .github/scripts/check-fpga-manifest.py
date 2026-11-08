@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[2]
 # on MkII. New core directories require an explicit board-support audit here.
 EXCLUDED = {
     "mk2": {"a26", "gbc", "nes", "nes_k", "nes_mmc3", "nes_mmc5", "sms"},
-    "mk3": {"basex", "dspx", "sgb_msu"},
+    "mk3": {"atari", "basex", "dspx", "sgb_msu"},
 }
 EXT = {"mk2": "bit", "mk3": "bi3"}
 FIRMWARE = {"mk2": "firmware.img", "mk3": "firmware.im3", "mk3-stm32": "firmware.stm"}

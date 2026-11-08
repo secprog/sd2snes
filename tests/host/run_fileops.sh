@@ -71,6 +71,8 @@ case "${FOP_MUTANT:-}" in
   nointoself)  perl -0pi -e 's/under\(m->q, m->p\)\)/0)/' "$M" ;;
   noround)     perl -0pi -e 's/ \+ \(\(size % m->clus\) \? 1 : 0\)//' "$M" ;;
   nospacechk)  perl -0pi -e 's/if\(m->need > m->nfree\)/if(0)/' "$M" ;;
+  norecount)   perl -0pi -e 's/if\(!m->recount\) \{/if(0) {/' "$M" ;;
+  nodrop)      perl -0pi -e 's/m->fsp->free_clust = 0xFFFFFFFF;\n      return -FM_ERR_NOSPACE;/return -FM_ERR_NOSPACE;/' "$M" ;;
   nounlink)    perl -0pi -e 's/(static void copy_abort.*?\n.*?\n.*?\n)  m->api->f_unlink\(m->q\);\n/$1/s' "$M" ;;
   noallkind)   perl -0pi -e 's/if\(m->answer_all && kind <= 3\) m->all\[kind - 1\] = a;/if(m->answer_all) { m->all[0] = m->all[1] = m->all[2] = a; }/' "$M" ;;
   mixedrepl)   perl -0pi -e 's/ && kind != FM_ASK_MIXED//' "$M" ;;
@@ -121,7 +123,7 @@ fi
 
 $CC -O1 -g -Wall -Wextra -Wno-unused-parameter -Wno-format-truncation -fsanitize=address,undefined -DMODULE_HOST_LINKED \
     -I "$B" -I shim_fileops -I "$S" \
-    fileops_cli.c "$M" "$B/ff.c" "$B/ccsbcs.c" "$B/asset_under_test.c" "$S/strutil.c" \
+    fileops_cli.c "$M" "$B/ff.c" "$B/ccsbcs.c" "$B/asset_under_test.c" "$S/strutil.c" hexup_shim.c \
     -o "$B/fileops_cli" 2> "$B/cc.log" || { cat "$B/cc.log"; exit 1; }
 grep -v "ff.c\|ccsbcs.c\|asset_under_test.c" "$B/cc.log" | grep -q "warning" && { cat "$B/cc.log"; exit 1; }
 
@@ -135,7 +137,7 @@ for sp in 3072 2400 1792; do
 done
 exit $rc
 
-# Mutants (each must FAIL the suite): nointoself noround nospacechk nounlink noallkind
+# Mutants (each must FAIL the suite): nointoself noround nospacechk norecount nodrop nounlink noallkind
 # mixedrepl nosame nomergedel nocaseren stateany copysaves noclipchk nopatchmap nolists
 # nocrlf nobom nocp1252 nowrapsp notab nobrk ctl01 drainshort stageover countread nodrainreset
 # rm_nosys rm_noroots rm_nodirdel rm_noask rm_nofatal rm_errlast rm_noclip rm_cliprest rm_nolists

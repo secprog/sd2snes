@@ -168,6 +168,8 @@ typedef struct {
   uint32_t need;                  /* COPY: clusters it will take */
   uint32_t clus;                  /* bytes per cluster */
   uint32_t nfree;                 /* free clusters */
+  FATFS   *fsp;                   /* COPY: the volume, to re-count its free clusters */
+  uint8_t  recount;               /* COPY: nfree came from a full FAT walk */
   uint32_t v_size, v_known;       /* VIEW: the file size, window starts known */
 #ifdef FOP_RMDIR
   uint32_t rm_rest;               /* RMDIR: bytes under a KB not yet in bytes_total (KB) */
@@ -447,7 +449,13 @@ static int xfer_piece(fopmod_t *m) {
     api->sram_read(m->buf, FOP_STAGE + m->st_drain, (uint16_t)n);
     FRESULT r = api->f_write(&m->fo, m->buf, n, &bw);
     if(r != FR_OK) return -FM_ERR_IO;
-    if(bw != n) return -FM_ERR_NOSPACE;
+    if(bw != n) {
+      /* the card is fuller than its FSINFO count said (stale the other way round from the
+         recount above: a count too HIGH passes the space check and fails here): drop the
+         count, so the next f_getfree (System Information, the next paste) walks the FAT */
+      m->fsp->free_clust = 0xFFFFFFFF;
+      return -FM_ERR_NOSPACE;
+    }
     m->st_drain += n;
     m->h.bytes_done += n;
   }
@@ -1080,7 +1088,19 @@ static void rec_step(fopmod_t *m) {
 #endif
   if(m->rec_i >= m->rec_n) {
     if(m->scan) {
-      if(m->need > m->nfree) { fail_op(m, FM_ERR_NOSPACE); return; }
+      if(m->need > m->nfree) {
+#ifdef FOP_FILEOPS
+        /* nfree is the card's own FSINFO count (ffconf.h): walk the FAT before refusing */
+        if(!m->recount) {
+          m->recount = 1;
+          m->fsp->free_clust = 0xFFFFFFFF;
+          m->phase = PH_FREE;
+          return;
+        }
+#endif
+        fail_op(m, FM_ERR_NOSPACE);
+        return;
+      }
       m->scan = 0;
       m->rec_i = 0;
       m->rec_off = SRAM_FM_CLIP_ADDR + FM_CLIP_HDR;
@@ -1790,6 +1810,7 @@ void fopmod_idle(void *st) {
       case PH_FREE:
         if(api->f_getfree("/", &nclst, &fs) != FR_OK) { fail_op(m, FM_ERR_IO); break; }
         m->nfree = nclst;
+        m->fsp = fs;
         m->clus = (uint32_t)fs->csize * 512;
         m->phase = PH_REC;
         break;

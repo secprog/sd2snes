@@ -93,6 +93,10 @@
 #define CFG_GB_ROTATE_BUTTONS            ("GbRotateButtons")
 #define CFG_STOP_MUSIC_GAME_INFO         ("StopMusicOnGameInfo")
 #define CFG_LOCK_CODE                    ("LockCode")
+#define CFG_FONT_NAME                    ("FontName")
+#define CFG_THEME_USE_FONT               ("ThemeUseFont")
+#define CFG_THEME_USE_SOUND              ("ThemeUseSound")
+#define CFG_THEME_USE_MUSIC              ("ThemeUseMusic")
 
 #define CFG_MENU_COMBO_MIN_BUTTONS       (3)
 
@@ -173,7 +177,8 @@ typedef struct __attribute__ ((__packed__)) _cfg_block {
      width. 0 = 160 px, the native TIA raster 1:1, pillarboxed on the 256 px screen; 1 = 256 px, every 5
      source pixels stretched to 8 so the picture fills the screen. Global toggle, read at .a26 load time
      and shipped to the core as feat16[5] of CHIPFEAT $EF (src/atari.c); the core resamples, so the SNES
-     side never sees the difference. mk3-only -- the mk2 a26 stubs never look at it. Default 0. */
+     side never sees the difference. mk3-only -- the mk2 core (sd2snes_atari) has no CHIPFEAT
+     and always shows 160 px. Default 0. */
   uint8_t  cc_time_limit;           /* CFG @ $14A: Competition Cart (Campus Challenge '92 / PowerFest '94)
      round timer, 0..15 = 3..18 minutes -- the value of the 4-bit DIP bank on the physical event
      boards. Read at load time by smc_id and shipped to the dsp core in dsp_feat[12:8]. Menu entry
@@ -294,10 +299,24 @@ typedef struct __attribute__ ((__packed__)) _cfg_block {
      reads it and only the menu sets it (Settings > Parental lock).  YAML LockCode, the buttons
      as letters in order ("BYsSudlrAXLR", the in-game combos' alphabet): a parent who forgot
      the code reads or removes the line.  Default none. */
+  uint8_t  font_name[128];          /* CFG @ $1E1: full SD path of the chosen .sfn, a menu font
+     on its own that main.c writes over the menu image's font at every menu load (theme_font_file,
+     theme.c). Picked with A in the browser like a .thm; "" (default) or a missing/bad file = the
+     menu's own font. YAML FontName, cleared by Browser settings > Restore default font. */
+  uint8_t  theme_use_font;          /* CFG @ $261: the chosen .thm's own font (slot 13) goes on the menu.
+     The answer to the box the menu shows when a theme is picked; picking a .sfn or Restore default
+     font turns it off, so the last choice is the one that counts. Default 1. YAML ThemeUseFont. */
+  uint8_t  theme_use_sound;         /* CFG @ $262: the chosen .thm's own sound effects (slots 15-18) win
+     over the menu's. Same box, which sets theme_use_music along with it; picking a .spc leaves it
+     alone (the theme's effects stay). Default 1. YAML ThemeUseSound. */
+  uint8_t  theme_use_music;         /* CFG @ $263: the chosen .thm's own music (slot 14) wins over the
+     menu's. Same box as theme_use_sound; picking a .spc turns only this one off, so the last
+     choice of music is the one that counts. Default 1. YAML ThemeUseMusic. */
 } cfg_t;
 
 int cfg_save(void);
 int cfg_load(void);
+void cfg_defaults(cfg_t *c);       /* every field to its default (cfg_load starts from these) */
 
 int cfg_validity_check_listed_games(const uint8_t *listfilename);
 int cfg_add_listed_game(const uint8_t *listfilename, uint8_t *fn, bool evict_oldest);

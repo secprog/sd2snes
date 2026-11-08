@@ -1,0 +1,769 @@
+{
+  "schemaVersion": 1,
+  "scope": "Immutable context for changed hosted DSP Tcl-query diagnosis after failed original native command-plan preflight. This is not a stderr allowlist or preflight/native/timing acceptance.",
+  "repository": "secprog/sd2snes",
+  "family": "dsp",
+  "core": "dspx",
+  "failureRunFields": {
+    "id": 41326618443,
+    "name": "Inspect retained DSP native command plan",
+    "head_sha": "388555de29ca57780eb091baa448f69a1390d97b",
+    "head_branch": "master",
+    "path": ".github/workflows/preflight-successor-native-plan.yml",
+    "event": "workflow_dispatch",
+    "status": "completed",
+    "conclusion": "failure",
+    "run_attempt": 1,
+    "run_number": 1,
+    "workflow_id": 403698809,
+    "created_at": "2026-11-01T16:29:50Z",
+    "updated_at": "2026-11-01T16:36:47Z",
+    "run_started_at": "2026-11-01T16:29:50Z"
+  },
+  "failureJobs": [
+    {
+      "id": 124907805001,
+      "run_id": 41326618443,
+      "workflow_name": "Inspect retained DSP native command plan",
+      "head_sha": "388555de29ca57780eb091baa448f69a1390d97b",
+      "head_branch": "master",
+      "status": "completed",
+      "conclusion": "failure",
+      "run_attempt": 1,
+      "name": "DSP retained native inputs and original command plan",
+      "created_at": "2026-11-01T16:29:51Z",
+      "started_at": "2026-11-01T16:29:54Z",
+      "completed_at": "2026-11-01T16:36:46Z",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-01T16:29:55Z",
+          "completed_at": "2026-11-01T16:29:55Z"
+        },
+        {
+          "name": "Run actions/checkout@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-01T16:29:55Z",
+          "completed_at": "2026-11-01T16:30:00Z"
+        },
+        {
+          "name": "Pin reviewed preparation and planning sources and pristine checkout",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-01T16:30:00Z",
+          "completed_at": "2026-11-01T16:30:00Z"
+        },
+        {
+          "name": "Require hosted positive and adversarial command-plan controls",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-11-01T16:30:00Z",
+          "completed_at": "2026-11-01T16:30:00Z"
+        },
+        {
+          "name": "Bind complete accepted evidence and restore only exact native inputs",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-01T16:30:00Z",
+          "completed_at": "2026-11-01T16:30:55Z"
+        },
+        {
+          "name": "Run ./.github/actions/prepare-build-image",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-01T16:30:55Z",
+          "completed_at": "2026-11-01T16:36:36Z"
+        },
+        {
+          "name": "Collect actual original recipe plan in the exact ISE image without routing",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 7,
+          "started_at": "2026-11-01T16:36:36Z",
+          "completed_at": "2026-11-01T16:36:39Z"
+        },
+        {
+          "name": "Require every source, index and retained input unchanged after planning",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "started_at": "2026-11-01T16:36:39Z",
+          "completed_at": "2026-11-01T16:36:42Z"
+        },
+        {
+          "name": "Retain full bounded text planning evidence only",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-11-01T16:36:42Z",
+          "completed_at": "2026-11-01T16:36:44Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 18,
+          "started_at": "2026-11-01T16:36:44Z",
+          "completed_at": "2026-11-01T16:36:44Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 19,
+          "started_at": "2026-11-01T16:36:44Z",
+          "completed_at": "2026-11-01T16:36:44Z"
+        }
+      ]
+    }
+  ],
+  "failureArtifacts": [
+    {
+      "id": 13092210379,
+      "name": "successor-native-preflight-dsp-reports",
+      "size_in_bytes": 808901,
+      "digest": "sha256:136055953c075d25048ca8ba3251fee5f143f1d02d2cb69366a62a9586ef5cfe",
+      "expired": false,
+      "workflow_run": {
+        "id": 41326618443,
+        "repository_id": 1433388489,
+        "head_repository_id": 1433388489,
+        "head_branch": "master",
+        "head_sha": "388555de29ca57780eb091baa448f69a1390d97b"
+      },
+      "created_at": "2026-11-01T16:36:43Z",
+      "updated_at": "2026-11-01T16:36:43Z",
+      "expires_at": "2026-11-15T16:36:42Z"
+    }
+  ],
+  "failureReportMembers": [
+    {
+      "name": "successor-native-input-dsp/checkout-after-candidate-index.txt",
+      "bytes": 189602,
+      "sha256": "dcc1fdf8cecc8f61624cf5f7e2ef608ab6610adabf82818e53ec651ffff81bf4"
+    },
+    {
+      "name": "successor-native-input-dsp/checkout-before-index.txt",
+      "bytes": 189602,
+      "sha256": "dcc1fdf8cecc8f61624cf5f7e2ef608ab6610adabf82818e53ec651ffff81bf4"
+    },
+    {
+      "name": "successor-native-input-dsp/checkout-after-candidate.sha256",
+      "bytes": 227490,
+      "sha256": "b822e4d8860c74703edc9f1fd44d5e8a7b20bb874a969b7ec85a2caddac93e82"
+    },
+    {
+      "name": "successor-native-input-dsp/checkout-before.sha256",
+      "bytes": 227490,
+      "sha256": "9ad9d72b612e2721decdda982c6fbdcd53539c0477f77b4f03de356cdeab535e"
+    },
+    {
+      "name": "successor-native-input-dsp/preparation-result.json",
+      "bytes": 947,
+      "sha256": "c313d887e886d4af147ac237c4e7c508124835aa6fedcea4f795a35a87753ca7"
+    },
+    {
+      "name": "successor-native-input-dsp/proof-parent-provenance.json",
+      "bytes": 23689,
+      "sha256": "08b844068ccd453c136813c8864ecc998ae81bcaaeb36fd94676a102cb462545"
+    },
+    {
+      "name": "successor-native-input-dsp/proof-successor-provenance.json",
+      "bytes": 94238,
+      "sha256": "a4fc9dfb39e2dc9f95c912ecceb4bd18b8297bb196f533e5527c469030527927"
+    },
+    {
+      "name": "successor-native-input-dsp/provenance.json",
+      "bytes": 444516,
+      "sha256": "80399815e87903c4887e4cde0b1ccb145b84c4b4914c0f5637f1437ec458e3f9"
+    },
+    {
+      "name": "successor-native-input-dsp/restored-inputs.sha256",
+      "bytes": 991,
+      "sha256": "1fb711d1f78f40509388b46f8c441403697dc6bce8206a3b6569a1d86809149f"
+    },
+    {
+      "name": "successor-native-plan-dsp/collection-result.json",
+      "bytes": 206,
+      "sha256": "61c2a74a27f8df44ec89cc7f7f1726875b167569eecb8f1ced991ce7608274d7"
+    },
+    {
+      "name": "successor-native-plan-dsp/inputs-after.json",
+      "bytes": 2280,
+      "sha256": "6db6dbb01d568b5dcb42d6fd825b65d73e03b451fce24e575edaa97e6dd9c87c"
+    },
+    {
+      "name": "successor-native-plan-dsp/inputs-before.json",
+      "bytes": 2280,
+      "sha256": "6db6dbb01d568b5dcb42d6fd825b65d73e03b451fce24e575edaa97e6dd9c87c"
+    },
+    {
+      "name": "successor-native-plan-dsp/invocation-at-failure.json",
+      "bytes": 2305,
+      "sha256": "90b5a11e0aa79d418954bea81bebce55613141242e397379da4144779805de1e"
+    },
+    {
+      "name": "successor-native-plan-dsp/invocation-before.json",
+      "bytes": 2218,
+      "sha256": "592765a9f058706c06ca463c7450828ac62e7c96da9c535818f80834fea4adbf"
+    },
+    {
+      "name": "successor-native-plan-dsp/invocation-completed.json",
+      "bytes": 2305,
+      "sha256": "90b5a11e0aa79d418954bea81bebce55613141242e397379da4144779805de1e"
+    },
+    {
+      "name": "successor-native-plan-dsp/make-plan.stderr.txt",
+      "bytes": 5386,
+      "sha256": "6a7ae06c40870a728c0e75980f592670d39bc098932e53ddcd0e82b1fa9f3a77"
+    },
+    {
+      "name": "successor-native-plan-dsp/make-plan.stdout.txt",
+      "bytes": 1058,
+      "sha256": "39d294df7dd0b15a0545bc7feac8dbde3ec99df366631910ee6d6185374573fe"
+    },
+    {
+      "name": "successor-native-preflight-dsp-after-index.txt",
+      "bytes": 189602,
+      "sha256": "dcc1fdf8cecc8f61624cf5f7e2ef608ab6610adabf82818e53ec651ffff81bf4"
+    },
+    {
+      "name": "successor-native-preflight-dsp-after.sha256",
+      "bytes": 227490,
+      "sha256": "b822e4d8860c74703edc9f1fd44d5e8a7b20bb874a969b7ec85a2caddac93e82"
+    },
+    {
+      "name": "successor-native-preflight-dsp-controls.json",
+      "bytes": 9604,
+      "sha256": "f92a5f50ebaab9102bdcf8db40ad4f8139d66b7b45c247aa1d69c2a461c7477e"
+    },
+    {
+      "name": "successor-native-preflight-dsp-evidence-after.sha256",
+      "bytes": 201542,
+      "sha256": "667e7bfd966d62fb00ab2476df3ae9c6e9e1947513e6b3b811bb1b6794fa24cd"
+    },
+    {
+      "name": "successor-native-preflight-dsp-evidence-before.sha256",
+      "bytes": 201542,
+      "sha256": "667e7bfd966d62fb00ab2476df3ae9c6e9e1947513e6b3b811bb1b6794fa24cd"
+    },
+    {
+      "name": "successor-native-preflight-dsp-final-evidence-check.txt",
+      "bytes": 125654,
+      "sha256": "dbff625c50fbd23061f9704b7d249d07d35c226a4ddfda91d37a0abfb7ee7234"
+    },
+    {
+      "name": "successor-native-preflight-dsp-final-input-check.txt",
+      "bytes": 433,
+      "sha256": "0ec869be5515019dec4b6dbd3116c59c4b4b8472be4bb4d2403475984eefa14c"
+    },
+    {
+      "name": "successor-native-preflight-dsp-final-source-check.txt",
+      "bytes": 80674,
+      "sha256": "858a47f0da687cc0e989c43d9bee6030b17cf91f2d4936f6cecad36d7dde6244"
+    },
+    {
+      "name": "successor-native-preflight-dsp-identity.txt",
+      "bytes": 117,
+      "sha256": "3de3717db5453d1e7182c163cb7d9c897e1583291b55cfe82828098c74d34cd2"
+    },
+    {
+      "name": "successor-native-preflight-dsp-post-paths.txt",
+      "bytes": 31,
+      "sha256": "168b1afd12f396de6a0a5dd8da4f23ea997baf6ba27a5f98b74a6ba812cc614e"
+    },
+    {
+      "name": "successor-native-preflight-dsp-plan-console.txt",
+      "bytes": 194,
+      "sha256": "18281bd64252c86cd97cfad515bc7859eed2880491b76f0a674ca3b423b083b3"
+    },
+    {
+      "name": "successor-native-preflight-dsp-post-source.diff",
+      "bytes": 29580,
+      "sha256": "6b6bd0c56f7f2d6600d73a0ebcb1cbb6fd2d9f9f09debb96e22cdb3ab984d965"
+    },
+    {
+      "name": "successor-native-preflight-dsp-pre-image-input-check.txt",
+      "bytes": 433,
+      "sha256": "0ec869be5515019dec4b6dbd3116c59c4b4b8472be4bb4d2403475984eefa14c"
+    },
+    {
+      "name": "successor-native-preflight-dsp-pre-image-source-check.txt",
+      "bytes": 80674,
+      "sha256": "858a47f0da687cc0e989c43d9bee6030b17cf91f2d4936f6cecad36d7dde6244"
+    },
+    {
+      "name": "successor-native-preflight-dsp-preparation-console.txt",
+      "bytes": 917,
+      "sha256": "89e09e7cddbbea88161f4782ad6a05ddb1355cd904ad6259d54dac49c409f5c1"
+    },
+    {
+      "name": "successor-native-preflight-dsp-pristine-index.txt",
+      "bytes": 189602,
+      "sha256": "dcc1fdf8cecc8f61624cf5f7e2ef608ab6610adabf82818e53ec651ffff81bf4"
+    },
+    {
+      "name": "successor-native-preflight-dsp-pristine.sha256",
+      "bytes": 227490,
+      "sha256": "9ad9d72b612e2721decdda982c6fbdcd53539c0477f77b4f03de356cdeab535e"
+    }
+  ],
+  "failedPlan": {
+    "stdout": {
+      "name": "successor-native-plan-dsp/make-plan.stdout.txt",
+      "bytes": 1058,
+      "sha256": "39d294df7dd0b15a0545bc7feac8dbde3ec99df366631910ee6d6185374573fe",
+      "text": "Observed preflight-container eth0 MAC: 08:00:27:68:c9:35\nVerified retained native input manifest: 1fb711d1f78f40509388b46f8c441403697dc6bce8206a3b6569a1d86809149f\nmake: Entering directory '/work/verilog/sd2snes_dspx'\necho -e \"\\e]0;[mk2] fpga_dspx - Place and Route\\a\"\npar_status=0; \\\n /opt/Xilinx/14.7/ISE_DS/ISE/bin/lin64/par -w -ol high -xe c -t 68 main_map.ncd main.ncd main.pcf || par_status=$?; \\\ntrce_status=0; \\\n /opt/Xilinx/14.7/ISE_DS/ISE/bin/lin64/trce -v 10 -n 10 -u 10 -fastpaths main.ncd main.pcf -o main.twr || trce_status=$?; \\\nif [ $par_status -ne 0 ]; then rm -f \"main.ncd\"; exit $par_status; fi; \\\nif [ $trce_status -ne 0 ]; then rm -f \"main.ncd\"; exit $trce_status; fi\n{ grep -Eq 'Timing Score: 0 \\(Setup: 0, Hold: 0' main.par && \\\n   grep -Eq 'Timing errors: 0[[:space:]]+Score: 0' main.twr; } || (echo \"[mk2] sd2snes_dspx: Missing or failing timing result!\"; \\\n\t[ \"0\"a = 1a ] || (echo \"Aborting. To ignore timing violations, run make [...] IGNORE_TIMING=1.\"; rm \"main.ncd\"; exit 55))\nmake: Leaving directory '/work/verilog/sd2snes_dspx'\n"
+    },
+    "stderr": {
+      "name": "successor-native-plan-dsp/make-plan.stderr.txt",
+      "bytes": 5386,
+      "sha256": "6a7ae06c40870a728c0e75980f592670d39bc098932e53ddcd0e82b1fa9f3a77",
+      "text": "WARNING:ProjectMgmt:127 - Cannot open as Ncd database\nINFO:HDLCompiler:1845 - Analyzing Verilog file\n   \"/work/verilog/sd2snes_dsp/ip/mk2/snescmd_buf.v\" into library work\nINFO:ProjectMgmt - Parsing design hierarchy completed successfully.\nWARNING:ProjectMgmt:127 - Cannot open as Ncd database\nINFO:HDLCompiler:1845 - Analyzing Verilog file\n   \"/work/verilog/sd2snes_dsp/ip/mk2/chipscope_icon.v\" into library work\nINFO:ProjectMgmt - Parsing design hierarchy completed successfully.\nINFO:HDLCompiler:1845 - Analyzing Verilog file\n   \"/work/verilog/sd2snes_dsp/ip/mk2/chipscope_ila.v\" into library work\nINFO:ProjectMgmt - Parsing design hierarchy completed successfully.\nINFO:HDLCompiler:1845 - Analyzing Verilog file\n   \"/work/verilog/sd2snes_dsp/address.v\" into library work\nINFO:HDLCompiler:1845 - Analyzing Verilog file\n   \"/work/verilog/sd2snes_dsp/cheat.v\" into library work\nINFO:HDLCompiler:1845 - Analyzing Verilog file\n   \"/work/verilog/sd2snes_dsp/clk_test.v\" into library work\nINFO:HDLCompiler:1845 - Analyzing Verilog file \"/work/verilog/sd2snes_dsp/ctx.v\"\n   into library work\nINFO:HDLCompiler:1845 - Analyzing Verilog file \"/work/verilog/sd2snes_dsp/dac.v\"\n   into library work\nINFO:ProjectMgmt - Include file found: '/work/verilog/sd2snes_dspx/config.vh' in\n   file \"/work/verilog/sd2snes_dsp/dac.v\" line 21\nINFO:HDLCompiler:1845 - Analyzing Verilog file \"/work/verilog/sd2snes_dsp/dcm.v\"\n   into library work\nINFO:HDLCompiler:1845 - Analyzing Verilog file \"/work/verilog/sd2snes_dsp/dma.v\"\n   into library work\nINFO:HDLCompiler:1845 - Analyzing Verilog file\n   \"/work/verilog/sd2snes_dsp/main.v\" into library work\nINFO:ProjectMgmt - Include file found: '/work/verilog/sd2snes_dspx/config.vh' in\n   file \"/work/verilog/sd2snes_dsp/main.v\" line 21\nINFO:HDLCompiler:1845 - Analyzing Verilog file\n   \"/work/verilog/sd2snes_dsp/mcu_cmd.v\" into library work\nINFO:HDLCompiler:1845 - Analyzing Verilog file \"/work/verilog/sd2snes_dsp/msu.v\"\n   into library work\nINFO:ProjectMgmt - Include file found: '/work/verilog/sd2snes_dspx/config.vh' in\n   file \"/work/verilog/sd2snes_dsp/msu.v\" line 21\nINFO:HDLCompiler:1845 - Analyzing Verilog file\n   \"/work/verilog/sd2snes_dsp/sd_dma.v\" into library work\nINFO:HDLCompiler:1845 - Analyzing Verilog file \"/work/verilog/sd2snes_dsp/spi.v\"\n   into library work\nINFO:HDLCompiler:1845 - Analyzing Verilog file\n   \"/work/verilog/sd2snes_dsp/upd77c25.v\" into library work\nINFO:ProjectMgmt - Include file found: '/work/verilog/sd2snes_dspx/config.vh' in\n   file \"/work/verilog/sd2snes_dsp/upd77c25.v\" line 25\nINFO:HDLCompiler:1845 - Analyzing Verilog file\n   \"/work/verilog/sd2snes_dsp/updtest_tf.v\" into library work\nINFO:ProjectMgmt - Parsing design hierarchy completed successfully.\nINFO:HDLCompiler:1845 - Analyzing Verilog file\n   \"/work/verilog/sd2snes_dsp/updtest_tf.v\" into library work\nINFO:ProjectMgmt - Parsing design hierarchy completed successfully.\nINFO:HDLCompiler:1845 - Analyzing Verilog file\n   \"/work/verilog/sd2snes_dsp/updtest_tf.v\" into library work\nINFO:ProjectMgmt - Parsing design hierarchy completed successfully.\nINFO:HDLCompiler:1845 - Analyzing Verilog file\n   \"/work/verilog/sd2snes_dsp/updtest_tf.v\" into library work\nINFO:ProjectMgmt - Parsing design hierarchy completed successfully.\nINFO:HDLCompiler:1845 - Analyzing Verilog file\n   \"/work/verilog/sd2snes_dsp/address.v\" into library work\nINFO:HDLCompiler:1845 - Analyzing Verilog file\n   \"/work/verilog/sd2snes_dsp/cheat.v\" into library work\nINFO:HDLCompiler:1845 - Analyzing Verilog file\n   \"/work/verilog/sd2snes_dsp/clk_test.v\" into library work\nINFO:HDLCompiler:1845 - Analyzing Verilog file \"/work/verilog/sd2snes_dsp/ctx.v\"\n   into library work\nINFO:HDLCompiler:1845 - Analyzing Verilog file \"/work/verilog/sd2snes_dsp/dac.v\"\n   into library work\nINFO:ProjectMgmt - Include file found: '/work/verilog/sd2snes_dspx/config.vh' in\n   file \"/work/verilog/sd2snes_dsp/dac.v\" line 21\nINFO:HDLCompiler:1845 - Analyzing Verilog file \"/work/verilog/sd2snes_dsp/dcm.v\"\n   into library work\nINFO:HDLCompiler:1845 - Analyzing Verilog file \"/work/verilog/sd2snes_dsp/dma.v\"\n   into library work\nINFO:HDLCompiler:1845 - Analyzing Verilog file\n   \"/work/verilog/sd2snes_dsp/main.v\" into library work\nINFO:ProjectMgmt - Include file found: '/work/verilog/sd2snes_dspx/config.vh' in\n   file \"/work/verilog/sd2snes_dsp/main.v\" line 21\nINFO:HDLCompiler:1845 - Analyzing Verilog file\n   \"/work/verilog/sd2snes_dsp/mcu_cmd.v\" into library work\nINFO:HDLCompiler:1845 - Analyzing Verilog file \"/work/verilog/sd2snes_dsp/msu.v\"\n   into library work\nINFO:ProjectMgmt - Include file found: '/work/verilog/sd2snes_dspx/config.vh' in\n   file \"/work/verilog/sd2snes_dsp/msu.v\" line 21\nINFO:HDLCompiler:1845 - Analyzing Verilog file\n   \"/work/verilog/sd2snes_dsp/sd_dma.v\" into library work\nINFO:HDLCompiler:1845 - Analyzing Verilog file \"/work/verilog/sd2snes_dsp/spi.v\"\n   into library work\nINFO:HDLCompiler:1845 - Analyzing Verilog file\n   \"/work/verilog/sd2snes_dsp/upd77c25.v\" into library work\nINFO:ProjectMgmt - Include file found: '/work/verilog/sd2snes_dspx/config.vh' in\n   file \"/work/verilog/sd2snes_dsp/upd77c25.v\" line 25\nINFO:ProjectMgmt - Parsing design hierarchy completed successfully.\nINFO:TclTasksC:2031 - Property \"Place & Route Effort Level (Overall)\" is\n   currently disabled, due to the value of another property. The value has been\n   get but will not be used.\n"
+    },
+    "invocation": {
+      "commandPlanOnly": true,
+      "dockerArgv": [
+        "docker",
+        "run",
+        "--rm",
+        "--network",
+        "bridge",
+        "--name",
+        "sd2snes-dsp-successor-native-preflight",
+        "--user",
+        "0:0",
+        "--mac-address",
+        "08:00:27:68:c9:35",
+        "--env",
+        "ISE_CTABLE",
+        "--volume",
+        "/home/runner/work/sd2snes/sd2snes:/work",
+        "--workdir",
+        "/work",
+        "--entrypoint",
+        "/bin/bash",
+        "sd2snes-ci:mk2",
+        "-c",
+        "set -euo pipefail; export LC_ALL=C LANG=C; observed_mac=$(cat /sys/class/net/eth0/address); printf \"Observed preflight-container eth0 MAC: %s\\n\" \"$observed_mac\"; test \"$observed_mac\" = 08:00:27:68:c9:35; test -z \"${MAKEFILES-}\"; test -z \"${MAKEFLAGS-}\"; test -z \"${GNUMAKEFLAGS-}\"; test -z \"${MFLAGS-}\"; test -z \"${MAKEOVERRIDES-}\"; test -z \"${MAKELEVEL-}\"; test -z \"${MAKE_RESTARTS-}\"; printf \"Verified retained native input manifest: %s\\n\" \"1fb711d1f78f40509388b46f8c441403697dc6bce8206a3b6569a1d86809149f\"; make -C verilog/sd2snes_dspx -o main_map.ncd -j2 -n main.ncd HOST=LINUX XILINX_ENV= IGNORE_TIMING=0"
+      ],
+      "environment": {
+        "ISE_CTABLE": "68"
+      },
+      "family": "dsp",
+      "hostMakeOverrides": {},
+      "imageAfter": "sha256:5e3bbb00649997abca8843b1d82d8529eda99a0f2868d37ad9777e0ad5fd50e8",
+      "imageBefore": "sha256:5e3bbb00649997abca8843b1d82d8529eda99a0f2868d37ad9777e0ad5fd50e8",
+      "inputsUnchanged": true,
+      "makeArgv": [
+        "make",
+        "-C",
+        "verilog/sd2snes_dspx",
+        "-o",
+        "main_map.ncd",
+        "-j2",
+        "-n",
+        "main.ncd",
+        "HOST=LINUX",
+        "XILINX_ENV=",
+        "IGNORE_TIMING=0"
+      ],
+      "nativeInputMarker": {
+        "checkedPaths": [
+          "verilog/sd2snes_dsp/ip/mk2/build/dac_buf.ngc",
+          "verilog/sd2snes_dsp/ip/mk2/build/msu_databuf.ngc",
+          "verilog/sd2snes_dsp/ip/mk2/build/snescmd_buf.ngc",
+          "verilog/sd2snes_dsp/ip/mk2/build/upd77c25_datram.ngc",
+          "verilog/sd2snes_dsp/ip/mk2/build/upd77c25_datrom.ngc",
+          "verilog/sd2snes_dsp/ip/mk2/build/upd77c25_pgmrom.ngc",
+          "verilog/sd2snes_dsp/upd77c25.v",
+          "verilog/sd2snes_dspx/main.pcf",
+          "verilog/sd2snes_dspx/main_map.ncd"
+        ],
+        "manifestSha256": "1fb711d1f78f40509388b46f8c441403697dc6bce8206a3b6569a1d86809149f"
+      },
+      "returncode": 0,
+      "schemaVersion": 1,
+      "workspace": "/home/runner/work/sd2snes/sd2snes"
+    },
+    "invocationBefore": {
+      "commandPlanOnly": true,
+      "dockerArgv": [
+        "docker",
+        "run",
+        "--rm",
+        "--network",
+        "bridge",
+        "--name",
+        "sd2snes-dsp-successor-native-preflight",
+        "--user",
+        "0:0",
+        "--mac-address",
+        "08:00:27:68:c9:35",
+        "--env",
+        "ISE_CTABLE",
+        "--volume",
+        "/home/runner/work/sd2snes/sd2snes:/work",
+        "--workdir",
+        "/work",
+        "--entrypoint",
+        "/bin/bash",
+        "sd2snes-ci:mk2",
+        "-c",
+        "set -euo pipefail; export LC_ALL=C LANG=C; observed_mac=$(cat /sys/class/net/eth0/address); printf \"Observed preflight-container eth0 MAC: %s\\n\" \"$observed_mac\"; test \"$observed_mac\" = 08:00:27:68:c9:35; test -z \"${MAKEFILES-}\"; test -z \"${MAKEFLAGS-}\"; test -z \"${GNUMAKEFLAGS-}\"; test -z \"${MFLAGS-}\"; test -z \"${MAKEOVERRIDES-}\"; test -z \"${MAKELEVEL-}\"; test -z \"${MAKE_RESTARTS-}\"; printf \"Verified retained native input manifest: %s\\n\" \"1fb711d1f78f40509388b46f8c441403697dc6bce8206a3b6569a1d86809149f\"; make -C verilog/sd2snes_dspx -o main_map.ncd -j2 -n main.ncd HOST=LINUX XILINX_ENV= IGNORE_TIMING=0"
+      ],
+      "environment": {
+        "ISE_CTABLE": "68"
+      },
+      "family": "dsp",
+      "hostMakeOverrides": {},
+      "imageBefore": "sha256:5e3bbb00649997abca8843b1d82d8529eda99a0f2868d37ad9777e0ad5fd50e8",
+      "inputsUnchanged": false,
+      "makeArgv": [
+        "make",
+        "-C",
+        "verilog/sd2snes_dspx",
+        "-o",
+        "main_map.ncd",
+        "-j2",
+        "-n",
+        "main.ncd",
+        "HOST=LINUX",
+        "XILINX_ENV=",
+        "IGNORE_TIMING=0"
+      ],
+      "nativeInputMarker": {
+        "checkedPaths": [
+          "verilog/sd2snes_dsp/ip/mk2/build/dac_buf.ngc",
+          "verilog/sd2snes_dsp/ip/mk2/build/msu_databuf.ngc",
+          "verilog/sd2snes_dsp/ip/mk2/build/snescmd_buf.ngc",
+          "verilog/sd2snes_dsp/ip/mk2/build/upd77c25_datram.ngc",
+          "verilog/sd2snes_dsp/ip/mk2/build/upd77c25_datrom.ngc",
+          "verilog/sd2snes_dsp/ip/mk2/build/upd77c25_pgmrom.ngc",
+          "verilog/sd2snes_dsp/upd77c25.v",
+          "verilog/sd2snes_dspx/main.pcf",
+          "verilog/sd2snes_dspx/main_map.ncd"
+        ],
+        "manifestSha256": "1fb711d1f78f40509388b46f8c441403697dc6bce8206a3b6569a1d86809149f"
+      },
+      "returncode": null,
+      "schemaVersion": 1,
+      "workspace": "/home/runner/work/sd2snes/sd2snes"
+    },
+    "invocationFile": {
+      "name": "successor-native-plan-dsp/invocation-completed.json",
+      "bytes": 2305,
+      "sha256": "90b5a11e0aa79d418954bea81bebce55613141242e397379da4144779805de1e"
+    },
+    "inputsBefore": {
+      "checkoutHead": "388555de29ca57780eb091baa448f69a1390d97b",
+      "checkoutIndexSha256": "dcc1fdf8cecc8f61624cf5f7e2ef608ab6610adabf82818e53ec651ffff81bf4",
+      "checkoutManifestSha256": "b822e4d8860c74703edc9f1fd44d5e8a7b20bb874a969b7ec85a2caddac93e82",
+      "nativeInputManifestSha256": "1fb711d1f78f40509388b46f8c441403697dc6bce8206a3b6569a1d86809149f",
+      "nativeInputs": [
+        {
+          "bytes": 55901,
+          "path": "verilog/sd2snes_dsp/upd77c25.v",
+          "sha256": "3a0af6c79f2e0d775414503780c0d6d12f89bdfd119fedcf9d382df723c9c357"
+        },
+        {
+          "bytes": 1176958,
+          "path": "verilog/sd2snes_dspx/main_map.ncd",
+          "sha256": "4f7b507e401b716cc16da5c89f2c7bfe18bdb6b33bc1dd76db36e43f7b961113"
+        },
+        {
+          "bytes": 148282,
+          "path": "verilog/sd2snes_dspx/main.pcf",
+          "sha256": "d5754ef5c27a9f987bfb44eae3006fe781c786c29bb86c2ef2b2ea7915754f01"
+        },
+        {
+          "bytes": 13280,
+          "path": "verilog/sd2snes_dsp/ip/mk2/build/dac_buf.ngc",
+          "sha256": "63f7f37b565bbced3d4d9db84a3a7938f6487225d8610bbcf18a6fa81597df12"
+        },
+        {
+          "bytes": 20782,
+          "path": "verilog/sd2snes_dsp/ip/mk2/build/msu_databuf.ngc",
+          "sha256": "491cbfff42c7d2957a65c41023d1782d0fd1d9e6ca7abc2764a8c87965fcc3d6"
+        },
+        {
+          "bytes": 11789,
+          "path": "verilog/sd2snes_dsp/ip/mk2/build/snescmd_buf.ngc",
+          "sha256": "86e98180586d42e2fccf01a030eda81de6c13b4764c7475786d612b7212bfab1"
+        },
+        {
+          "bytes": 12182,
+          "path": "verilog/sd2snes_dsp/ip/mk2/build/upd77c25_datram.ngc",
+          "sha256": "ac6c77320e13d1b4294550c53c0f9356e37331a5b7b2f03a377543304fba9d79"
+        },
+        {
+          "bytes": 12798,
+          "path": "verilog/sd2snes_dsp/ip/mk2/build/upd77c25_datrom.ngc",
+          "sha256": "7c4eccffcbcf702bb24bac9382a0cc84a71243a08345469a817ccdcec12141ad"
+        },
+        {
+          "bytes": 16224,
+          "path": "verilog/sd2snes_dsp/ip/mk2/build/upd77c25_pgmrom.ngc",
+          "sha256": "5e8dfad555b01c399fcf6c17f9bab9078b5996abd388071b272ab5d3a9c97193"
+        }
+      ],
+      "preparationResultSha256": "c313d887e886d4af147ac237c4e7c508124835aa6fedcea4f795a35a87753ca7",
+      "productionVerilogTree": "01ce8b6b4509a5a72e0ad739e06bf19e548a2fc1",
+      "provenanceSha256": "80399815e87903c4887e4cde0b1ccb145b84c4b4914c0f5637f1437ec458e3f9",
+      "trackedSourceCount": 2368
+    },
+    "inputsAfter": {
+      "checkoutHead": "388555de29ca57780eb091baa448f69a1390d97b",
+      "checkoutIndexSha256": "dcc1fdf8cecc8f61624cf5f7e2ef608ab6610adabf82818e53ec651ffff81bf4",
+      "checkoutManifestSha256": "b822e4d8860c74703edc9f1fd44d5e8a7b20bb874a969b7ec85a2caddac93e82",
+      "nativeInputManifestSha256": "1fb711d1f78f40509388b46f8c441403697dc6bce8206a3b6569a1d86809149f",
+      "nativeInputs": [
+        {
+          "bytes": 55901,
+          "path": "verilog/sd2snes_dsp/upd77c25.v",
+          "sha256": "3a0af6c79f2e0d775414503780c0d6d12f89bdfd119fedcf9d382df723c9c357"
+        },
+        {
+          "bytes": 1176958,
+          "path": "verilog/sd2snes_dspx/main_map.ncd",
+          "sha256": "4f7b507e401b716cc16da5c89f2c7bfe18bdb6b33bc1dd76db36e43f7b961113"
+        },
+        {
+          "bytes": 148282,
+          "path": "verilog/sd2snes_dspx/main.pcf",
+          "sha256": "d5754ef5c27a9f987bfb44eae3006fe781c786c29bb86c2ef2b2ea7915754f01"
+        },
+        {
+          "bytes": 13280,
+          "path": "verilog/sd2snes_dsp/ip/mk2/build/dac_buf.ngc",
+          "sha256": "63f7f37b565bbced3d4d9db84a3a7938f6487225d8610bbcf18a6fa81597df12"
+        },
+        {
+          "bytes": 20782,
+          "path": "verilog/sd2snes_dsp/ip/mk2/build/msu_databuf.ngc",
+          "sha256": "491cbfff42c7d2957a65c41023d1782d0fd1d9e6ca7abc2764a8c87965fcc3d6"
+        },
+        {
+          "bytes": 11789,
+          "path": "verilog/sd2snes_dsp/ip/mk2/build/snescmd_buf.ngc",
+          "sha256": "86e98180586d42e2fccf01a030eda81de6c13b4764c7475786d612b7212bfab1"
+        },
+        {
+          "bytes": 12182,
+          "path": "verilog/sd2snes_dsp/ip/mk2/build/upd77c25_datram.ngc",
+          "sha256": "ac6c77320e13d1b4294550c53c0f9356e37331a5b7b2f03a377543304fba9d79"
+        },
+        {
+          "bytes": 12798,
+          "path": "verilog/sd2snes_dsp/ip/mk2/build/upd77c25_datrom.ngc",
+          "sha256": "7c4eccffcbcf702bb24bac9382a0cc84a71243a08345469a817ccdcec12141ad"
+        },
+        {
+          "bytes": 16224,
+          "path": "verilog/sd2snes_dsp/ip/mk2/build/upd77c25_pgmrom.ngc",
+          "sha256": "5e8dfad555b01c399fcf6c17f9bab9078b5996abd388071b272ab5d3a9c97193"
+        }
+      ],
+      "preparationResultSha256": "c313d887e886d4af147ac237c4e7c508124835aa6fedcea4f795a35a87753ca7",
+      "productionVerilogTree": "01ce8b6b4509a5a72e0ad739e06bf19e548a2fc1",
+      "provenanceSha256": "80399815e87903c4887e4cde0b1ccb145b84c4b4914c0f5637f1437ec458e3f9",
+      "trackedSourceCount": 2368
+    },
+    "collectionResult": {
+      "collectionComplete": false,
+      "error": "ValueError: Unexpected stderr from hosted make planning; inspect complete retained bytes",
+      "family": "dsp",
+      "nativeExecuted": false,
+      "timingPass": false
+    },
+    "preparationResult": {
+      "preparationComplete": true,
+      "family": "dsp",
+      "checkoutHead": "388555de29ca57780eb091baa448f69a1390d97b",
+      "productionVerilogTree": "01ce8b6b4509a5a72e0ad739e06bf19e548a2fc1",
+      "sourcePath": "verilog/sd2snes_dsp/upd77c25.v",
+      "candidateSha256": "3a0af6c79f2e0d775414503780c0d6d12f89bdfd119fedcf9d382df723c9c357",
+      "ncdSha256": "4f7b507e401b716cc16da5c89f2c7bfe18bdb6b33bc1dd76db36e43f7b961113",
+      "pcfSha256": "d5754ef5c27a9f987bfb44eae3006fe781c786c29bb86c2ef2b2ea7915754f01",
+      "restoredInputsManifestSha256": "1fb711d1f78f40509388b46f8c441403697dc6bce8206a3b6569a1d86809149f",
+      "checkoutAfterCandidateSha256": "b822e4d8860c74703edc9f1fd44d5e8a7b20bb874a969b7ec85a2caddac93e82",
+      "checkoutAfterCandidateIndexSha256": "dcc1fdf8cecc8f61624cf5f7e2ef608ab6610adabf82818e53ec651ffff81bf4",
+      "provenanceSha256": "80399815e87903c4887e4cde0b1ccb145b84c4b4914c0f5637f1437ec458e3f9",
+      "nativeExecution": false,
+      "timingAccepted": false
+    },
+    "restoredInputManifest": {
+      "name": "successor-native-input-dsp/restored-inputs.sha256",
+      "bytes": 991,
+      "sha256": "1fb711d1f78f40509388b46f8c441403697dc6bce8206a3b6569a1d86809149f",
+      "text": "63f7f37b565bbced3d4d9db84a3a7938f6487225d8610bbcf18a6fa81597df12  verilog/sd2snes_dsp/ip/mk2/build/dac_buf.ngc\n491cbfff42c7d2957a65c41023d1782d0fd1d9e6ca7abc2764a8c87965fcc3d6  verilog/sd2snes_dsp/ip/mk2/build/msu_databuf.ngc\n86e98180586d42e2fccf01a030eda81de6c13b4764c7475786d612b7212bfab1  verilog/sd2snes_dsp/ip/mk2/build/snescmd_buf.ngc\nac6c77320e13d1b4294550c53c0f9356e37331a5b7b2f03a377543304fba9d79  verilog/sd2snes_dsp/ip/mk2/build/upd77c25_datram.ngc\n7c4eccffcbcf702bb24bac9382a0cc84a71243a08345469a817ccdcec12141ad  verilog/sd2snes_dsp/ip/mk2/build/upd77c25_datrom.ngc\n5e8dfad555b01c399fcf6c17f9bab9078b5996abd388071b272ab5d3a9c97193  verilog/sd2snes_dsp/ip/mk2/build/upd77c25_pgmrom.ngc\n3a0af6c79f2e0d775414503780c0d6d12f89bdfd119fedcf9d382df723c9c357  verilog/sd2snes_dsp/upd77c25.v\nd5754ef5c27a9f987bfb44eae3006fe781c786c29bb86c2ef2b2ea7915754f01  verilog/sd2snes_dspx/main.pcf\n4f7b507e401b716cc16da5c89f2c7bfe18bdb6b33bc1dd76db36e43f7b961113  verilog/sd2snes_dspx/main_map.ncd\n"
+    }
+  },
+  "context": {
+    "checkoutHead": "388555de29ca57780eb091baa448f69a1390d97b",
+    "productionVerilogTree": "01ce8b6b4509a5a72e0ad739e06bf19e548a2fc1",
+    "fixedImage": "sha256:5e3bbb00649997abca8843b1d82d8529eda99a0f2868d37ad9777e0ad5fd50e8",
+    "mac": "08:00:27:68:c9:35",
+    "seed": 68,
+    "nativeInputs": [
+      {
+        "bytes": 55901,
+        "path": "verilog/sd2snes_dsp/upd77c25.v",
+        "sha256": "3a0af6c79f2e0d775414503780c0d6d12f89bdfd119fedcf9d382df723c9c357"
+      },
+      {
+        "bytes": 1176958,
+        "path": "verilog/sd2snes_dspx/main_map.ncd",
+        "sha256": "4f7b507e401b716cc16da5c89f2c7bfe18bdb6b33bc1dd76db36e43f7b961113"
+      },
+      {
+        "bytes": 148282,
+        "path": "verilog/sd2snes_dspx/main.pcf",
+        "sha256": "d5754ef5c27a9f987bfb44eae3006fe781c786c29bb86c2ef2b2ea7915754f01"
+      },
+      {
+        "bytes": 13280,
+        "path": "verilog/sd2snes_dsp/ip/mk2/build/dac_buf.ngc",
+        "sha256": "63f7f37b565bbced3d4d9db84a3a7938f6487225d8610bbcf18a6fa81597df12"
+      },
+      {
+        "bytes": 20782,
+        "path": "verilog/sd2snes_dsp/ip/mk2/build/msu_databuf.ngc",
+        "sha256": "491cbfff42c7d2957a65c41023d1782d0fd1d9e6ca7abc2764a8c87965fcc3d6"
+      },
+      {
+        "bytes": 11789,
+        "path": "verilog/sd2snes_dsp/ip/mk2/build/snescmd_buf.ngc",
+        "sha256": "86e98180586d42e2fccf01a030eda81de6c13b4764c7475786d612b7212bfab1"
+      },
+      {
+        "bytes": 12182,
+        "path": "verilog/sd2snes_dsp/ip/mk2/build/upd77c25_datram.ngc",
+        "sha256": "ac6c77320e13d1b4294550c53c0f9356e37331a5b7b2f03a377543304fba9d79"
+      },
+      {
+        "bytes": 12798,
+        "path": "verilog/sd2snes_dsp/ip/mk2/build/upd77c25_datrom.ngc",
+        "sha256": "7c4eccffcbcf702bb24bac9382a0cc84a71243a08345469a817ccdcec12141ad"
+      },
+      {
+        "bytes": 16224,
+        "path": "verilog/sd2snes_dsp/ip/mk2/build/upd77c25_pgmrom.ngc",
+        "sha256": "5e8dfad555b01c399fcf6c17f9bab9078b5996abd388071b272ab5d3a9c97193"
+      }
+    ],
+    "nativeInputManifestSha256": "1fb711d1f78f40509388b46f8c441403697dc6bce8206a3b6569a1d86809149f",
+    "inputPreparationFixture": {
+      "path": ".github/fixtures/successor-native-input-data.json",
+      "commit": "388555de29ca57780eb091baa448f69a1390d97b",
+      "bytes": 555772,
+      "sha256": "7bd9cf3a49836fbb521d32ce8b1dda5f00bbe2a07dc82542919d0dd7198b381b"
+    },
+    "failedLog": {
+      "name": "sd2snes-41326618443-dsp-native-preflight.log",
+      "bytes": 61958,
+      "sha256": "a476d5b7980a885f4a45e9d28987301bd3acf1793d4e11923476b9a0cf000594"
+    },
+    "failedReportArchive": {
+      "name": "sd2snes-41326618443-dsp-native-preflight.zip",
+      "bytes": 808901,
+      "sha256": "136055953c075d25048ca8ba3251fee5f143f1d02d2cb69366a62a9586ef5cfe"
+    }
+  },
+  "historicalDiagnostic": {
+    "runId": 41241427380,
+    "runFields": {
+      "id": 41241427380,
+      "head_sha": "50fb1ed619c3cb204417c1387b196b1e5baa90f3",
+      "head_branch": "master",
+      "path": ".github/workflows/compare-dsp-status-late-isolated-native.yml",
+      "event": "workflow_dispatch",
+      "status": "completed",
+      "conclusion": "failure",
+      "run_attempt": 1,
+      "run_number": 1,
+      "workflow_id": 403052319
+    },
+    "jobId": 124655967451,
+    "reportArtifact": {
+      "id": 13058680983,
+      "name": "dsp-status-late-isolated-native-seed-68-reports",
+      "size_in_bytes": 1117950,
+      "digest": "sha256:b2497f88024ed57e5690fbfe651b6252ed9bb4e6ff94b63d2a6f89694c28686a",
+      "expired": false,
+      "workflow_run": {
+        "id": 41241427380,
+        "repository_id": 1433388489,
+        "head_repository_id": 1433388489,
+        "head_branch": "master",
+        "head_sha": "50fb1ed619c3cb204417c1387b196b1e5baa90f3"
+      }
+    },
+    "routeLog": {
+      "name": "_temp/dsp-status-late-isolated-native-route.log",
+      "bytes": 17451,
+      "sha256": "c620850eb75b2904f337b03c573491700a5e7caed626c1d7a3e239e204fc8b75"
+    },
+    "slice": {
+      "offset": 107,
+      "bytes": 5386,
+      "endOffsetExclusive": 5493,
+      "sha256": "6a7ae06c40870a728c0e75980f592670d39bc098932e53ddcd0e82b1fa9f3a77"
+    },
+    "fullStderrByteMatch": true,
+    "normalization": "none",
+    "alreadyRetainedHistoricalReportOnly": true,
+    "historicalNativeFailurePreserved": true
+  },
+  "reviewPins": {
+    "commandReview": {
+      "name": "dsp-native-preflight-41326618443-independent-command-review.json",
+      "bytes": 40036,
+      "sha256": "e4858a26575ddc132f531061470dce5013a9ed5f05f389534877abafd9d59cbd"
+    },
+    "retrieval": {
+      "name": "dsp-native-preflight-41326618443-retrieval.json",
+      "bytes": 8918,
+      "sha256": "6fa3cab664fb736930c17092e604e14ce4a99f3c7e7a2c3b6536b95cb7269e49"
+    },
+    "completedMetadata": {
+      "name": "dsp-native-preflight-41326618443-completed-metadata.json",
+      "bytes": 19239,
+      "sha256": "28e192c735863232cfa834f6429a543fc5871aa9991d67d5dc899cc8aa08b18c"
+    }
+  },
+  "limits": {
+    "fixtureBytes": 1000000,
+    "failureZipBytes": 2000000,
+    "failureMembers": 34,
+    "failureFileBytes": 3000000,
+    "failureTextAggregateBytes": 4000000,
+    "failedPlanStreamBytes": 1000000,
+    "failureLogBytes": 1000000,
+    "historicalRouteLogBytes": 3000000
+  },
+  "acceptance": {
+    "failurePreserved": true,
+    "oldEmptyStderrGateUnchanged": true,
+    "stderrAllowlist": false,
+    "collectionPassed": false,
+    "nativeEligible": false,
+    "nativeExecuted": false,
+    "timingPass": false,
+    "wholeMappedEquivalenceProved": false,
+    "hardwareQualified": false
+  },
+  "missingEvidence": [
+    "Separate original embedded xtclsh process exit status was not retained.",
+    "Individual ISE ProjectMgmt:127 warning root cause is not established by these context bytes."
+  ]
+}

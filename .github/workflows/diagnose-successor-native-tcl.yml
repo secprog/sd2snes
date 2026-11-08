@@ -1,0 +1,133 @@
+# Diagnose the failed retained-input Tcl query; collection only, no make recipes/PAR/TRACE.
+name: Diagnose retained DSP native Tcl query
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: successor-native-query-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    name: DSP retained inputs and one traced original Tcl query
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      FAMILY: dsp
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Pin reviewed preparation and planning sources and pristine checkout
+        id: inventory
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = ef980b46aed16502797ef680f83e12d967f4b984
+          test "$(git rev-parse HEAD:verilog)" = 01ce8b6b4509a5a72e0ad739e06bf19e548a2fc1
+          test "$(git hash-object --no-filters .github/scripts/prepare-successor-native-inputs.py)" = 3e6d468080d70730a594d97408e508d78da23139
+          test "$(git hash-object --no-filters .github/scripts/check-successor-native-plan.py)" = bbaff25d3fc0ffe98408502e1d5ee09882ebca87
+          test "$(git hash-object --no-filters .github/fixtures/successor-native-input-data.json)" = 76a525bac242ab4da57becceec3a9ceeb60ab226
+          test "$(git hash-object --no-filters .github/fixtures/successor-native-plan-data.json)" = 50d61482a1f952ce1bc4a603937b9c40e2dbd076
+          test "$(git hash-object --no-filters .github/fixtures/successor-physical-acceptance.json)" = 56082c542f5ff97bc411718f1391eff71375e836
+          test "$(git hash-object --no-filters .github/scripts/diagnose-successor-native-tcl.py)" = 20b85dbad900acf33d5693cfa0bc43ef011fc974
+          test "$(git hash-object --no-filters .github/scripts/trace-successor-native-query.tcl)" = d00920b3a57c16215842bac2270c48e5a4b1b2a1
+          test "$(git hash-object --no-filters .github/fixtures/dsp-native-query-failure-data.json)" = 0ea088d4859239aa1cc2089176762434e84722d1
+          git diff --exit-code
+          git diff --cached --exit-code
+          prefix="$RUNNER_TEMP/successor-native-query-dsp"
+          git ls-files -z | xargs -0 sha256sum > "$prefix-pristine.sha256"
+          git ls-files -s > "$prefix-pristine-index.txt"
+          {
+            printf 'EVIDENCE_ROOT=%s/successor-native-query-input-dsp\n' "$RUNNER_TEMP"
+            printf 'CHECK_PREFIX=%s\n' "$prefix"
+            printf 'OUTPUT_ROOT=%s/successor-native-query-output-dsp\n' "$RUNNER_TEMP"
+          } >> "$GITHUB_ENV"
+          printf 'Checkout: %s\nProduction Verilog tree: %s\n' "$GITHUB_SHA" "$(git rev-parse HEAD:verilog)" | tee "$prefix-identity.txt"
+
+      - name: Require hosted positive and adversarial command-plan controls
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/check-successor-native-plan.py --self-test | tee "$CHECK_PREFIX-original-controls.json"
+          python3 .github/scripts/diagnose-successor-native-tcl.py --self-test | tee "$CHECK_PREFIX-query-controls.json"
+
+      - name: Bind complete accepted evidence and restore only exact native inputs
+        id: preparation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/prepare-successor-native-inputs.py "$FAMILY" "$EVIDENCE_ROOT" | tee "$CHECK_PREFIX-preparation-console.txt"
+          cmp "$CHECK_PREFIX-pristine-index.txt" "$EVIDENCE_ROOT/checkout-before-index.txt"
+          find "$EVIDENCE_ROOT" -type f -print0 | sort -z | xargs -0 sha256sum > "$CHECK_PREFIX-evidence-before.sha256"
+          sha256sum --check "$EVIDENCE_ROOT/checkout-after-candidate.sha256" > "$CHECK_PREFIX-pre-image-source-check.txt"
+          sha256sum --check "$EVIDENCE_ROOT/restored-inputs.sha256" > "$CHECK_PREFIX-pre-image-input-check.txt"
+
+      - uses: ./.github/actions/prepare-build-image
+        with:
+          target: mk2
+
+      - name: Trace one original Tcl option query and preserve every diagnostic
+        id: query
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/diagnose-successor-native-tcl.py --collect "$FAMILY" "$EVIDENCE_ROOT" "$OUTPUT_ROOT" | tee "$CHECK_PREFIX-query-console.txt"
+
+      - name: Require every source, index and retained input unchanged after the Tcl query
+        if: always() && steps.inventory.outcome == 'success'
+        run: |
+          set -euo pipefail
+          prefix="$RUNNER_TEMP/successor-native-query-dsp"
+          evidence="$RUNNER_TEMP/successor-native-query-input-dsp"
+          git diff --cached --exit-code
+          git ls-files -z | xargs -0 sha256sum > "$prefix-after.sha256"
+          git ls-files -s > "$prefix-after-index.txt"
+          cmp "$prefix-pristine-index.txt" "$prefix-after-index.txt"
+          git diff --name-only > "$prefix-post-paths.txt"
+          git diff --binary > "$prefix-post-source.diff"
+          if [[ -f "$evidence/checkout-after-candidate.sha256" ]]; then
+            sha256sum --check "$evidence/checkout-after-candidate.sha256" > "$prefix-final-source-check.txt"
+            cmp "$evidence/checkout-after-candidate-index.txt" "$prefix-after-index.txt"
+            sha256sum --check "$evidence/restored-inputs.sha256" > "$prefix-final-input-check.txt"
+            test "$(cat "$prefix-post-paths.txt")" = verilog/sd2snes_dsp/upd77c25.v
+          else
+            cmp "$prefix-pristine.sha256" "$prefix-after.sha256"
+            sha256sum --check "$prefix-pristine.sha256" > "$prefix-final-source-check.txt"
+            git diff --exit-code
+          fi
+          if [[ -f "$prefix-evidence-before.sha256" ]]; then
+            find "$evidence" -type f -print0 | sort -z | xargs -0 sha256sum > "$prefix-evidence-after.sha256"
+            cmp "$prefix-evidence-before.sha256" "$prefix-evidence-after.sha256"
+            sha256sum --check "$prefix-evidence-before.sha256" > "$prefix-final-evidence-check.txt"
+          fi
+          for product in main.ncd main.par main.twr main.ngd main.ngc main.bit; do
+            test ! -e "verilog/sd2snes_dspx/$product"
+          done
+
+      - name: Retain full bounded text query evidence only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: successor-native-query-dsp-reports
+          path: |
+            ${{ runner.temp }}/successor-native-query-dsp-*.txt
+            ${{ runner.temp }}/successor-native-query-dsp-*.json
+            ${{ runner.temp }}/successor-native-query-dsp-*.sha256
+            ${{ runner.temp }}/successor-native-query-dsp-*.diff
+            ${{ runner.temp }}/successor-native-query-input-dsp/*.json
+            ${{ runner.temp }}/successor-native-query-input-dsp/*.sha256
+            ${{ runner.temp }}/successor-native-query-input-dsp/*index.txt
+            ${{ runner.temp }}/successor-native-query-output-dsp/*.json
+            ${{ runner.temp }}/successor-native-query-output-dsp/*.txt
+            ${{ runner.temp }}/successor-native-query-output-dsp/*.tsv
+            ${{ runner.temp }}/successor-native-query-output-dsp/*.sha256
+          if-no-files-found: error
+          retention-days: 14

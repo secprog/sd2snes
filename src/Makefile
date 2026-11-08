@@ -279,7 +279,10 @@ LDFLAGS += -Wl,--sort-section=alignment -Wl,--sort-common
 # strtok is replaced (strtok.c), and memcpy/memmove/memset are taken from the full newlib
 # of the same multilib (FASTMEM_OBJ): nano's copy a byte at a time, and they move every
 # USB packet and SD/PSRAM buffer.
-LDFLAGS += --specs=nano.specs
+# nano.specs also selects newlib-nano/newlib.h: every C compilation, including
+# overlays, must see the same reentrancy/stdio ABI as the selected library.
+# ALL_CFLAGS is passed to the resident link too; do not add the specs twice.
+CFLAGS += --specs=nano.specs
 
 # OpenOCD options
 # -s <path>:      set additional script search path

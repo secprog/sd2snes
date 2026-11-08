@@ -1,0 +1,368 @@
+# WR DRAFT: final source fixture and independent workflow review are required before dispatch.
+# This is software/menu/player collection only. No MCU link, FPGA build or final package.
+name: Validate post-sync software and player inputs
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: post-sync-software-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  software:
+    name: Synthetic contracts and fresh menus/players only
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      REVIEWED_PARENT: 9f92ddf0b30839339a3c3001efeb0ed80587a7a2
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Establish outside-checkout evidence locations before validation
+        id: locations
+        run: |
+          set -euo pipefail
+          mkdir "$RUNNER_TEMP/post-sync-reports" "$RUNNER_TEMP/post-sync-control"
+          printf 'REPORT_ROOT=%s/post-sync-reports\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+          printf 'CONTROL_ROOT=%s/post-sync-control\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+          printf 'EVIDENCE_HELPER=%s/post-sync-control/post-sync-evidence.py\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+
+      - name: Authenticate and preserve the reviewed evidence helper
+        id: helper
+        run: |
+          set -euo pipefail
+          actual=$(git hash-object --no-filters .github/scripts/post-sync-evidence.py)
+          printf '%s\n' "$actual" > "$REPORT_ROOT/helper-blob.txt"
+          test "$actual" = fdb60667eb015c3769b2adc452864396ff64e9e7
+          cp .github/scripts/post-sync-evidence.py "$EVIDENCE_HELPER"
+          chmod 0444 "$EVIDENCE_HELPER"
+          test "$(git hash-object --no-filters "$EVIDENCE_HELPER")" = "$actual"
+
+      - name: Require reviewed source and establish the complete canonical inventory
+        id: inventory
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$REVIEWED_PARENT"
+          test "$(git rev-parse HEAD:verilog)" = c2e332a461e38c60b144e08ece1d62b949bb8db2
+          # Full reviewed changed-file list and exact canonical blob pins are finalized
+          # after the integration authors freeze all source files; no moving ref is accepted.
+          git diff-tree --no-commit-id --name-only -r HEAD | LC_ALL=C sort > "$REPORT_ROOT/changed-paths.txt"
+          python3 "$EVIDENCE_HELPER" capture "$REPORT_ROOT/source-before-command" -- \
+            python3 "$EVIDENCE_HELPER" snapshot "$GITHUB_WORKSPACE" "$REPORT_ROOT/source-before"
+          python3 "$EVIDENCE_HELPER" capture "$REPORT_ROOT/source-pin-command" -- \
+            python3 "$EVIDENCE_HELPER" verify-pins \
+            .github/fixtures/post-sync-source-pins.json
+
+      - name: Run only synthetic package and MCU command-contract controls
+        id: controls
+        run: |
+          set -euo pipefail
+          python3 "$EVIDENCE_HELPER" capture "$REPORT_ROOT/evidence-controls" -- \
+            python3 "$EVIDENCE_HELPER" --self-test "$CONTROL_ROOT/self-tests"
+          python3 "$EVIDENCE_HELPER" capture \
+            "$REPORT_ROOT/package-controls" -- \
+            python3 .github/scripts/check-fpga-manifest.py self-test
+          python3 "$EVIDENCE_HELPER" capture \
+            "$REPORT_ROOT/mcu-command-controls" -- \
+            bash .github/scripts/check-mcu.sh --self-test
+
+      - name: Require injected menu command failure propagation
+        id: menucontrols
+        run: |
+          set -euo pipefail
+          # Script and actual Makefiles are pinned by the complete source fixture.
+          # These hosted scratch controls run explicit command substitutes only;
+          # they do not execute real assemblers or qualify assembled outputs.
+          python3 "$EVIDENCE_HELPER" capture "$REPORT_ROOT/menu-exit-controls-command" -- \
+            python3 .github/scripts/check-post-sync-menu-exits.py \
+            "$GITHUB_WORKSPACE" "$CONTROL_ROOT/menu-exit-reports"
+
+      - uses: ./.github/actions/prepare-build-image
+        with:
+          target: software
+
+      - name: Record software image and run exactly the menu/player build
+        id: menus
+        run: |
+          set -euo pipefail
+          python3 "$EVIDENCE_HELPER" menus \
+            "$GITHUB_WORKSPACE" "$REPORT_ROOT" \
+            "post-sync-software-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          # The reviewed helper uses the inspected software image ID, preserves the
+          # original /work context, and calls only /bin/bash .github/scripts/build.sh menus.
+          # It retains full stdout, stderr, client/container exit status, exact Docker
+          # inspect/image/toolchain records and cleanup receipts even after failure.
+          # No FPGA build mode, MCU link, FPGA implementation tool or boot import.
+
+      - name: Require every advertised software output and record exact bytes
+        id: outputs
+        run: |
+          set -euo pipefail
+          python3 "$EVIDENCE_HELPER" capture "$REPORT_ROOT/final-output-command" -- \
+            python3 - "$GITHUB_WORKSPACE" "$REPORT_ROOT/final-output-identities.json" <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+          import stat
+          import sys
+          root = Path(sys.argv[1]).resolve(strict=True)
+          expected = [
+              'snes/menu.bin', 'snes/m3nu.bin', 'snes/igmenu.bin', 'snes/onboarding.bin',
+              'snes/lang_ja.bin', 'snes/lang_zh.bin', 'snes/lang_ja.fnt', 'snes/lang_zh.fnt',
+              'misc/atari_snes.bin', 'misc/nes_snes.bin', 'misc/nes_snes.map',
+              'misc/sms_snes.bin', 'misc/gbc_snes.bin', 'misc/a26_snes.bin',
+          ]
+          rows = []
+          for name in expected:
+              path = root / name
+              row = {'path': name, 'accepted': False}
+              try:
+                  if any(part.is_symlink() for part in (path, *path.parents)):
+                      raise ValueError('Output has a symlink in its ancestry')
+                  before = path.stat()
+                  if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or before.st_size <= 0:
+                      raise ValueError('Output must be a unique nonempty regular file')
+                  digest = hashlib.sha256()
+                  size = 0
+                  with path.open('rb') as stream:
+                      for block in iter(lambda: stream.read(1048576), b''):
+                          size += len(block)
+                          digest.update(block)
+                  after = path.stat()
+                  identity = lambda info: (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns)
+                  if identity(before) != identity(after) or size != before.st_size:
+                      raise ValueError('Output changed while its complete bytes were hashed')
+                  row.update(accepted=True, bytes=size, sha256=digest.hexdigest())
+              except Exception as error:
+                  row['error'] = type(error).__name__ + ': ' + str(error)
+              rows.append(row)
+          result = {'expectedPaths': expected, 'expectedCount': 14, 'files': rows,
+                    'accepted': len(rows) == 14 and all(row['accepted'] for row in rows),
+                    'scope': 'Required software output identity only; existing menu/player checks remain mandatory; no FPGA/MCU/package/hardware qualification'}
+          with Path(sys.argv[2]).open('xb') as stream:
+              stream.write((json.dumps(result, indent=2, sort_keys=True) + '\n').encode())
+          if not result['accepted']:
+              raise ValueError('Incomplete or invalid advertised software output set')
+          print(json.dumps(result, sort_keys=True))
+          PY
+
+      - name: Require all tracked source and the Git index unchanged
+        if: always() && steps.helper.outcome == 'success'
+        run: |
+          set -euo pipefail
+          git status --short --untracked-files=all > "$REPORT_ROOT/status.txt"
+          git diff --no-ext-diff --binary > "$REPORT_ROOT/tracked.diff"
+          git diff --cached --no-ext-diff --binary > "$REPORT_ROOT/staged.diff"
+          python3 "$EVIDENCE_HELPER" capture "$REPORT_ROOT/source-after-command" -- \
+            python3 "$EVIDENCE_HELPER" snapshot "$GITHUB_WORKSPACE" "$REPORT_ROOT/source-after"
+          python3 "$EVIDENCE_HELPER" capture "$REPORT_ROOT/source-snapshot-comparison" -- \
+            cmp "$REPORT_ROOT/source-before.json" "$REPORT_ROOT/source-after.json"
+          python3 "$EVIDENCE_HELPER" capture "$REPORT_ROOT/source-index-comparison" -- \
+            cmp "$REPORT_ROOT/source-before-index.txt" "$REPORT_ROOT/source-after-index.txt"
+
+      - name: Record absence of generated FPGA products independently
+        if: always() && steps.helper.outcome == 'success'
+        run: |
+          set -euo pipefail
+          python3 "$EVIDENCE_HELPER" no-fpga-products \
+            "$GITHUB_WORKSPACE" "$REPORT_ROOT/no-fpga-products.json"
+
+      - name: Retain complete hosted control outcome separately from invalid fixtures
+        if: always() && steps.helper.outcome == 'success' && steps.controls.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          cp "$CONTROL_ROOT/self-tests/self-test-results.json" "$REPORT_ROOT/evidence-self-test-results.json"
+
+      - name: Retain every menu command-control report even on rejection
+        if: always() && steps.helper.outcome == 'success' && steps.menucontrols.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          cp -a "$CONTROL_ROOT/menu-exit-reports" "$REPORT_ROOT/menu-exit-controls"
+
+      - name: Collect the complete bounded text union and output identity
+        id: collection
+        if: always() && steps.helper.outcome == 'success'
+        run: |
+          set -euo pipefail
+          python3 "$EVIDENCE_HELPER" collect \
+            "$GITHUB_WORKSPACE" "$REPORT_ROOT" "$RUNNER_TEMP/post-sync-text-reports"
+          # Union includes every command stdout/stderr/status, full canonical inventories,
+          # all menu/onboarding/player logs/maps/layout JSON, generated text sources,
+          # exact input/output hash records and all copied cc65/Asar/GCC-nano provenance.
+          # Every text file <=3,000,000 bytes; aggregate <=96,000,000 bytes including
+          # complete manifests; <=1024 safe regular UTF-8/NUL-free
+          # files. A bound/encoding/type/unknown-output failure stays a failed job,
+          # with a complete rejection receipt and authentic console, never clipped text.
+          # Binary inventory stores only path/size/hash in this artifact. Binaries remain
+          # in the separate GitHub-only artifact below. It includes no native FPGA bytes.
+
+      - name: Retain complete text evidence and explicit collection failures
+        if: always() && steps.helper.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: post-sync-software-text-reports
+          include-hidden-files: true
+          path: |
+            ${{ runner.temp }}/post-sync-text-reports/
+            ${{ runner.temp }}/post-sync-text-reports-collection-failure.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Preserve complete rejected raw evidence on GitHub only
+        if: failure() && steps.locations.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: post-sync-software-raw-failure-evidence-github-only
+          include-hidden-files: true
+          path: ${{ runner.temp }}/post-sync-reports/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Preserve full hosted control fixtures only on GitHub
+        if: always() && steps.controls.outcome != 'skipped' && steps.helper.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: post-sync-evidence-control-fixtures-github-only
+          path: ${{ runner.temp }}/post-sync-control/
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 14
+
+      - name: Retain software-only outputs on GitHub
+        if: steps.menus.outcome == 'success' && steps.outputs.outcome == 'success' && steps.collection.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: post-sync-menus-and-source-built-players
+          path: |
+            snes/menu.bin
+            snes/m3nu.bin
+            snes/igmenu.bin
+            snes/onboarding.bin
+            snes/lang_ja.bin
+            snes/lang_zh.bin
+            snes/lang_ja.fnt
+            snes/lang_zh.fnt
+            misc/atari_snes.bin
+            misc/nes_snes.bin
+            misc/nes_snes.map
+            misc/sms_snes.bin
+            misc/gbc_snes.bin
+            misc/a26_snes.bin
+          if-no-files-found: error
+          retention-days: 14
+
+  sameboy-collection:
+    name: Collect one pinned SameBoy release only, no boot acceptance
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Establish outside-checkout collection report locations
+        id: locations
+        run: |
+          set -euo pipefail
+          mkdir "$RUNNER_TEMP/sameboy-report-root" "$RUNNER_TEMP/sameboy-control"
+          printf 'REPORT_ROOT=%s/sameboy-report-root\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+          printf 'EVIDENCE_HELPER=%s/sameboy-control/post-sync-evidence.py\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+      - name: Authenticate and preserve the reviewed evidence helper
+        id: helper
+        run: |
+          set -euo pipefail
+          actual=$(git hash-object --no-filters .github/scripts/post-sync-evidence.py)
+          printf '%s\n' "$actual" > "$REPORT_ROOT/helper-blob.txt"
+          test "$actual" = fdb60667eb015c3769b2adc452864396ff64e9e7
+          cp .github/scripts/post-sync-evidence.py "$EVIDENCE_HELPER"
+          chmod 0444 "$EVIDENCE_HELPER"
+          test "$(git hash-object --no-filters "$EVIDENCE_HELPER")" = "$actual"
+      - name: Require exact independently reviewed collection sources
+        id: inventory
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = 9f92ddf0b30839339a3c3001efeb0ed80587a7a2
+          test "$(git hash-object --no-filters .github/scripts/collect-sameboy-boot-evidence.py)" = 32d55d94375bd1cda80cf723d7921cb9d93648f5
+          test "$(git hash-object --no-filters .github/fixtures/sameboy-103-boot-collection-data.json)" = 83234f9b1e6ffb3684f3e2a28b75cb1685c55d57
+          python3 "$EVIDENCE_HELPER" capture "$REPORT_ROOT/source-before-command" -- \
+            python3 "$EVIDENCE_HELPER" snapshot "$GITHUB_WORKSPACE" "$REPORT_ROOT/source-before"
+          python3 "$EVIDENCE_HELPER" capture "$REPORT_ROOT/source-pin-command" -- \
+            python3 "$EVIDENCE_HELPER" verify-pins .github/fixtures/post-sync-source-pins.json
+      - name: Require hosted shared-helper controls on this runner
+        id: evidencecontrols
+        run: |
+          set -euo pipefail
+          python3 "$EVIDENCE_HELPER" capture "$REPORT_ROOT/evidence-controls" -- \
+            python3 "$EVIDENCE_HELPER" --self-test "$RUNNER_TEMP/sameboy-control/self-tests"
+      - name: Run collector controls and collect exactly one pinned upstream archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 "$EVIDENCE_HELPER" capture "$REPORT_ROOT/controls" -- \
+            python3 .github/scripts/collect-sameboy-boot-evidence.py --self-test \
+            "$REPORT_ROOT/controls-data" .github/fixtures/sameboy-103-boot-collection-data.json
+          python3 "$EVIDENCE_HELPER" capture "$REPORT_ROOT/collection" -- \
+            python3 .github/scripts/collect-sameboy-boot-evidence.py --collect \
+            "$REPORT_ROOT/collection-data" .github/fixtures/sameboy-103-boot-collection-data.json
+          # Metadata collection does not accept a mismatching boot, change the existing
+          # 2304-byte/8113B4D8 gate, populate misc/cgb_boot.bin, or unblock packaging.
+      - name: Retain complete shared-helper control result
+        if: always() && steps.helper.outcome == 'success' && steps.evidencecontrols.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          cp "$RUNNER_TEMP/sameboy-control/self-tests/self-test-results.json" "$REPORT_ROOT/evidence-self-test-results.json"
+      - name: Require collector checkout immutability
+        if: always() && steps.helper.outcome == 'success'
+        run: |
+          set -euo pipefail
+          git status --short --untracked-files=all > "$REPORT_ROOT/status.txt"
+          git diff --no-ext-diff --binary > "$REPORT_ROOT/tracked.diff"
+          git diff --cached --no-ext-diff --binary > "$REPORT_ROOT/staged.diff"
+          python3 "$EVIDENCE_HELPER" capture "$REPORT_ROOT/source-after-command" -- \
+            python3 "$EVIDENCE_HELPER" snapshot "$GITHUB_WORKSPACE" "$REPORT_ROOT/source-after"
+          python3 "$EVIDENCE_HELPER" capture "$REPORT_ROOT/source-snapshot-comparison" -- \
+            cmp "$REPORT_ROOT/source-before.json" "$REPORT_ROOT/source-after.json"
+          python3 "$EVIDENCE_HELPER" capture "$REPORT_ROOT/source-index-comparison" -- \
+            cmp "$REPORT_ROOT/source-before-index.txt" "$REPORT_ROOT/source-after-index.txt"
+      - name: Bound the entire collection, controls and canonical-source report union
+        if: always() && steps.helper.outcome == 'success'
+        run: |
+          set -euo pipefail
+          python3 "$EVIDENCE_HELPER" collect-reports \
+            "$REPORT_ROOT" "$RUNNER_TEMP/sameboy-text-reports"
+      - name: Retain bounded collection-only text evidence
+        if: always() && steps.helper.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sameboy-v1.0.3-collection-only-reports
+          include-hidden-files: true
+          path: |
+            ${{ runner.temp }}/sameboy-text-reports/
+            ${{ runner.temp }}/sameboy-text-reports-collection-failure.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Preserve complete rejected collection evidence on GitHub only
+        if: failure() && steps.locations.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sameboy-v1.0.3-raw-failure-evidence-github-only
+          include-hidden-files: true
+          path: ${{ runner.temp }}/sameboy-report-root/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Preserve complete shared-helper control fixtures on GitHub only
+        if: always() && steps.evidencecontrols.outcome != 'skipped' && steps.helper.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sameboy-evidence-control-fixtures-github-only
+          include-hidden-files: true
+          path: ${{ runner.temp }}/sameboy-control/
+          if-no-files-found: error
+          retention-days: 14

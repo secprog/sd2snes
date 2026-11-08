@@ -22,7 +22,7 @@ on_exit() {
     while IFS= read -r log; do
       echo "=== $log ==="
       tail -100 "$log"
-    done < <(find /tmp/gcc-build /tmp/newlib-build -name config.log -printf '%T@ %p\n' 2>/dev/null \
+    done < <(find /tmp/gcc-build /tmp/newlib-build /tmp/newlib-nano-build -name config.log -printf '%T@ %p\n' 2>/dev/null \
       | sort -nr | sed -n '1,3p' | cut -d' ' -f2-)
   fi
   if [[ -n "$stage_pid" ]]; then kill "$stage_pid" 2>/dev/null || true; fi
@@ -143,6 +143,68 @@ test -r "$sysroot/include/newlib.h"
 test -r "$sysroot/include/_newlib_version.h"
 install -m644 /tmp/newlib-source/COPYING* "$prefix/share/licenses/newlib/"
 
+# Keep full newlib, including the fast memcpy/memmove/memset used by src/Makefile.
+# Nano is built from the SAME verified source into a separate prefix, following
+# ARM's two-library installation model, never installed over the full library:
+# https://github.com/ARM-software/toolchain-gnu-bare-metal/blob/master/build-toolchain.sh
+# https://github.com/ARM-software/toolchain-gnu-bare-metal/blob/master/build-common.sh
+find "$sysroot" -type f -print0 | sort -z | xargs -0 sha256sum \
+  > "$prefix/share/newlib-full-before-nano.sha256"
+nano_prefix=/tmp/newlib-nano-install
+mkdir -p /tmp/newlib-nano-build "$nano_prefix"
+echo "=== Building newlib-nano $newlib_version with GCC $gcc_version ==="
+cd /tmp/newlib-nano-build
+nano_options=(
+  --target=arm-none-eabi --prefix="$nano_prefix" --enable-target-optspace
+  --disable-newlib-supplied-syscalls --enable-newlib-reent-check-verify
+  --enable-newlib-reent-small --enable-newlib-retargetable-locking
+  --disable-newlib-fvwrite-in-streamio --disable-newlib-fseek-optimization
+  --disable-newlib-wide-orient --enable-newlib-nano-malloc
+  --disable-newlib-unbuf-stream-opt --enable-lite-exit
+  --enable-newlib-global-atexit --enable-newlib-nano-formatted-io --disable-nls
+)
+printf 'newlib-nano: same newlib-%s verified source; CFLAGS_FOR_TARGET=-g0 -Os -ffunction-sections -fdata-sections\n' "$newlib_version" \
+  >> "$prefix/share/source-version.txt"
+printf 'newlib-nano configure: %s\n' "${nano_options[*]}" >> "$prefix/share/source-version.txt"
+CFLAGS_FOR_TARGET='-g0 -Os -ffunction-sections -fdata-sections' \
+  /tmp/newlib-source/configure "${nano_options[@]}"
+run_stage 15m make -j2
+run_stage 5m make install
+
+# Do not infer or silently omit a multilib. These are the compiler's exact four
+# installed variants; the later CPU lookups must resolve to their own directory.
+nano_multilib_text=$(arm-none-eabi-gcc -print-multi-lib)
+mapfile -t nano_multilibs <<< "$nano_multilib_text"
+test "${#nano_multilibs[@]}" -eq 4
+nano_dirs=()
+for multilib in "${nano_multilibs[@]}"; do
+  multi_dir=${multilib%%;*}
+  case "$multi_dir" in .|thumb/v6-m/nofp|thumb/v7-m/nofp|thumb/v7e-m+fp/hard) ;; *) exit 1 ;; esac
+  [[ " ${nano_dirs[*]} " != *" $multi_dir "* ]]
+  nano_dirs+=("$multi_dir")
+  src_dir="$nano_prefix/arm-none-eabi/lib/$multi_dir"
+  dst_dir="$sysroot/lib/$multi_dir"
+  test -d "$src_dir" && test -d "$dst_dir"
+  for archive in libc libg librdimon; do
+    test -s "$src_dir/$archive.a"
+    test ! -e "$dst_dir/${archive}_nano.a"
+    install -m644 "$src_dir/$archive.a" "$dst_dir/${archive}_nano.a"
+    cmp -- "$src_dir/$archive.a" "$dst_dir/${archive}_nano.a"
+  done
+  # The full installation already supplies these exact release specs. Preserve
+  # them; require both builds to agree instead of replacing full-library files.
+  cmp -- "$src_dir/nano.specs" "$dst_dir/nano.specs"
+  cmp -- /tmp/newlib-source/libgloss/arm/elf-nano.specs "$dst_dir/nano.specs"
+done
+mkdir -p "$sysroot/include/newlib-nano"
+install -m644 "$nano_prefix/arm-none-eabi/include/newlib.h" "$sysroot/include/newlib-nano/newlib.h"
+grep -Eq '^#define _WANT_REENT_SMALL 1$' "$sysroot/include/newlib-nano/newlib.h"
+grep -Eq '^#define _NANO_MALLOC 1$' "$sysroot/include/newlib-nano/newlib.h"
+grep -Eq '^#define _NANO_FORMATTED_IO 1$' "$sysroot/include/newlib-nano/newlib.h"
+sha256sum --check "$prefix/share/newlib-full-before-nano.sha256" > "$prefix/share/newlib-full-preserved.txt"
+find "$sysroot" -type f \( -name '*_nano.a' -o -name nano.specs -o -path '*/newlib-nano/newlib.h' \) -print0 \
+  | sort -z | xargs -0 sha256sum > "$prefix/share/newlib-nano.sha256"
+
 echo "=== Building GCC $gcc_version runtime libraries against newlib $newlib_version ==="
 cd /tmp/gcc-build
 run_stage 15m make -j2 all-target-libgcc
@@ -154,13 +216,32 @@ for cpu in cortex-m0plus cortex-m3 cortex-m4; do
   flags=(-mthumb "-mcpu=$cpu")
   if [[ "$cpu" == cortex-m4 ]]; then flags+=(-mfloat-abi=hard); fi
   arm-none-eabi-gcc "${flags[@]}" -print-multi-directory
+  multi_dir=$(arm-none-eabi-gcc "${flags[@]}" -print-multi-directory)
   library=$(realpath "$(arm-none-eabi-gcc "${flags[@]}" -print-file-name=libc.a)")
-  [[ "$library" == "$sysroot/lib/"* ]]
-  test -r "$library"
+  [[ "$library" == "$sysroot/lib/$multi_dir/libc.a" ]]
+  test -s "$library"
+  for member in memcpy memmove memset; do
+    arm-none-eabi-ar t "$library" | grep -Fx "libc_a-$member.o"
+  done
+  for archive in libc_nano libg_nano librdimon_nano; do
+    nano_library=$(realpath "$(arm-none-eabi-gcc "${flags[@]}" -print-file-name="$archive.a")")
+    [[ "$nano_library" == "$sysroot/lib/$multi_dir/$archive.a" ]]
+    test -s "$nano_library"
+  done
+  nano_specs=$(realpath "$(arm-none-eabi-gcc "${flags[@]}" -print-file-name=nano.specs)")
+  [[ "$nano_specs" == "$sysroot/lib/$multi_dir/nano.specs" ]]
+  cmp -- /tmp/newlib-source/libgloss/arm/elf-nano.specs "$nano_specs"
+  nano_defines=$(printf '#include <newlib.h>\n' | arm-none-eabi-gcc "${flags[@]}" --specs=nano.specs -dM -E -)
+  for macro in _WANT_REENT_SMALL _NANO_MALLOC _NANO_FORMATTED_IO; do
+    grep -Fx "#define $macro 1" <<< "$nano_defines"
+  done
+  grep -Fx '#define __NEWLIB__ 4' <<< "$nano_defines"
+  grep -Fx '#define __NEWLIB_MINOR__ 6' <<< "$nano_defines"
+  grep -Fx '#define __NEWLIB_PATCHLEVEL__ 0' <<< "$nano_defines"
   runtime=$(realpath "$(arm-none-eabi-gcc "${flags[@]}" -print-libgcc-file-name)")
   [[ "$runtime" == "$prefix/"*"/13.5.0/"* ]]
   test -r "$runtime"
 done
 install -m644 /tmp/gcc-source/COPYING3 /tmp/gcc-source/COPYING.RUNTIME "$prefix/share/licenses/gcc/"
 cd /
-rm -rf /tmp/gcc-source /tmp/gcc-build /tmp/gcc.tar /tmp/newlib-source /tmp/newlib-build /tmp/newlib.tar
+rm -rf /tmp/gcc-source /tmp/gcc-build /tmp/gcc.tar /tmp/newlib-source /tmp/newlib-build /tmp/newlib.tar /tmp/newlib-nano-build /tmp/newlib-nano-install

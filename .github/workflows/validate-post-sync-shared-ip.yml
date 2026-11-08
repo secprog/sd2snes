@@ -1,0 +1,204 @@
+# Exact reviewed source fixture and hosted helper controls remain mandatory.
+# New Atari creator/reuse coverage; no obsolete workflow definition restored.
+name: Validate post-sync shared CoreGen inputs
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: post-sync-shared-ip-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: ${{ matrix.family }} exact canonical inputs and shared products
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        family: [base, dsp]
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      FAMILY: ${{ matrix.family }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Initialize evidence paths before any source gate
+        id: paths
+        run: |
+          set -euo pipefail
+          report="$RUNNER_TEMP/post-sync-shared-ip-$FAMILY"
+          mkdir -p "$report"
+          printf 'REPORT_ROOT=%s\nEVIDENCE_HELPER=%s/reviewed-post-sync-ip-evidence-%s.py\n' \
+            "$report" "$RUNNER_TEMP" "$FAMILY" >> "$GITHUB_ENV"
+          printf 'Requested head: %s\nFamily: %s\n' "$GITHUB_SHA" "$FAMILY" > "$report/requested-identity.txt"
+
+      - name: Authenticate and preserve the independently reviewed evidence helper
+        id: auth
+        run: |
+          set -euo pipefail
+          test ! -L .github/scripts/post-sync-evidence.py
+          actual=$(git hash-object --no-filters .github/scripts/post-sync-evidence.py)
+          printf 'Observed helper blob: %s\n' "$actual" > "$REPORT_ROOT/helper-authentication.txt"
+          test "$actual" = fdb60667eb015c3769b2adc452864396ff64e9e7
+          cp -- .github/scripts/post-sync-evidence.py "$EVIDENCE_HELPER"
+          chmod 444 "$EVIDENCE_HELPER"
+          cmp .github/scripts/post-sync-evidence.py "$EVIDENCE_HELPER"
+
+      - name: Require exact current-source isolation delta and canonical inventory
+        id: inventory
+        run: |
+          set -euo pipefail
+          baseline=9f92ddf0b30839339a3c3001efeb0ed80587a7a2
+          test "$(git rev-parse HEAD^)" = "$baseline"
+          test "$(git rev-parse "$baseline:verilog")" = ab7f4932039c58458c2839c14d657fd2de8ec84b
+          test "$(git diff --name-only "$baseline" HEAD -- verilog)" = verilog/common.mk
+          test "$(git hash-object --no-filters verilog/common.mk)" = cf61a16bcb32b885cd28d9615efeb92f134554f2
+          test "$(git hash-object --no-filters .github/scripts/validate-coregen-build-directory.sh)" = fc35ccff55f0d80424c8db6cc6b104431785e75e
+          test "$(git hash-object --no-filters .github/actions/prepare-build-image/action.yml)" = ac2a66fc24d4a15658b666cdc5f5db7964df4c3b
+          test "$(git hash-object --no-filters .github/docker/mk2.Dockerfile)" = 04d99e8449ef9b5803902bce44192e5344973776
+          test "$(git hash-object --no-filters .github/docker/trim-ise.sh)" = bc4af7bf8169991fd2bae507ffb3b447eeedf0df
+          git diff --exit-code
+          git diff --cached --exit-code
+          test -z "$(git ls-files --others --exclude-standard)"
+          report="$REPORT_ROOT"
+          python3 "$EVIDENCE_HELPER" capture "$report/source-before-command" -- \
+            python3 "$EVIDENCE_HELPER" snapshot "$GITHUB_WORKSPACE" "$report/source-before"
+          python3 "$EVIDENCE_HELPER" capture "$report/source-pins-command" -- \
+            python3 "$EVIDENCE_HELPER" verify-pins .github/fixtures/post-sync-source-pins.json
+          bash -n .github/scripts/validate-coregen-build-directory.sh
+          git diff --no-ext-diff "$baseline" HEAD -- verilog > "$report/reviewed-verilog-delta.diff"
+          printf 'Head: %s\nFamily: %s\nVerilog tree: %s\nCommon makefile: %s\n' \
+            "$GITHUB_SHA" "$FAMILY" "$(git rev-parse HEAD:verilog)" \
+            "$(git hash-object --no-filters verilog/common.mk)" > "$report/identity.txt"
+
+      - name: Require hosted helper controls before licensed IP generation
+        id: controls
+        run: |
+          set -euo pipefail
+          python3 "$EVIDENCE_HELPER" capture "$REPORT_ROOT/evidence-controls" -- \
+            python3 "$EVIDENCE_HELPER" --self-test "$RUNNER_TEMP/post-sync-ip-controls-$FAMILY"
+
+      - uses: ./.github/actions/prepare-build-image
+        with:
+          target: mk2
+
+      - name: Create original IPs and require every shared consumer to reuse them
+        id: coregen
+        run: |
+          set -euo pipefail
+          python3 "$EVIDENCE_HELPER" coregen \
+            "$GITHUB_WORKSPACE" "$REPORT_ROOT" "$FAMILY" \
+            "post-sync-ip-$FAMILY-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          # The fixed owned driver pins the original ISE image, MAC, original bridge network
+          # and /work context, records complete separate streams/native exits,
+          # and inspects/removes only its exact labelled container on all paths.
+          python3 - "$REPORT_ROOT" "$FAMILY" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+          report = Path(sys.argv[1])
+          family = sys.argv[2]
+          if family not in ('base', 'dsp'):
+              raise ValueError('Unexpected family')
+          text = ''.join((report / ('coregen-command.' + stream + '.txt')).read_text(encoding='utf-8')
+                         for stream in ('stdout', 'stderr'))
+          ips = ['dac_buf', 'msu_databuf', 'snescmd_buf']
+          if family == 'dsp':
+              ips += ['upd77c25_datram', 'upd77c25_datrom', 'upd77c25_pgmrom']
+          rows = []
+          for ip in ips:
+              command = f'coregen -p ../sd2snes_{family}/ip/mk2/build -b ../sd2snes_{family}/ip/mk2/{ip}.xco -r'
+              marker = f"Generating implementation netlist for '{ip}'"
+              counts = {'ip': ip, 'command': command, 'commandCount': text.count(command),
+                        'implementationCount': text.count(marker)}
+              rows.append(counts)
+          result = {'family': family, 'rows': rows, 'expectedOriginalIpCount': len(ips),
+                    'accepted': all(r['commandCount'] == r['implementationCount'] == 1 for r in rows),
+                    'timingAccepted': False, 'nativeEligible': False}
+          (report / 'original-ip-command-counts.json').write_text(json.dumps(result, indent=2) + '\n', encoding='utf-8')
+          if not result['accepted']:
+              raise ValueError('Original IP generation command/count mismatch')
+          PY
+
+      - name: Retain complete post-operation canonical input identity even on failure
+        if: always() && steps.auth.outcome == 'success'
+        run: |
+          set -euo pipefail
+          python3 "$EVIDENCE_HELPER" capture "$REPORT_ROOT/source-after-command" -- \
+            python3 "$EVIDENCE_HELPER" snapshot "$GITHUB_WORKSPACE" "$REPORT_ROOT/source-after"
+          git status --short --untracked-files=all > "$REPORT_ROOT/status.txt"
+          git diff --no-ext-diff --binary > "$REPORT_ROOT/tracked.diff"
+          git diff --cached --no-ext-diff --binary > "$REPORT_ROOT/staged.diff"
+          cmp "$REPORT_ROOT/source-before.json" "$REPORT_ROOT/source-after.json"
+          cmp "$REPORT_ROOT/source-before-index.txt" "$REPORT_ROOT/source-after-index.txt"
+          git diff --exit-code
+          git diff --cached --exit-code
+          for core in base basex bootleg atari dsp dspx; do
+            for product in main.ngc main.ngd main_map.ncd main.ncd main.par main.twr main.bit; do
+              test ! -e "verilog/sd2snes_$core/$product"
+            done
+          done
+          printf '%s\n' 'IP generation and shared source-list reuse only. No XST/MAP/PAR/TRACE/bitgen, mapped-equivalence, timing, package or hardware acceptance. Original native and timing gates remain mandatory.' > "$REPORT_ROOT/limits.txt"
+
+      - name: Retain complete helper control outcome without importing invalid fixtures
+        if: always() && steps.auth.outcome == 'success' && steps.controls.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          cp "$RUNNER_TEMP/post-sync-ip-controls-$FAMILY/self-test-results.json" "$REPORT_ROOT/evidence-self-test-results.json"
+
+      - name: Require the complete bounded report union including every receipt
+        id: collection
+        if: always() && steps.auth.outcome == 'success'
+        run: |
+          set -euo pipefail
+          python3 "$EVIDENCE_HELPER" collect-reports \
+            "$REPORT_ROOT" "$RUNNER_TEMP/post-sync-shared-ip-text-$FAMILY"
+          # Safe UTF-8/NUL-free regular files only, <=3,000,000 bytes/file,
+          # <=96,000,000 aggregate bytes and <=1024 files including manifest.
+          # A rejected union remains failure; no clipping or silent omission.
+
+      - name: Retain bounded text reports on success or failure
+        if: always() && steps.auth.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: post-sync-shared-ip-${{ matrix.family }}-text-reports
+          include-hidden-files: true
+          path: |
+            ${{ runner.temp }}/post-sync-shared-ip-text-${{ matrix.family }}/
+            ${{ runner.temp }}/post-sync-shared-ip-text-${{ matrix.family }}-collection-failure.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Preserve complete original failure streams only on GitHub
+        if: failure() && steps.paths.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: post-sync-shared-ip-${{ matrix.family }}-raw-failure-evidence
+          include-hidden-files: true
+          path: ${{ runner.temp }}/post-sync-shared-ip-${{ matrix.family }}/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Retain intentionally invalid hosted control fixtures only on GitHub
+        if: always() && steps.auth.outcome == 'success' && steps.controls.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: post-sync-shared-ip-${{ matrix.family }}-control-fixtures-github-only
+          path: ${{ runner.temp }}/post-sync-ip-controls-${{ matrix.family }}/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Retain complete generated IP products only on GitHub
+        if: always() && steps.coregen.outcome != 'skipped' && steps.inventory.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: post-sync-shared-ip-${{ matrix.family }}-generated-products
+          path: verilog/sd2snes_${{ matrix.family }}/ip/mk2/build/
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14

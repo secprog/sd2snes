@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Single pinned official archive collection only; no ROM installed or executed, no native or hardware qualification",
+  "repository": "LIJI32/SameBoy",
+  "releaseId": 293176243,
+  "tag": "v1.0.3",
+  "annotatedTagObject": "5104c0429df2a73cfccea8c5034d5cb72c13c5f2",
+  "sourceCommit": "208ba4afabffab9edde416f2dbb8ae459e34adb8",
+  "releaseUrl": "https://github.com/LIJI32/SameBoy/releases/tag/v1.0.3",
+  "asset": {
+    "id": 367047031,
+    "name": "sameboy_winsdl_v1.0.3.zip",
+    "bytes": 1629322,
+    "sha256": "66fb05acc075abba860f2c5fa31af2198fef9767573d28834c78d0dfc15746b2",
+    "url": "https://github.com/LIJI32/SameBoy/releases/download/v1.0.3/sameboy_winsdl_v1.0.3.zip"
+  },
+  "sourceLicense": {
+    "url": "https://raw.githubusercontent.com/LIJI32/SameBoy/208ba4afabffab9edde416f2dbb8ae459e34adb8/LICENSE",
+    "bytes": 1495,
+    "sha256": "875b2c940181c315fa99ce5292326b985a43cdc4e878b38995066d6b495ff151",
+    "gitBlob": "5e7ee43f1cdc6e5c18344c105b054fe942b03f9d",
+    "scope": "Root LICENSE explicitly covers every file/directory except iOS and HexFiend; BootROMs is included. SDL release LICENSE is root LICENSE filtered by grep -v '^  ' in the pinned Makefile."
+  },
+  "sourceMakefile": {
+    "url": "https://raw.githubusercontent.com/LIJI32/SameBoy/208ba4afabffab9edde416f2dbb8ae459e34adb8/Makefile",
+    "bytes": 35171,
+    "gitBlob": "8ef2e66ad8ceb3147f0e4cfc89f742de3dfa89e2"
+  },
+  "sourceBoot": {
+    "url": "https://raw.githubusercontent.com/LIJI32/SameBoy/208ba4afabffab9edde416f2dbb8ae459e34adb8/BootROMs/cgb_boot.asm",
+    "bytes": 27518,
+    "gitBlob": "8e3e74a9e33d83716cbf31b3d090abf6c6a0557a"
+  },
+  "firmwareContract": {"path": "src/gbc.h", "bytes": 2304, "crc32": "8113b4d8", "requiredUnchanged": true},
+  "limits": {"archiveMembers": 512, "archiveUncompressedBytes": 32000000, "ordinaryMemberBytes": 16000000, "bootMemberBytes": 65536, "licenseMemberBytes": 131072, "reportFileBytes": 3000000, "reportBytes": 96000000, "reportFiles": 1024},
+  "runtimePending": true,
+  "bootMatchesContract": null,
+  "archiveLicenseMatchesSource": null,
+  "sourceBuildParityProved": false,
+  "packageEligible": false,
+  "selectionDoesNotProveTimelineOrCRC": true
+}

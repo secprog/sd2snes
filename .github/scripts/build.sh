@@ -39,6 +39,55 @@ case "${1:-}" in
     python3 .github/scripts/check-menu-languages.py || menu_text_status=$?
     make -C snes all
     python3 .github/scripts/check-onboarding-demos.py
+    # MkII's new Atari core requires this separate ca65/ld65 SNES player.
+    # Rebuild it from the checkout; never reuse an untracked misc/ binary.
+    make -C snes/atari clean
+    sha256sum --check /opt/cc65/share/provenance/tools.sha256
+    {
+      cat /opt/cc65/share/provenance/source-commit.txt
+      /opt/cc65/bin/ca65 --version
+      /opt/cc65/bin/ld65 --version
+      cat /opt/cc65/share/provenance/tools.sha256
+    } > snes/atari/toolchain.log 2>&1
+    make -C snes/atari all CA65=/opt/cc65/bin/ca65 LD65=/opt/cc65/bin/ld65 \
+      2>&1 | tee snes/atari/build.log
+    test "$(stat -c %s misc/atari_snes.bin)" = 32768
+    sha256sum snes/atari/Makefile snes/atari/atari_snes.s \
+      snes/atari/font_txt.inc snes/atari/lorom.cfg \
+      snes/atari/fix_snes_checksum.py misc/atari_snes.bin \
+      > snes/atari/source-output.sha256
+    # The original MkIII NES/SMS/GBC/a26 cores also need matching SNES players.
+    # Their separate source Makefiles retain the normal device configuration.
+    mkdir -p snes/players/toolchains/asar snes/players/toolchains/cc65
+    cp /opt/asar/share/provenance/* snes/players/toolchains/asar/
+    cp /opt/cc65/share/provenance/* snes/players/toolchains/cc65/
+    sha256sum --check /opt/asar/share/provenance/tools.sha256
+    {
+      cat /opt/asar/share/provenance/source-commit.txt
+      /opt/asar/bin/asar --version
+      cat /opt/asar/share/provenance/tools.sha256
+      sha256sum /usr/local/bin/snescom /usr/local/bin/sneslink
+    } > snes/players/toolchain.log 2>&1
+    git -c safe.directory="$PWD" ls-files -z -- snes/nes snes/sms snes/gbc snes/a26 \
+      | LC_ALL=C sort -z | xargs -0 sha256sum > snes/players/source-before.sha256
+    {
+      make -C snes/nes clean
+      make -C snes/nes all NES_PERF=0
+      for player in sms gbc a26; do
+        make -C "snes/$player" clean
+        make -C "snes/$player" all ASAR=/opt/asar/bin/asar
+      done
+    } 2>&1 | tee snes/players/build.log
+    for player in nes sms gbc a26; do
+      test "$(stat -c %s "misc/${player}_snes.bin")" = 32768
+    done
+    sha256sum --check snes/players/source-before.sha256 \
+      > snes/players/source-check.log
+    cat snes/players/source-before.sha256 > snes/players/source-output.sha256
+    sha256sum misc/nes_snes.bin misc/nes_snes.map misc/sms_snes.bin \
+      misc/gbc_snes.bin misc/a26_snes.bin >> snes/players/source-output.sha256
+    # cgb_boot.bin awaits separate collection and acceptance against the unchanged
+    # firmware CRC/size contract; its absence still blocks MkIII packaging.
     exit "$menu_text_status"
     ;;
   *)

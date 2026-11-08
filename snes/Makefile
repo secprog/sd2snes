@@ -1,3 +1,9 @@
+# Preserve assembler/linker and log-capture exits through every tee pipeline.
+# Existing text/layout guards remain required in addition to native exits.
+SHELL := /bin/bash
+.SHELLFLAGS := -e -o pipefail -c
+.DELETE_ON_ERROR:
+
 IPS = header.ips
 # const_lang.o65 is generated from the English base const.a65 + the per-language
 # dicts (utils/lang_*.py) by utils/build_const.py -> multilingual const_lang.a65.

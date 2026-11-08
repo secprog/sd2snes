@@ -15,6 +15,10 @@ SAVESTATEFILES := savestate*.yml
 MENUPATH := snes
 MK2MENU := menu.bin
 MK3MENU := m3nu.bin
+MK2PLAYER := misc/atari_snes.bin
+MK3PLAYERS := $(addprefix misc/,nes_snes.bin sms_snes.bin gbc_snes.bin a26_snes.bin cgb_boot.bin cgb_boot.LICENSE)
+CARD_MODULES := nsfplay.bin memtest.bin pcmplay.bin rtc7110.bin fileops.bin rmdir.bin xc_soc.bin
+MENU_ASSETS := $(addprefix misc/,classic.thm menu.spc sfx_cursor.pcm sfx_confirm.pcm sfx_back.pcm sfx_error.pcm welcome.fmv welcome.pcm)
 
 FPGAPATH := verilog
 MK2EXT := bit
@@ -46,16 +50,19 @@ RELEASE_FPGA := $(MK2FPGA) $(MK2MINI)
 RELEASE_MCU := $(MK2MCUPATH)/$(MK2MCU)
 RELEASE_MENU := $(MK2MENU)
 RELEASE_MODULES := $(MK2MCUPATH)
+RELEASE_SUPPLEMENTS := $(MK2MCUPATH)/ovl1.img $(MK2MCUPATH)/ovl2.img $(MK2MCUPATH)/bootscr.img $(MK2PLAYER)
 else ifeq ($(RELEASE_BOARD),mk3)
 RELEASE_FPGA := $(MK3FPGA) $(MK3MINI)
 RELEASE_MCU := $(MK3MCUPATH)/$(MK3MCU)
 RELEASE_MENU := $(MK3MENU)
 RELEASE_MODULES := $(MK3MCUPATH)
+RELEASE_SUPPLEMENTS := $(MK3MCUPATH)/ovl1.im3 $(MK3MCUPATH)/ovl2.im3 $(MK3PLAYERS)
 else ifeq ($(RELEASE_BOARD),mk3-stm32)
 RELEASE_FPGA := $(MK3FPGA) $(MK3MINI)
 RELEASE_MCU := $(STMMCUPATH)/$(STMMCU)
 RELEASE_MENU := $(MK3MENU)
 RELEASE_MODULES := $(STMMCUPATH)
+RELEASE_SUPPLEMENTS := $(STMMCUPATH)/ovl1.stm $(STMMCUPATH)/ovl2.stm $(MK3PLAYERS)
 else ifeq ($(RELEASE_BOARD),all)
 RELEASE_FPGA := $(MK2FPGA) $(MK2MINI) $(MK3FPGA) $(MK3MINI)
 RELEASE_MCU := $(MK2MCUPATH)/$(MK2MCU) $(MK3MCUPATH)/$(MK3MCU) $(STMMCUPATH)/$(STMMCU)
@@ -113,17 +120,34 @@ $(MK3CLEAN):
 
 build: $(MK2MINI) $(MK3MINI) | host-tools
 	$(MAKE) -C snes
+	$(MAKE) players-mk2 players-mk3
 	$(MAKE) -C src CONFIG=config-mk2
 	$(MAKE) -C src CONFIG=config-mk3
 	$(MAKE) -C src CONFIG=config-mk3-stm32
 
+players-mk2:
+	$(MAKE) -C snes/atari all
+
+players-mk3:
+	$(MAKE) -C snes/nes all
+	$(MAKE) -C snes/sms all
+	$(MAKE) -C snes/gbc all
+	$(MAKE) -C snes/a26 all
+	@test -s misc/cgb_boot.bin && test -s misc/cgb_boot.LICENSE
+
 clean: $(MK2CLEAN) $(MK3CLEAN)
 	$(MAKE) -C snes clean
+	$(MAKE) -C snes/atari clean
 	$(MAKE) -C src clean CONFIG=config-mk2
 	$(MAKE) -C src clean CONFIG=config-mk3
 	$(MAKE) -C src clean CONFIG=config-mk3-stm32
 
 release: version bsxpage
+ifeq ($(RELEASE_BOARD),all)
+	$(MAKE) release RELEASE_BOARD=mk2
+	$(MAKE) release RELEASE_BOARD=mk3
+	$(MAKE) release RELEASE_BOARD=mk3-stm32
+else
 	rm -rf $(TARGETPARENT)
 	mkdir -p $(TARGET)
 	cp $(BIN)/*.bin $(TARGET)
@@ -134,7 +158,12 @@ endif
 	cp $(RELEASE_MCU) $(TARGET)
 	cp $(addprefix $(MENUPATH)/,$(RELEASE_MENU)) $(TARGET)
 	cp $(MENUPATH)/igmenu.bin $(MENUPATH)/onboarding.bin $(TARGET)
-	cp $(addprefix $(RELEASE_MODULES)/,nsfplay.bin memtest.bin pcmplay.bin rtc7110.bin fileops.bin rmdir.bin xc_soc.bin) $(TARGET)
+	cp $(MENU_ASSETS) $(TARGET)
+	mkdir -p $(TARGET)/music
+	cp misc/music/*.spc $(TARGET)/music/
+	cp misc/music/CREDITS.txt $(TARGET)/music/
+	cp $(addprefix $(RELEASE_MODULES)/,$(CARD_MODULES)) $(TARGET)
+	cp $(RELEASE_SUPPLEMENTS) $(TARGET)
 	mkdir -p $(TARGET)/lang
 	cp $(MENUPATH)/fonts/*.txt $(TARGET)/lang
 	set -e; for lang in ja zh; do \
@@ -145,6 +174,8 @@ ifneq ($(SAVESTATEPATH),)
 	cp $(SAVESTATEPATH)/$(SAVESTATEFILES) $(TARGET)
 endif
 	cd $(TARGETPARENT) && zip -r $(RELEASE_ZIP) sd2snes
+	python3 .github/scripts/check-fpga-manifest.py package $(RELEASE_BOARD) $(TARGETPARENT)/$(RELEASE_ZIP)
+endif
 
 bsxpage:
 	$(MAKE) -C $(UTILS)
@@ -161,21 +192,13 @@ version:
 # `mk3-fw`  : just menu + firmware (mk3 + stm32) — fast, for device-update
 #             iteration; skips the big FPGA cores (only needs the mini cfgware).
 mk3: version $(MK3FPGA) $(MK3MINI) bsxpage mk3-fw
-	rm -rf $(TARGETPARENT)
-	mkdir -p $(TARGET)
-	cp bin/*.bin $(TARGET)
-	cp $(README) $(TARGET)
-	cp $(MK3FPGA) $(TARGET)
-	cp $(MK3MCUPATH)/$(MK3MCU) $(TARGET)
-	cp $(STMMCUPATH)/$(STMMCU) $(TARGET)
-	cp $(MENUPATH)/$(MK3MENU) $(TARGET)
-	cp $(MENUPATH)/$(MK2MENU) $(TARGET)
-	cp $(SAVESTATEPATH)/$(SAVESTATEFILES) $(TARGET)
-	cd $(TARGETPARENT) && zip -r sd2snes_firmware_v$(CONFIG_VERSION).zip sd2snes
+	$(MAKE) release RELEASE_BOARD=mk3
+	$(MAKE) release RELEASE_BOARD=mk3-stm32
 
 mk3-fw: $(MK3MINI)
 	$(MAKE) -C snes
+	$(MAKE) players-mk3
 	$(MAKE) -C src CONFIG=config-mk3
 	$(MAKE) -C src CONFIG=config-mk3-stm32
 
-.PHONY: all fpga fpga-mk2 fpga-mk3 list-fpga-mk2 list-fpga-mk3 host-tools build clean version release bsxpage mk3 mk3-fw $(MK2FPGA) $(MK3FPGA) $(MK2MINI) $(MK3MINI) $(MK2CLEAN) $(MK3CLEAN)
+.PHONY: all fpga fpga-mk2 fpga-mk3 list-fpga-mk2 list-fpga-mk3 host-tools build players-mk2 players-mk3 clean version release bsxpage mk3 mk3-fw $(MK2FPGA) $(MK3FPGA) $(MK2MINI) $(MK3MINI) $(MK2CLEAN) $(MK3CLEAN)

@@ -3,7 +3,7 @@
 set -euo pipefail
 
 case "$FAMILY" in
-  base) primary=basex; variants=(base basex bootleg); ips=(dac_buf msu_databuf snescmd_buf) ;;
+  base) primary=basex; variants=(base basex bootleg atari); ips=(dac_buf msu_databuf snescmd_buf) ;;
   dsp) primary=dspx; variants=(dsp dspx); ips=(dac_buf msu_databuf snescmd_buf upd77c25_datram upd77c25_datrom upd77c25_pgmrom) ;;
   *) exit 2 ;;
 esac
@@ -20,7 +20,22 @@ done
 
 # Real generation from the exact patched recipe. Failure is never restored,
 # reclassified or suppressed; the workflow retains changes before its strict gate.
+# Exercise the new Atari consumer as the first creator of its sole shared IP,
+# then require the original base family to reuse that product unchanged.
+if [[ "$FAMILY" == base ]]; then
+  make -C verilog/sd2snes_atari HOST=LINUX XILINX_ENV= \
+    ../sd2snes_base/ip/mk2/build/snescmd_buf.ngc
+  test -s "$build/snescmd_buf.ngc" && test -s "$build/snescmd_buf.v"
+  sha256sum "$build/snescmd_buf.ngc" "$build/snescmd_buf.v" > /report/atari-first-snescmd.sha256
+  stat --printf '%n %s %y\n' "$build/snescmd_buf.ngc" "$build/snescmd_buf.v" > /report/atari-first-snescmd.stat
+fi
 make -C "verilog/sd2snes_$primary" -j2 HOST=LINUX XILINX_ENV= "${targets[@]}"
+if [[ "$FAMILY" == base ]]; then
+  sha256sum "$build/snescmd_buf.ngc" "$build/snescmd_buf.v" > /report/atari-after-basex-snescmd.sha256
+  stat --printf '%n %s %y\n' "$build/snescmd_buf.ngc" "$build/snescmd_buf.v" > /report/atari-after-basex-snescmd.stat
+  cmp /report/atari-first-snescmd.sha256 /report/atari-after-basex-snescmd.sha256
+  cmp /report/atari-first-snescmd.stat /report/atari-after-basex-snescmd.stat
+fi
 for ip in "${ips[@]}"; do
   test -s "$build/$ip.ngc"
   test -s "$build/$ip.v"
@@ -32,13 +47,16 @@ find "$build" -type f -print0 | sort -z | xargs -0 stat --printf '%n %s %y\n' > 
 # Parent and sibling variants consume these same products without regeneration.
 # main.prj only writes a source list; no FPGA synthesis/implementation is invoked.
 for variant in "${variants[@]}"; do
+  variant_ips=("${ips[@]}")
+  # Atari borrows only this one original base IP; all base products stay frozen.
+  if [[ "$variant" == atari ]]; then variant_ips=(snescmd_buf); fi
   make -C "verilog/sd2snes_$variant" -j2 HOST=LINUX XILINX_ENV= main.prj 2>&1 | tee "/report/$variant-reuse.log"
   cp -- "verilog/sd2snes_$variant/main.prj" "/report/$variant.prj"
-  for ip in "${ips[@]}"; do
+  for ip in "${variant_ips[@]}"; do
     if test "$variant" = "$FAMILY"; then prefix=ip/mk2/build; else prefix="../sd2snes_$FAMILY/ip/mk2/build"; fi
     test "$(grep -Fxc "verilog work \"$prefix/$ip.v\"" "/report/$variant.prj")" = 1
   done
-  test "$(grep -c '/ip/mk2/.*\.v\|"ip/mk2/.*\.v' "/report/$variant.prj")" = "${#ips[@]}"
+  test "$(grep -c '/ip/mk2/.*\.v\|"ip/mk2/.*\.v' "/report/$variant.prj")" = "${#variant_ips[@]}"
   if grep -Fq 'Generating implementation netlist' "/report/$variant-reuse.log"; then
     printf 'Unexpected IP regeneration while checking %s reuse.\n' "$variant" >&2
     exit 1

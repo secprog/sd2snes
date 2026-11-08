@@ -17,11 +17,13 @@ ASAR ?= asar
 OUT   = ../../misc/a26_snes.bin
 SRC   = a26_snes.asm
 
+.DELETE_ON_ERROR:
+
 all: $(OUT)
 
 # asar exits non-zero on error, but it also prints errors to stdout while doing so;
 # the mkdir keeps a fresh checkout (no misc/) working.
-$(OUT): $(SRC) a26_text.inc
+$(OUT): $(SRC) a26_text.inc Makefile
 	@mkdir -p $(@D)
 	@rm -f $(OUT)
 	$(ASAR) $(SRC) $(OUT)

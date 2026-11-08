@@ -37,9 +37,23 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  package-contract:
+    if: inputs.build != 'fpga'
+    name: Check firmware and overlay package contracts
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - name: Exercise matching-build and malformed-package controls
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/check-fpga-manifest.py self-test
+          bash .github/scripts/check-mcu.sh --self-test
+
   prepare-software:
     if: inputs.build != 'fpga'
     name: Prepare cached GCC 13.5 toolchain
+    needs: package-contract
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
@@ -233,6 +247,40 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      - name: Upload MkII Atari player and source records
+        uses: actions/upload-artifact@v4
+        with:
+          name: atari-player
+          path: |
+            misc/atari_snes.bin
+            snes/atari/build.log
+            snes/atari/toolchain.log
+            snes/atari/source-output.sha256
+            snes/players/toolchains/cc65/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload MkIII players and source records
+        uses: actions/upload-artifact@v4
+        with:
+          name: mk3-players
+          path: |
+            misc/nes_snes.bin
+            misc/nes_snes.map
+            misc/sms_snes.bin
+            misc/gbc_snes.bin
+            misc/a26_snes.bin
+            misc/cgb_boot.bin
+            misc/cgb_boot.LICENSE
+            snes/players/build.log
+            snes/players/toolchain.log
+            snes/players/source-output.sha256
+            snes/players/source-before.sha256
+            snes/players/source-check.log
+            snes/players/toolchains/
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Upload menu failure reports
         if: failure()
         uses: actions/upload-artifact@v4
@@ -242,6 +290,13 @@ jobs:
             snes/*.log
             snes/*.map
             snes/onboarding/*.log
+            snes/atari/*.log
+            snes/atari/source-output.sha256
+            snes/players/*.log
+            snes/players/source-output.sha256
+            snes/players/source-before.sha256
+            snes/players/toolchains/
+            misc/nes_snes.map
           if-no-files-found: ignore
           retention-days: 14
 
@@ -335,10 +390,23 @@ jobs:
             stm32-toolchain.log
             mk2-build.log
             mk3-build.log
+            *-command-contract.log
+            *-main-sections.log
+            *-elf-sections.log
+            *-nano-*.log
+            *-selected-nano-members.log
+            *-full-newlib-integrity.log
             src/obj-${{ matrix.board }}/*.map
             src/obj-${{ matrix.board }}/*.elf
             src/obj-${{ matrix.board }}/firmware.*
             src/obj-${{ matrix.board }}/*.bin
+            src/obj-${{ matrix.board }}/ovl1.*
+            src/obj-${{ matrix.board }}/ovl2.*
+            src/obj-${{ matrix.board }}/ovl1/reach.txt
+            src/obj-${{ matrix.board }}/ovl1/imports_all.txt
+            src/obj-${{ matrix.board }}/fw.hdr
+            src/obj-${{ matrix.board }}/bootzx0.h
+            src/obj-${{ matrix.board }}/bootscr.img
           if-no-files-found: error
           retention-days: 14
 
@@ -368,6 +436,28 @@ jobs:
           name: menus
           path: snes/
 
+      - name: Download MkII Atari player and source records
+        if: matrix.board == 'mk2'
+        uses: actions/download-artifact@v4
+        with:
+          name: atari-player
+          path: .
+
+      - name: Verify MkII player source and output identity
+        if: matrix.board == 'mk2'
+        run: sha256sum --strict --check snes/atari/source-output.sha256
+
+      - name: Download MkIII players and source records
+        if: matrix.board != 'mk2'
+        uses: actions/download-artifact@v4
+        with:
+          name: mk3-players
+          path: .
+
+      - name: Verify MkIII player source and output identity
+        if: matrix.board != 'mk2'
+        run: sha256sum --strict --check snes/players/source-output.sha256
+
       - name: Verify board FPGA inputs
         env:
           FPGA_BOARD: ${{ matrix.fpga }}
@@ -396,9 +486,29 @@ jobs:
           path: |
             *-build.log
             stm32-toolchain.log
+            *-command-contract.log
+            *-main-sections.log
+            *-elf-sections.log
+            *-nano-*.log
+            *-selected-nano-members.log
+            *-full-newlib-integrity.log
             src/obj-${{ matrix.board }}/*.map
             src/obj-${{ matrix.board }}/*.elf
             src/obj-${{ matrix.board }}/firmware.*
             src/obj-${{ matrix.board }}/*.bin
+            src/obj-${{ matrix.board }}/ovl1.*
+            src/obj-${{ matrix.board }}/ovl2.*
+            src/obj-${{ matrix.board }}/ovl1/reach.txt
+            src/obj-${{ matrix.board }}/ovl1/imports_all.txt
+            src/obj-${{ matrix.board }}/fw.hdr
+            src/obj-${{ matrix.board }}/bootzx0.h
+            src/obj-${{ matrix.board }}/bootscr.img
+            snes/atari/*.log
+            snes/atari/source-output.sha256
+            snes/players/*.log
+            snes/players/source-output.sha256
+            snes/players/source-before.sha256
+            snes/players/toolchains/
+            misc/nes_snes.map
           if-no-files-found: ignore
           retention-days: 14

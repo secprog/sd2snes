@@ -18,6 +18,8 @@ ASAR ?= asar
 OUT   = ../../misc/gbc_snes.bin
 SRC   = gbc_snes.asm
 
+.DELETE_ON_ERROR:
+
 # Offline harness image (see the !GBC_HARNESS block at the top of the .asm):
 # the same source with the read-only view banks $E0-$E3 and the $EF write
 # window relocated into WRAM, so tests/host/run_gbc_player.sh can execute the
@@ -32,7 +34,7 @@ all: $(OUT)
 
 # asar exits non-zero on error, but it also prints errors to stdout while doing so;
 # the mkdir keeps a fresh checkout (no misc/) working.
-$(OUT): $(SRC)
+$(OUT): $(SRC) Makefile
 	@mkdir -p $(@D)
 	@rm -f $(OUT)
 	$(ASAR) $(SRC) $(OUT)

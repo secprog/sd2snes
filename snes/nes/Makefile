@@ -21,6 +21,11 @@
 # do menu). sneslink aceita misturar .o65 (relocavel) e .ips (fixo) no
 # mesmo link, resolvendo referencias cruzadas entre os dois normalmente.
 
+# Preserve each assembler/linker's status through the existing tee recipes.
+SHELL := /bin/bash
+.SHELLFLAGS := -e -o pipefail -c
+.DELETE_ON_ERROR:
+
 O65 = nes_data.o65 nes_render.o65 nes_boot.o65 nes_transport_device.o65 nes_apu.o65 nes_snes.o65
 IPS = nes_data_zp.ips nes_header.ips
 RAW = nes_snes_raw.sfc
@@ -46,7 +51,7 @@ MAP = $(FINAL:.bin=.map)
 
 all: $(FINAL) $(MAP)
 
-$(FINAL): $(RAW) gen_lorom.py
+$(FINAL): $(RAW) gen_lorom.py Makefile
 	@mkdir -p $(@D)
 	python3 gen_lorom.py $(RAW) $(FINAL) --pages 1 --romsize 0x05
 
@@ -55,10 +60,10 @@ $(FINAL): $(RAW) gen_lorom.py
 # existem aqui: $(FINAL) depende do $(RAW), que e' quem os produz. A ORDEM dos
 # objetos tem que ser a MESMA do sneslink -- e' ela que casa cada objeto com o seu
 # 'object_<N>_code' no link.log.
-$(MAP): $(FINAL) gen_map.py
+$(MAP): $(FINAL) gen_map.py Makefile
 	python3 gen_map.py link.log $(FINAL) $@ $(O65) $(IPS)
 
-$(RAW): $(O65) $(IPS)
+$(RAW): $(O65) $(IPS) Makefile
 	sneslink -fsmc -o $@ $(O65) $(IPS) 2>&1 | tee link.log
 	@if grep -qE "ERROR:|still undefined|still not defined" link.log; then \
 	  echo "*** nes_snes link FAILED (see snes/nes/link.log)"; exit 1; fi
@@ -74,7 +79,7 @@ $(RAW): $(O65) $(IPS)
 # Fica na compilacao (nao no link) de proposito: assim vale tambem para o
 # build do HARNESS, que pede estes .o65 por 'make -C' e nunca linka o
 # nes_snes_raw.sfc.
-nes_data.o65: nes_data.a65
+nes_data.o65: nes_data.a65 Makefile
 	snescom -J -Wall -o $@ $< 2>&1 | tee $@.log
 	@if grep -q "Error:" $@.log; then \
 	  echo "*** snescom FAILED on $< (see $@.log)"; rm -f $@; exit 1; fi
@@ -90,15 +95,15 @@ nes_data.o65: nes_data.a65
 	   echo "    (ver o 'adc #\$$0600' em nes_apply_vblank e o mapa em nes_data.a65)"; \
 	   rm -f $@; exit 1; fi
 
-# Regra generica .a65 -> .o65 (mesmo padrao/guard de snes/Makefile: o
-# "| tee" mascara o exit code do snescom, entao grepa o log e falha alto).
-%.o65 %.o65.log: %.a65
+# Keep the existing diagnostic guards in addition to the process-status gate.
+# Both committed include files must invalidate cached objects when changed.
+%.o65 %.o65.log: %.a65 nes_equates.i65 nes_palette.i65 Makefile
 	snescom -J -Wall -o $(@:.log=) $< 2>&1 | tee $(@:.log=).log
 	@if grep -q "Error:" $(@:.log=).log; then \
 	  echo "*** snescom FAILED on $< (see $(@:.log=).log)"; rm -f $(@:.log=); exit 1; fi
 
 # .a65 -> .ips (conteudo de endereco FIXO, nunca relocado -- ver nota acima).
-%.ips %.ips.log: %.a65
+%.ips %.ips.log: %.a65 nes_equates.i65 nes_palette.i65 Makefile
 	snescom -I -J -Wall -o $(@:.log=) $< 2>&1 | tee $(@:.log=).log
 	@if grep -q "Error:" $(@:.log=).log; then \
 	  echo "*** snescom FAILED on $< (see $(@:.log=).log)"; rm -f $(@:.log=); exit 1; fi

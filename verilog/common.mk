@@ -89,7 +89,7 @@ endif
 # CoreGen emits XCO/catalog/ISE project files as output products. Keep the
 # canonical base/DSP inputs separate from those products, including all variants
 # that share these two IP source directories. Other core recipes are unchanged.
-ifneq ($(filter base basex bootleg dsp dspx,$(CORE)),)
+ifneq ($(filter base basex bootleg dsp dspx atari,$(CORE)),)
 XIL_IP_INPUT_DIR := $(XIL_IPCORE_DIR)
 XIL_IPCORE_DIR := $(XIL_IP_INPUT_DIR)/build
 endif

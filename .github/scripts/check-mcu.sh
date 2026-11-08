@@ -161,7 +161,10 @@ verify_mcu_build() {
   done
   # Both names are installed; whichever is actually consumed must have the
   # selected multilib path. The map's earlier member check excludes bare LOADs.
-  grep -E "/$multidir/lib(c|g)_nano\.a\([^)]+" "$objdir/sd2snes.map" > "$board-selected-nano-members.log"
+  # The hard-float multilib contains a literal '+'. Match that path literally
+  # within rows already checked above for actual, nonempty archive members.
+  grep -F -e "/$multidir/libc_nano.a(" -e "/$multidir/libg_nano.a(" \
+    "$board-nano-members.log" > "$board-selected-nano-members.log"
   if grep -vF "/$multidir/" "$board-nano-members.log"; then
     echo 'Resident firmware pulled a nano archive outside the selected multilib.' >&2
     return 1

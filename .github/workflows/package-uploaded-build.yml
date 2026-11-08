@@ -1,0 +1,148 @@
+name: Package the completed timing-unverified build
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+env:
+  PYTHONDONTWRITEBYTECODE: '1'
+  IGNORE_TIMING: '1'
+concurrency:
+  group: package-uploaded-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  firmware:
+    name: Build and package ${{ matrix.board }} using completed FPGA images
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        board: [mk2, mk3, mk3-stm32]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Verify and reuse the exact successful source run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BOARD: ${{ matrix.board }}
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/prepare-uploaded-package-inputs.py \
+            "$BOARD" "$RUNNER_TEMP/package-inputs"
+          python3 .github/scripts/check-fpga-manifest.py artifact \
+            "$([ "$BOARD" = mk2 ] && echo mk2 || echo mk3)"
+          if [[ "$BOARD" = mk2 ]]; then
+            sha256sum --strict --check snes/atari/source-output.sha256
+          else
+            sha256sum --strict --check snes/players/source-output.sha256
+          fi
+
+      - name: Retain complete input identity reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reused-package-inputs-${{ matrix.board }}
+          path: ${{ runner.temp }}/package-inputs/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Check unchanged package and command contracts
+        run: |
+          set -euo pipefail
+          bash -n .github/scripts/check-mcu.sh
+          python3 .github/scripts/check-fpga-manifest.py self-test
+          bash .github/scripts/check-mcu.sh --self-test
+
+      - uses: ./.github/actions/prepare-build-image
+        with:
+          target: software
+
+      - name: Compile matching MCU and assemble the complete board package
+        env:
+          BOARD: ${{ matrix.board }}
+        run: |
+          set -euo pipefail
+          docker run --rm --user 0:0 --volume "$GITHUB_WORKSPACE:/work" --workdir /work \
+            sd2snes-ci:software /bin/bash .github/scripts/build.sh firmware "$BOARD"
+
+      - name: Record exact upload identity and qualification
+        env:
+          BOARD: ${{ matrix.board }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import shutil
+          packages = list(Path('release').glob('v*/sd2snes_firmware_v*.zip'))
+          if len(packages) != 1 or not packages[0].is_file() or packages[0].is_symlink():
+              raise SystemExit('Expected exactly one regular board package')
+          package = packages[0]
+          body = package.read_bytes()
+          if not body:
+              raise SystemExit('Empty board package')
+          board = os.environ['BOARD']
+          upload = Path(os.environ['RUNNER_TEMP']) / ('package-' + board)
+          upload.mkdir()
+          shutil.copyfile(package, upload / package.name)
+          if (upload / package.name).read_bytes() != body:
+              raise SystemExit('Upload differs from verified package')
+          receipt = {
+              'schema': 'sd2snes-package-build-qualification-v1',
+              'board': board, 'sourceCommit': os.environ['GITHUB_SHA'],
+              'runId': os.environ['GITHUB_RUN_ID'], 'runAttempt': os.environ['GITHUB_RUN_ATTEMPT'],
+              'reusedFpgaMenuPlayerRun': 42507318034,
+              'reusedFpgaMenuPlayerCommit': '31cecdc00d200691afe8a85a5ec6f8cc2924e92e',
+              'runtimeSourcesUnchanged': True,
+              'ignoreTiming': True, 'timingThresholdsRequired': False,
+              'timingStatus': 'unverified-user-waiver',
+              'nativeToolFailuresIgnored': False, 'buildAndPackageChecksPassed': True,
+              'hardwareQualified': False,
+              'package': {'name': package.name, 'bytes': len(body), 'sha256': hashlib.sha256(body).hexdigest()},
+          }
+          (upload / 'build-qualification.json').write_text(json.dumps(receipt, indent=2, sort_keys=True) + '\n')
+          print(json.dumps(receipt, sort_keys=True))
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+              summary.write(board + ': complete package built and checked. Timing is unverified by explicit user request. '
+                            'Native tool failures remain fatal; no hardware qualification was performed.\n')
+          PY
+
+      - name: Upload the board firmware package
+        uses: actions/upload-artifact@v4
+        with:
+          name: sd2snes-firmware-${{ matrix.board }}-${{ github.sha }}-timing-unverified
+          path: ${{ runner.temp }}/package-${{ matrix.board }}/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Preserve build, map and package diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-reports-${{ matrix.board }}
+          path: |
+            *-build.log
+            stm32-toolchain.log
+            *-command-contract.log
+            *-main-sections.log
+            *-elf-sections.log
+            *-nano-*.log
+            *-selected-nano-members.log
+            *-full-newlib-integrity.log
+            src/obj-${{ matrix.board }}/*.map
+            src/obj-${{ matrix.board }}/*.elf
+            src/obj-${{ matrix.board }}/firmware.*
+            src/obj-${{ matrix.board }}/*.bin
+            src/obj-${{ matrix.board }}/ovl1.*
+            src/obj-${{ matrix.board }}/ovl2.*
+            src/obj-${{ matrix.board }}/fw.hdr
+            src/obj-${{ matrix.board }}/bootzx0.h
+            src/obj-${{ matrix.board }}/bootscr.img
+          if-no-files-found: ignore
+          retention-days: 14

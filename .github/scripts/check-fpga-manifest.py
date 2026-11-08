@@ -261,7 +261,10 @@ def accepted_cgb_boot():
     if not path.is_file() or path.is_symlink():
         raise RuntimeError("SameBoy boot provenance has not been accepted for packaging")
     raw = path.read_bytes()
-    committed = subprocess.check_output(["git", "show", "HEAD:" + relative], cwd=ROOT)
+    # This checkout is runner-owned while the software container runs as root.
+    # Trust only this canonical repository for this read, without global config.
+    committed = subprocess.check_output(
+        ["git", "-c", f"safe.directory={ROOT}", "show", "HEAD:" + relative], cwd=ROOT)
     if raw != committed:
         raise RuntimeError("SameBoy acceptance manifest must match the reviewed commit")
     return json.loads(raw)

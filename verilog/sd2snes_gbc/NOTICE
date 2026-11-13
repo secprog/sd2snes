@@ -42,6 +42,13 @@ The GBC configuration contains no SA-1 instance. It also no longer contains
 MSU-1 hardware: the data/register interface, PCM buffer/interpolator, mixer
 and MCU controls have been removed. dac.v retains the GB APU's original CIC
 filter, volume boost, saturation and I2S serializer on both boards.
+On Mk.II the CIC stages share arithmetic by rotating their state between
+the existing stage clocks. They retain all 28 bits and publish the same
+sample on the same clock. The audio test compares the full filter state,
+volume settings and I2S pins against the original SGB implementation, with
+jitter and resets. The clock test also checks the CE1 scheduling bound.
+Mk.II APU period shifters use spare multiplier blocks; exhaustive hosted
+checks cover every sweep-frequency/control and noise-period input.
 
 Mk.II status
 ------------
@@ -51,11 +58,10 @@ The original SGB core remains the normal Mk.II Game Boy core. An explicit
 MCU build with MK2_GBC_EXPERIMENTAL=1 enables GBC routing and uses a separate
 obj-mk2-gbc directory, so it cannot reuse production objects. The GBC route
 never selects the SGB/MSU variant. The Mk.II GBC port keeps both VRAM banks,
-the colour pipeline, HDMA and double speed. Small
-memories use LUT RAM; the optional MCU state-debug window is omitted there.
+the colour pipeline, HDMA and double speed. Small memories use LUT RAM;
+the optional MCU state-debug window is omitted there.
 Wire $04 also omits status fields unused by the SNES player: +$0A/+$0B,
-+$0D, +$59,
-+$5E, and the +$30..+$3F debug mirror read zero, except +$3C/+$3D retain
++$0D, +$59, +$5E, and the +$30..+$3F debug mirror read zero, except +$3C/+$3D retain
 the bus-starvation counter for board validation. DIRTY_MISC.REGS is zero:
 the player applies register snapshots unconditionally. The functional SEQ,
 LOG_OVF, row-freeze, dirty, palette and cache-ready/overflow fields remain.

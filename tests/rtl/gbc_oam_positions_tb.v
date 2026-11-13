@@ -29,7 +29,8 @@ module gbc_oam_positions_tb;
         for(j=9;j>=0;j=j-1)
           if(original[j][7:3]==k) begin expected_found=1; expected_match=j; end
         if({FOUND,MATCH,Q} !== {expected_found,expected_match,original[RADDR]})
-          $fatal(1,"sprite position/priority mismatch cycle=%0d tile=%0d slot=%0d",i,k,RADDR);
+          $fatal(1,"sprite mismatch cycle=%0d tile=%0d slot=%0d found=%b/%b match=%h/%h data=%h/%h",
+                 i,k,RADDR,FOUND,expected_found,MATCH,expected_match,Q,original[RADDR]);
         checks=checks+1;
       end
       CLK=0;

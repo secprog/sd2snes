@@ -41,9 +41,9 @@ endmodule
 // on every clear/consume. Lookup order and combinational latency are unchanged.
 module gbc_oam_positions #(parameter SLOTS=10)(input CLK, CLEAR, WRITE, CONSUME,
   input [3:0] WADDR, CADDR, RADDR, input [7:0] DATA, input [4:0] TILE,
-  output [7:0] Q, output reg FOUND, output reg [3:0] MATCH);
+  output [7:0] Q, output FOUND, output [3:0] MATCH);
   wire [SLOTS*8-1:0] positions;
-  wire [SLOTS-1:0] valid_slots;
+  wire [SLOTS-1:0] valid_slots, match_slots;
   genvar slot;
   generate for(slot=0;slot<SLOTS;slot=slot+1) begin : g_slot
     reg [7:0] xpos;
@@ -56,19 +56,21 @@ module gbc_oam_positions #(parameter SLOTS=10)(input CLK, CLEAR, WRITE, CONSUME,
     end
     assign positions[slot*8 +: 8]=xpos;
     assign valid_slots[slot]=valid;
+    assign match_slots[slot]=valid ? xpos[7:3]==TILE : TILE==5'd30;
   end endgenerate
   // Apply the sentinel after selecting a byte. Masking every stored position
   // would put an eight-bit mux in front of each slot and its lookup comparator.
   assign Q=valid_slots[RADDR] ? positions[RADDR*8 +: 8] : 8'hf0;
-  integer lookup;
-  always @(*) begin
-    MATCH=4'hf; FOUND=0;
-    for(lookup=0;lookup<SLOTS;lookup=lookup+1)
-      if((valid_slots[lookup] ? positions[lookup*8+3 +: 5]==TILE : TILE==5'd30)
-         && !FOUND) begin
-        MATCH=lookup; FOUND=1;
-      end
-  end
+  function [4:0] first_match;
+    input [SLOTS-1:0] hits;
+    integer lookup;
+    begin
+      first_match={1'b0,4'hf};
+      for(lookup=SLOTS-1;lookup>=0;lookup=lookup-1)
+        if(hits[lookup]) first_match={1'b1,lookup[3:0]};
+    end
+  endfunction
+  assign {FOUND,MATCH}=first_match(match_slots);
 endmodule
 
 // Per-row enables avoid a variable bit write becoming a wide feedback mux.

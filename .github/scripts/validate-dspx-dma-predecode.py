@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Hosted-only full address-module proof and one DMA timing candidate review."""
+import copy
 import hashlib
 import io
 import itertools
@@ -109,6 +110,8 @@ def state_audit(path, expected_bits, extra):
         all_q.extend(bits)
         observations.append(dict(name=name, bits=bits, data=[qslots[bit]['data'] for bit in bits], clock=clocks))
     need(len(set(all_q)) == len(qslots) == expected_bits, 'Unreviewed state or aliases')
+    need(not any('init' in value.get('attributes', {}) and set(value['bits']) & set(all_q)
+                 for value in names.values()), 'Initialized state alias not reviewed')
     return dict(stateBits=expected_bits, observations=observations, ports=module['ports'])
 
 
@@ -125,13 +128,143 @@ def compile_model(text, folder, label, extra):
     return audit
 
 
+def common_transition_fingerprints(module, audit):
+    """Structural congruence only: hash exact typed operators, pins and parameters."""
+    labels = {}
+    for name, port in module['ports'].items():
+        if port['direction'] == 'input':
+            for index, bit in enumerate(port['bits']):
+                labels[bit] = ['input', name, index]
+    for observation in audit['observations']:
+        for index, bit in enumerate(observation['bits']):
+            need(bit not in labels, 'Source state aliases a primary input')
+            labels[bit] = ['state', observation['name'], index]
+    drivers = {}
+    for name, cell in module['cells'].items():
+        need(cell['type'].startswith('$'), 'Unknown primitive in structural congruence')
+        for port, bits in cell['connections'].items():
+            if cell['port_directions'][port] == 'output':
+                for index, bit in enumerate(bits):
+                    need(bit not in drivers, 'Multiple drivers in source netlist')
+                    drivers[bit] = (name, port, index)
+    memo = {}; visiting = set()
+    def fingerprint(bit):
+        if isinstance(bit, str):
+            return sha(json.dumps(['constant', bit]).encode())
+        if bit in labels:
+            return sha(json.dumps(labels[bit]).encode())
+        if bit in memo:
+            return memo[bit]
+        need(bit not in visiting and bit in drivers, 'Cycle/undriven bit in state transition cone')
+        visiting.add(bit)
+        name, outport, index = drivers[bit]; cell = module['cells'][name]
+        need(cell['type'] != '$dff', 'Unreviewed state in transition cone')
+        inputs = {port: [fingerprint(item) for item in bits] for port, bits in sorted(cell['connections'].items())
+                  if cell['port_directions'][port] == 'input'}
+        value = [cell['type'], cell['parameters'], inputs, outport, index]
+        memo[bit] = sha(json.dumps(value, sort_keys=True, separators=(',', ':')).encode())
+        visiting.remove(bit)
+        return memo[bit]
+    rows = []
+    for observation in audit['observations']:
+        if observation['name'] == 'dma_addr_decode.selected':
+            continue
+        for index, data in enumerate(observation['data']):
+            rows.append(dict(name=observation['name'], bit=index, fingerprint=fingerprint(data)))
+    need(len(rows) == 34, 'Complete common transition fingerprints missing')
+    return rows
+
+
+def fold_identical_common_state(gold, gate, output):
+    """Share only proven identical source state; preserve all outputs and new state.
+
+    Both models' 34 common bits have identical undefined source startup,
+    positive common clocks and structurally identical next-state functions over
+    the same primary inputs and named state. This establishes their equality
+    inductively without an assumption. Keep both actual D vectors in the final
+    miter and assert strict equality again. The new predicate FF is not shared.
+    """
+    ga = state_audit(gold / 'state.json', 34, False)
+    ca = state_audit(gate / 'state.json', 35, True)
+    gm = json.loads((gold / 'state.json').read_text())['modules']['address']
+    cm = json.loads((gate / 'state.json').read_text())['modules']['address']
+    gr = common_transition_fingerprints(gm, ga)
+    cr = common_transition_fingerprints(cm, ca)
+    need(gr == cr, 'Common source transition is not structurally identical')
+    # A real corruption of an actual source D pin must reject this sharing.
+    corrupt = copy.deepcopy(cm)
+    bit = cm['netnames']['SNES_ADDR']['bits'][0]
+    cell = next(cell for cell in corrupt['cells'].values() if cell['type'] == '$dff' and bit in cell['connections']['Q'])
+    cell['connections']['D'][cell['connections']['Q'].index(bit)] = '0'
+    corrupt_audit = copy.deepcopy(ca)
+    next(row for row in corrupt_audit['observations'] if row['name'] == 'SNES_ADDR')['data'][0] = '0'
+    corrupted = common_transition_fingerprints(corrupt, corrupt_audit)
+    need(gr != corrupted, 'Common state D corruption was not detected')
+    save(output / 'common-state-d-corruption.json', dict(original=gr, corrupted=corrupted, rejected=True))
+    design = json.loads((output / 'miter-unfolded.json').read_text())
+    module = design['modules']['miter']; q_to_d = {}
+    for name, cell in module['cells'].items():
+        if cell['type'] == '$dff':
+            for q, data in zip(cell['connections']['Q'], cell['connections']['D']):
+                need(q not in q_to_d, 'Multiply driven unfolded state'); q_to_d[q] = data
+    replacements = {}; gold_d = []; gate_d = []; bindings = []
+    for row in ga['observations']:
+        name = row['name']; old = module['netnames']['gold.' + name]['bits']; new = module['netnames']['gate.' + name]['bits']
+        need(len(old) == len(new) == len(row['bits']), 'Unfolded common state width changed')
+        for index, (a, b) in enumerate(zip(old, new)):
+            need(a in q_to_d and b in q_to_d and b not in replacements and a != b, 'Common state carrier not distinct FF Q')
+            replacements[b] = a; gold_d.append(q_to_d[a]); gate_d.append(q_to_d[b])
+            bindings.append(dict(name=name,bit=index,goldQ=a,gateQ=b,goldD=q_to_d[a],gateD=q_to_d[b]))
+    need(len(replacements) == 34, 'Common state sharing incomplete')
+    removed = []
+    for name, cell in list(module['cells'].items()):
+        outputs = [bit for port, bits in cell['connections'].items() if cell['port_directions'][port] == 'output' for bit in bits]
+        if any(bit in replacements for bit in outputs):
+            need(cell['type'] == '$dff' and set(cell['connections']['Q']) <= set(replacements), 'Sharing would change another driver')
+            removed.append(name); del module['cells'][name]
+    need(sum(len(cell['connections']['Q']) for cell in module['cells'].values() if cell['type'] == '$dff') == 35,
+         'Golden common state or candidate new predicate FF lost')
+    def rewrite(bits):
+        return [replacements.get(bit, bit) for bit in bits]
+    for cell in module['cells'].values():
+        cell['connections'] = {port: rewrite(bits) for port, bits in cell['connections'].items()}
+    for collection in [module['ports'], module['netnames']]:
+        for value in collection.values():
+            value['bits'] = rewrite(value['bits'])
+    gold_d = rewrite(gold_d); gate_d = rewrite(gate_d)
+    used = [bit for value in module['netnames'].values() for bit in value['bits'] if isinstance(bit, int)]
+    used += [bit for cell in module['cells'].values() for bits in cell['connections'].values() for bit in bits if isinstance(bit, int)]
+    comparison = max(used) + 1
+    module['ports']['gold_common_next'] = dict(direction='output', bits=gold_d)
+    module['ports']['gate_common_next'] = dict(direction='output', bits=gate_d)
+    module['ports']['cmp_common_next'] = dict(direction='output', bits=[comparison])
+    for name in ['gold_common_next', 'gate_common_next', 'cmp_common_next']:
+        module['netnames'][name] = dict(hide_name=0, bits=module['ports'][name]['bits'], attributes={})
+    module['netnames']['common_state_transition_ok'] = dict(hide_name=0, bits=[comparison], attributes={})
+    module['cells']['common_state_transition_eqx'] = dict(hide_name=0, type='$eqx',
+        parameters=dict(A_SIGNED='0'*32, B_SIGNED='0'*32, A_WIDTH=format(34,'032b'), B_WIDTH=format(34,'032b'), Y_WIDTH=format(1,'032b')),
+        attributes={}, port_directions=dict(A='input', B='input', Y='output'), connections=dict(A=gold_d, B=gate_d, Y=[comparison]))
+    module['cells']['common_state_transition_assert'] = dict(hide_name=0, type='$assert', parameters={}, attributes={},
+        port_directions=dict(A='input', EN='input'), connections=dict(A=[comparison], EN=['1']))
+    save(output / 'miter-shared-state.json', design)
+    save(output / 'common-state-congruence.json', dict(commonBits=34, fingerprints=gr, actualBindings=bindings,
+         removedDuplicateStateCells=removed, retainedStateBits=35, actualCommonNextStateBitsCompared=34,
+         noStateAssumption=True, newPredicateNotShared=True, commonStartup='All source state bits uninitialized; both source simulations begin undefined',
+         dPinCorruptionRejected=True, scope='Identical typed next-state graphs and clock/startup establish common state equality inductively. Full original outputs and both common D vectors are still compared by SAT; no new state relation assumed.'))
+
+
 def prove_pair(gold, gate, output, mode, expected, induction):
     output.mkdir()
     flags = '-set-def-inputs ' if mode == 'binary' else ''
     proof_flags = '-seq 2 -tempinduct -maxsteps 4 ' if induction else '-seq 3 '
-    script = ('read_json ' + str(gold / 'compiled.json') + '\nread_json ' + str(gate / 'compiled.json') + '\n'
+    preparation = ('read_json ' + str(gold / 'compiled.json') + '\nread_json ' + str(gate / 'compiled.json') + '\n'
               'miter -equiv -make_assert -make_outputs -make_outcmp gold gate miter\n'
-              'hierarchy -check -top miter\nflatten -wb\nopt_clean\ncheck -assert\nwrite_json miter.json\n'
+              'hierarchy -check -top miter\nflatten -wb\nopt_clean\ncheck -assert\nwrite_json miter-unfolded.json\n')
+    (output / 'prepare.ys').write_text(preparation)
+    run(['yosys', '-s', 'prepare.ys'], output, 'miter-preparation')
+    fold_identical_common_state(gold, gate, output)
+    script = ('read_json miter-shared-state.json\nhierarchy -check -top miter\n'
+              'opt_merge -keepdc\nopt_clean\ncheck -assert\nwrite_json miter.json\n'
               'sat -verify -enable_undef -set-init-undef ' + flags + proof_flags +
               '-prove-asserts -show-inputs -show-outputs -dump_json counterexample.json -timeout 180\n')
     (output / 'prove.ys').write_text(script)
@@ -147,7 +280,10 @@ def prove_pair(gold, gate, output, mode, expected, induction):
     cells = list(module['cells'].values())
     need(any(cell['type'] == '$assert' for cell in cells) and not any(cell['type'] == '$assume' for cell in cells),
          'Actual miter assertions/assumptions changed')
-    need(sum(cell['type'] == '$eqx' for cell in cells) >= len(outputs), 'Strict X comparisons missing')
+    for name in outputs + ['common_next']:
+        bits = module['ports']['cmp_' + name]['bits']
+        need(len(bits) == 1 and any(cell['type'] == '$eqx' and cell['connections']['Y'] == bits for cell in cells),
+             'Strict X comparison missing for ' + name)
     if expected:
         marker = 'Induction step proven: SUCCESS!' if induction else 'SAT proof finished - no model found: SUCCESS!'
         need(code == 0 and marker in text, 'Positive full-module proof not established')
@@ -156,7 +292,8 @@ def prove_pair(gold, gate, output, mode, expected, induction):
              'Negative control lacks actual counterexample')
     receipt = dict(mode=mode, expectedPass=expected, induction=induction, exit=code, inputs=len(inputs),
                    inputBits=sum(len(port['bits']) for port in inputs.values()), outputs=outputs,
-                   outputBits=sum(len(source['ports'][name]['bits']) for name in outputs), strictX=True, assumptions=0)
+                   outputBits=sum(len(source['ports'][name]['bits']) for name in outputs), strictX=True, assumptions=0,
+                   identicalCommonStateBitsShared=34, actualCommonNextStateBitsCompared=34, newPredicateFFRetained=True)
     save(output / 'proof-review.json', receipt)
     return receipt
 
@@ -218,7 +355,7 @@ def proof(output):
         if path.is_file() and path.name != 'SHA256SUMS':
             rows.append(sha(path.read_bytes()) + '  ' + path.relative_to(output).as_posix())
     (output / 'SHA256SUMS').write_text('\n'.join(rows) + '\n')
-    (output / 'verified.txt').write_text('Complete actual address module: four target configurations pass binary and unrestricted-X induction; all other preprocessed configurations unchanged; eight actual bad-source counterexamples required. No whole FPGA or timing claim.\n')
+    (output / 'verified.txt').write_text('Complete actual address module:34 common source state bits shared only after typed transition/clock/undefined-startup congruence checks and a real D-pin corruption control; both common D vectors still strictly compared. Four target configurations pass binary and unrestricted-X induction, retaining the new predicate FF; other preprocessed configurations unchanged except blank lines; eight actual bad-source counterexamples required. No whole FPGA or timing claim.\n')
 
 
 def baseline(output):

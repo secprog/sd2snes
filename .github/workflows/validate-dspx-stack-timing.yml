@@ -31,7 +31,7 @@ jobs:
           printf '%s\n' .github/scripts/validate-dspx-dma-predecode.py .github/workflows/validate-dspx-stack-timing.yml verilog/sd2snes_dsp/address.v | LC_ALL=C sort > "$report/expected-changed-paths.txt"
           cmp "$report/expected-changed-paths.txt" "$report/changed-paths.txt"
           test "$(git hash-object --no-filters verilog/sd2snes_dsp/address.v)" = eeda2fac277b4ca3ade5bedfbf4efbf25f5dfa2c
-          test "$(git hash-object --no-filters .github/scripts/validate-dspx-dma-predecode.py)" = eccf93c83fc3b8b749ff50846367cda0520bbb8e
+          test "$(git hash-object --no-filters .github/scripts/validate-dspx-dma-predecode.py)" = 78f4db61dc7a380004e3bc6ef83240c5a1896e36
           test "$(git hash-object --no-filters .github/scripts/post-sync-evidence.py)" = fdb60667eb015c3769b2adc452864396ff64e9e7
           python3 .github/scripts/post-sync-evidence.py snapshot "$GITHUB_WORKSPACE" "$report/source-before"
           git diff "$BASELINE" HEAD -- verilog > "$report/production-change.diff"

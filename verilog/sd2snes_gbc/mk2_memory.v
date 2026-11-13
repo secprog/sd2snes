@@ -43,6 +43,7 @@ module gbc_oam_positions #(parameter SLOTS=10)(input CLK, CLEAR, WRITE, CONSUME,
   input [3:0] WADDR, CADDR, RADDR, input [7:0] DATA, input [4:0] TILE,
   output [7:0] Q, output reg FOUND, output reg [3:0] MATCH);
   wire [SLOTS*8-1:0] positions;
+  wire [SLOTS-1:0] valid_slots;
   genvar slot;
   generate for(slot=0;slot<SLOTS;slot=slot+1) begin : g_slot
     reg [7:0] xpos;
@@ -53,14 +54,18 @@ module gbc_oam_positions #(parameter SLOTS=10)(input CLK, CLEAR, WRITE, CONSUME,
       if(write_here) xpos<=DATA;
       valid<=!consume_here && (write_here || (!CLEAR && valid));
     end
-    assign positions[slot*8 +: 8]=valid ? xpos : 8'hf0;
+    assign positions[slot*8 +: 8]=xpos;
+    assign valid_slots[slot]=valid;
   end endgenerate
-  assign Q=positions[RADDR*8 +: 8];
+  // Apply the sentinel after selecting a byte. Masking every stored position
+  // would put an eight-bit mux in front of each slot and its lookup comparator.
+  assign Q=valid_slots[RADDR] ? positions[RADDR*8 +: 8] : 8'hf0;
   integer lookup;
-  always @(positions or TILE) begin
+  always @(*) begin
     MATCH=4'hf; FOUND=0;
     for(lookup=0;lookup<SLOTS;lookup=lookup+1)
-      if(positions[lookup*8+3 +: 5]==TILE && !FOUND) begin
+      if((valid_slots[lookup] ? positions[lookup*8+3 +: 5]==TILE : TILE==5'd30)
+         && !FOUND) begin
         MATCH=lookup; FOUND=1;
       end
   end
@@ -240,10 +245,11 @@ module c6_dirty_ram(input CLK, RST, ALL, SET, input [4:0] ROW, COL,
   wire [3:0] pair_index = read_sel[6:3];
   wire [4:0] even_row = {pair_index,1'b0};
   wire [4:0] odd_row = {pair_index,1'b1};
-  wire [19:0] even_bits = valid[even_row] ? read_q[19:0]
-                       : {20{default_one[even_row]}};
-  wire [19:0] odd_bits = valid[odd_row] ? read_q[39:20]
-                      : {20{default_one[odd_row]}};
+  // Only eight bits are exposed. Select them before applying each row's
+  // default, preserving the split row in the middle byte of each pair.
+  reg [7:0] read_byte;
+  wire [4:0] low_row = read_sel[2:0] < 3 ? even_row : odd_row;
+  wire [4:0] high_row = read_sel[2:0] < 2 ? even_row : odd_row;
   genvar parity;
   generate
     for(parity=0; parity<2; parity=parity+1) begin : g_rows
@@ -261,13 +267,16 @@ module c6_dirty_ram(input CLK, RST, ALL, SET, input [4:0] ROW, COL,
   end
   always @(*) begin
     case(read_sel[2:0])
-      0: BYTE=even_bits[7:0];
-      1: BYTE=even_bits[15:8];
-      2: BYTE={odd_bits[3:0],even_bits[19:16]};
-      3: BYTE=odd_bits[11:4];
-      4: BYTE=odd_bits[19:12];
-      default: BYTE=0;
+      0: read_byte=read_q[7:0];
+      1: read_byte=read_q[15:8];
+      2: read_byte=read_q[23:16];
+      3: read_byte=read_q[31:24];
+      4: read_byte=read_q[39:32];
+      default: read_byte=0;
     endcase
+    BYTE = read_sel[2:0] > 4 ? 8'd0
+         : {valid[high_row] ? read_byte[7:4] : {4{default_one[high_row]}},
+            valid[low_row] ? read_byte[3:0] : {4{default_one[low_row]}}};
   end
 endmodule
 // Three physical 512x32 / 2048x8 blocks. The hardware's narrow read port

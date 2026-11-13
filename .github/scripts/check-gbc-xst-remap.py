@@ -128,9 +128,9 @@ profiles = (("fixed-mux", False, None),
             ("fixed-mux-cuts", False, "strash; " + resub +
              "dch -f; if -K 4 -C 32 -F 3 -A 4 -a; mfs2 -e; lutpack -S 1"),
             ("fixed-mux-sat", False, "strash; " + resub + area_tail +
-             "; &get -m; &mfs2 -K 4; &put; lutpack -S 1"),
+             "; &get -m -n; &mfs2 -K 4; &put; lutpack -S 1"),
             ("fixed-mux-sat-area", False, "strash; " + resub + area_tail +
-             "; &get -m; &mfs2 -K 4 -a; &put; lutpack -S 1"))
+             "; &get -m -n; &mfs2 -K 4 -a; &put; lutpack -S 1"))
 if len(sys.argv) > 3:
     selected = set(sys.argv[3:])
     if not selected <= {p[0] for p in profiles}:
@@ -179,7 +179,10 @@ for profile, remap_mux, abc_script in profiles:
     abc_command = "abc -lut 4"
     if abc_script:
         script_path = report / (profile + ".abc")
-        script_path.write_text(abc_script + "\n")
+        # &get needs -n as well as -m: otherwise &put invents boundary names
+        # and Yosys cannot reconnect the BLIF. Retain ABC's output for audit.
+        script_path.write_text(abc_script + "; write_blif "
+                               + quote(report / (profile + "-abc.blif")) + "\n")
         abc_command += " -script " + quote(script_path)
     # Compare at every fixed-macro input and top-level output. Sequential
     # state, carry chains, memories, clocking and I/O stay outside these cones.

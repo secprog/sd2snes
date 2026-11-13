@@ -950,9 +950,24 @@ parameter ST_RAM_FB_WR_ADDR      = 8'b01000000;
 parameter ST_RAM_FB_END          = 8'b10000000;
 reg [18:0] fb_addr_r;
 reg [7:0] fb_data_r;
+reg fb_write_r;
 wire fb_wr_hit = |(RAM_STATE & ST_RAM_FB_WR_ADDR);
-wire fb_hit = |(RAM_STATE & (ST_RAM_FB_RD_ADDR | ST_RAM_FB_WR_ADDR));
+wire fb_hit = |(RAM_STATE & (ST_RAM_FB_RD_ADDR | ST_RAM_FB_WR_ADDR | ST_RAM_FB_END));
+wire fb_data_hit = fb_hit && fb_write_r;
 assign FB_MEM_ACK = |(RAM_STATE & ST_RAM_FB_END);
+// Reads of the FPGA views do not use SRAM. Keep the background port running
+// during those DMAs; one byte per SNES cycle cannot sustain read/compare/write
+// of a full LCD frame. A window must settle for two clocks before opening,
+// and the RAW decode closes it immediately on a foreground ROM address.
+// An in-flight access still retires within RAM_CYCLE_LEN+1 clocks. The bus
+// regression checks recovery before the following 6-master-cycle ROM latch.
+wire fb_free_raw = SNES_ROMSEL_IN
+                 || SNES_ADDR_IN[23:18] == 6'b111000
+                 || SNES_ADDR_IN[23:16] == 8'he4
+                 || SNES_ADDR_IN[23:8] == 16'hef00;
+reg [1:0] fb_free_sync = 0;
+always @(posedge CLK2) fb_free_sync <= {fb_free_sync[0],fb_free_raw};
+wire fb_free_window = fb_free_raw && (&fb_free_sync);
 `endif
 
 parameter RAM_CYCLE_LEN = 4'd5;
@@ -1003,7 +1018,11 @@ always @(posedge CLK2) begin
   else
   case(RAM_STATE)
     ST_RAM_IDLE: begin
-      if(ram_free_slot | SNES_DEADr) begin
+      if(ram_free_slot | SNES_DEADr
+`ifdef GBC_EXTERNAL_FB
+         | fb_free_window
+`endif
+        ) begin
         if(MCU_RAM_RD_PENDr) begin
           RAM_STATE <= ST_RAM_MCU_RD_ADDR;
           ST_RAM_DELAYr <= RAM_CYCLE_LEN;
@@ -1018,6 +1037,7 @@ always @(posedge CLK2) begin
           ST_RAM_DELAYr <= RAM_CYCLE_LEN;
           fb_addr_r <= FB_MEM_ADDR;
           fb_data_r <= FB_MEM_DATA;
+          fb_write_r <= FB_MEM_WR;
         end
 `endif
       end
@@ -1053,7 +1073,7 @@ assign RAM_ADDR = (SD_DMA_TO_RAM) ? MCU_ADDR[18:0] : MCU_RAM_HIT ? RAM_ADDRr[18:
 
 assign RAM_DATA[7:0] = (SD_DMA_TO_RAM ? (!MCU_WRITE_1 ? MCU_DOUT : 8'bZ)
 `ifdef GBC_EXTERNAL_FB
-                                      : fb_wr_hit ? fb_data_r
+                                      : fb_data_hit ? fb_data_r
 `else
                                       : (ROM_HIT & ~SNES_WRITE) ? SNES_DATA
 `endif

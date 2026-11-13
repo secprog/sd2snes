@@ -175,7 +175,7 @@ module sgb_cpu(
   output        DBG_BRK
 );
 
-integer i;
+integer oam_lookup_i, ppu_write_i, apu_mix_i;
 
 //-------------------------------------------------------------------
 // DESCRIPTION
@@ -2700,15 +2700,20 @@ reg         ppu_stat_write_r;
 // OAM LUT lookup operation
 reg         ppu_oam_lut_found;
 reg  [3:0]  ppu_oam_lut_match;
-// The sensitivity list used to name ppu_oam_lut_xpos_r[0] through [9] one by
-// one, which is exactly NUM_OAM_LUT entries only while the LUT has ten of
-// them: an implicit dependence of a combinational block on a `define.
-always @(*) begin
+// XST cannot put an entire unpacked register array in an @* sensitivity
+// list. Flatten only the compared bits, with a width derived from the LUT
+// size, so both tools see the same complete combinational dependency.
+wire [5*`NUM_OAM_LUT-1:0] ppu_oam_lut_tilex;
+genvar oam_slot;
+generate for(oam_slot=0;oam_slot<`NUM_OAM_LUT;oam_slot=oam_slot+1) begin : g_oam_tilex
+  assign ppu_oam_lut_tilex[5*oam_slot +: 5] = ppu_oam_lut_xpos_r[oam_slot][7:3];
+end endgenerate
+always @(ppu_oam_lut_tilex or ppu_tile_ctr_r) begin
   ppu_oam_lut_match = 4'hF;
   ppu_oam_lut_found = 0;
-  for (i = 0; i < `NUM_OAM_LUT; i = i + 1) begin
-    if (ppu_oam_lut_xpos_r[i][7:3] == ppu_tile_ctr_r[4:0] && ~ppu_oam_lut_found) begin
-      ppu_oam_lut_match = i[3:0];
+  for (oam_lookup_i = 0; oam_lookup_i < `NUM_OAM_LUT; oam_lookup_i = oam_lookup_i + 1) begin
+    if (ppu_oam_lut_tilex[5*oam_lookup_i +: 5] == ppu_tile_ctr_r[4:0] && ~ppu_oam_lut_found) begin
+      ppu_oam_lut_match = oam_lookup_i[3:0];
       ppu_oam_lut_found = 1;
     end
   end
@@ -3223,7 +3228,7 @@ always @(posedge CLK) begin
           ppu_oam_address_r <= 0;
 
           // use -16 (instead of -8) in order to put the xpos before the dummy tile for empty entries
-          for (i = 0; i < `NUM_OAM_LUT; i = i + 1) ppu_oam_lut_xpos_r[i] <= 0-16;
+          for (ppu_write_i = 0; ppu_write_i < `NUM_OAM_LUT; ppu_write_i = ppu_write_i + 1) ppu_oam_lut_xpos_r[ppu_write_i] <= 0-16;
 
           // initialize all entries to be invalid
           ppu_oam_lut_cnt_r <= 0;
@@ -3301,15 +3306,15 @@ always @(posedge CLK) begin
             // CGB: LCDC.0 is the BG/OBJ master priority, not a BG enable, so
             // the tile is kept (the composition below applies the bit).
             // Attribute bit 5 = horizontal flip.
-            for (i = 0; i < 8; i = i + 1) ppu_bgw_fifo_wr_req_data_r[i][0] <= (ppu_first_frame_r|(~REG_LCDC_r[`LCDC_BG_EN] & ~cgb_mode)) ? 1'b0 : (c6_bg_attr_r[5] ? ppu_pix_bgw_data_r[i] : ppu_pix_bgw_data_r[7-i]);
-            for (i = 0; i < 8; i = i + 1) ppu_bgw_fifo_wr_req_data_r[i][1] <= (ppu_first_frame_r|(~REG_LCDC_r[`LCDC_BG_EN] & ~cgb_mode)) ? 1'b0 : (c6_bg_attr_r[5] ? c6_bg_tile_rd[i]         : c6_bg_tile_rd[7-i]);
+            for (ppu_write_i = 0; ppu_write_i < 8; ppu_write_i = ppu_write_i + 1) ppu_bgw_fifo_wr_req_data_r[ppu_write_i][0] <= (ppu_first_frame_r|(~REG_LCDC_r[`LCDC_BG_EN] & ~cgb_mode)) ? 1'b0 : (c6_bg_attr_r[5] ? ppu_pix_bgw_data_r[ppu_write_i] : ppu_pix_bgw_data_r[7-ppu_write_i]);
+            for (ppu_write_i = 0; ppu_write_i < 8; ppu_write_i = ppu_write_i + 1) ppu_bgw_fifo_wr_req_data_r[ppu_write_i][1] <= (ppu_first_frame_r|(~REG_LCDC_r[`LCDC_BG_EN] & ~cgb_mode)) ? 1'b0 : (c6_bg_attr_r[5] ? c6_bg_tile_rd[ppu_write_i]         : c6_bg_tile_rd[7-ppu_write_i]);
             c6_bgw_req_attr_r <= {c6_bg_attr_r[7], c6_bg_attr_r[2:0]};
 
             // clear object fifo for next set of sprite tiles
             ppu_obj_fifo_wr_req_r <= 1;
             ppu_obj_fifo_wr_req_clear_r <= 1;
             ppu_obj_fifo_wr_req_index_r <= {ppu_tile_ctr_next[1:0],3'h0};
-            for (i = 0; i < 8; i = i + 1) ppu_obj_fifo_wr_req_data_r[i][3:0] <= 0;
+            for (ppu_write_i = 0; ppu_write_i < 8; ppu_write_i = ppu_write_i + 1) ppu_obj_fifo_wr_req_data_r[ppu_write_i][3:0] <= 0;
           end
 
           if (ppu_pix_phase_r) begin
@@ -3364,14 +3369,14 @@ always @(posedge CLK) begin
             ppu_obj_fifo_wr_req_r <= 1;
             ppu_obj_fifo_wr_req_clear_r <= 0;
             ppu_obj_fifo_wr_req_index_r <= ppu_oam_obj_xpos_r[4:0];
-            for (i = 0; i < 8; i = i + 1) ppu_obj_fifo_wr_req_data_r[i][0] <= ppu_pix_oam_flag_r[5] ? ppu_pix_obj_data_r[i] : ppu_pix_obj_data_r[7-i];
-            for (i = 0; i < 8; i = i + 1) ppu_obj_fifo_wr_req_data_r[i][1] <= ppu_pix_oam_flag_r[5] ? c6_obj_tile_rd[i]     : c6_obj_tile_rd[7-i];
+            for (ppu_write_i = 0; ppu_write_i < 8; ppu_write_i = ppu_write_i + 1) ppu_obj_fifo_wr_req_data_r[ppu_write_i][0] <= ppu_pix_oam_flag_r[5] ? ppu_pix_obj_data_r[ppu_write_i] : ppu_pix_obj_data_r[7-ppu_write_i];
+            for (ppu_write_i = 0; ppu_write_i < 8; ppu_write_i = ppu_write_i + 1) ppu_obj_fifo_wr_req_data_r[ppu_write_i][1] <= ppu_pix_oam_flag_r[5] ? c6_obj_tile_rd[ppu_write_i]     : c6_obj_tile_rd[7-ppu_write_i];
             // The OAM address still points at THIS sprite ({index, 2'b1x}) on
             // this edge: the next match is loaded into it by the statement
             // above in the same edge.
             c6_obj_req_meta_r <= {ppu_oam_address_r[7:2], cgb_mode ? ppu_pix_oam_flag_r[2:0] : 3'b000};
-            for (i = 0; i < 8; i = i + 1) ppu_obj_fifo_wr_req_data_r[i][2] <= ppu_pix_oam_flag_r[4];
-            for (i = 0; i < 8; i = i + 1) ppu_obj_fifo_wr_req_data_r[i][3] <= ppu_pix_oam_flag_r[7];
+            for (ppu_write_i = 0; ppu_write_i < 8; ppu_write_i = ppu_write_i + 1) ppu_obj_fifo_wr_req_data_r[ppu_write_i][2] <= ppu_pix_oam_flag_r[4];
+            for (ppu_write_i = 0; ppu_write_i < 8; ppu_write_i = ppu_write_i + 1) ppu_obj_fifo_wr_req_data_r[ppu_write_i][3] <= ppu_pix_oam_flag_r[7];
 
             ppu_state_r <= ST_PPU_PIX_OB0;
           end
@@ -3566,7 +3571,7 @@ assign APU_DAT = {~apu_data_volume_r[1][9],apu_data_volume_r[1][8:0],~apu_data_v
 
 always @(posedge CLK) begin
   // Flop audio state since it is a critical path on MK2
-  for (i = 0; i < 2; i = i + 1) apu_data_r[i] <= apu_data[i];
+  for (apu_mix_i = 0; apu_mix_i < 2; apu_mix_i = apu_mix_i + 1) apu_data_r[apu_mix_i] <= apu_data[apu_mix_i];
 
   apu_data_volume_r[0][9:0] <= apu_data_r[0][6:0] * ({7'h00,REG_NR50_r[`NR50_MASTER_LEFT_VOLUME]}  + 1);
   apu_data_volume_r[1][9:0] <= apu_data_r[1][6:0] * ({7'h00,REG_NR50_r[`NR50_MASTER_RIGHT_VOLUME]} + 1);

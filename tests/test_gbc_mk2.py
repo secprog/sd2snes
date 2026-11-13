@@ -46,6 +46,30 @@ def main():
         # Compile the production read function AND its actual sequential call
         # sites, including OPR_I holds. The test oracle is the old flat table.
         cpu = (root / "verilog/sd2snes_gbc/sgb_cpu.v").read_text()
+        # Exhaust every input to the production APU period expressions against
+        # the original shifts, including NR43's otherwise inactive high shifts.
+        sweep_start = cpu.index("reg  [10:0] apu_square1_sweep_freq_r;")
+        sweep_start = cpu.index(";", sweep_start) + 1
+        noise_start = cpu.index("reg  [14:0] apu_noise_lfsr_r;")
+        noise_start = cpu.index(";", noise_start) + 1
+        period_defines = "\n".join(line for line in cpu.splitlines()
+                                  if line.startswith(("`define NR10_", "`define NR43_")))
+        period_source = Path(tmp) / "apu_period_actual.v"
+        period_source.write_text(period_defines + '''
+module gbc_apu_period_actual(input [7:0] REG_NR10_r, REG_NR43_r,
+ input [10:0] apu_square1_sweep_freq_r,
+ output [15:0] sweep, output [21:0] noise);
+''' + cpu[sweep_start:cpu.index("wire [12:0] apu_square1_period", sweep_start)]
+            + cpu[noise_start:cpu.index("wire [4:0] apu_noise_output", noise_start)]
+            + "\nassign sweep=apu_square1_sweep_freq_next; assign noise=apu_noise_period;\nendmodule\n")
+        periods = Path(tmp) / "apu-periods.vvp"
+        compile_periods = [args.iverilog, "-g2012", "-DMK2", "-s", "gbc_apu_period_tb",
+                           "-o", str(periods), str(period_source),
+                           str(root / "tests/rtl/gbc_apu_period_tb.v")]
+        if args.ivl_base:
+            compile_periods += ["-B", args.ivl_base]
+        subprocess.run(compile_periods, check=True)
+        subprocess.run([args.vvp, str(periods)], check=True, timeout=60)
         defines = cpu[cpu.index("`define OPR_I"):cpu.index("// Forwarded signals")]
         aliases = cpu[cpu.index("`define AF_r"):cpu.index("`define HL_r")].strip()
         aliases += "\n`define HL_r {H_r,L_r}\n"

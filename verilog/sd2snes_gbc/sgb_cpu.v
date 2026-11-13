@@ -3597,7 +3597,18 @@ reg  [7:0]  apu_square1_duty_r;
 reg         apu_square1_sweep_enable_r;
 reg  [3:0]  apu_square1_sweep_timer_r;
 reg  [10:0] apu_square1_sweep_freq_r;
+`ifdef MK2
+// A one-hot multiplier implements the variable right shift in spare MULT18X18
+// hardware. Keep the complete 11-bit quotient and the original 16-bit sum.
+wire [7:0] apu_sweep_scale = 8'h80 >> REG_NR10_r[`NR10_SWEEP_SHIFT];
+(* mult_style = "block" *) wire [17:0] apu_sweep_product =
+    apu_square1_sweep_freq_r * apu_sweep_scale;
+wire [15:0] apu_square1_sweep_freq_next = REG_NR10_r[`NR10_SWEEP_NEG]
+    ? ({5'h00,apu_square1_sweep_freq_r} - {5'h00,apu_sweep_product[17:7]})
+    : ({5'h00,apu_square1_sweep_freq_r} + {5'h00,apu_sweep_product[17:7]});
+`else
 wire [15:0] apu_square1_sweep_freq_next = REG_NR10_r[`NR10_SWEEP_NEG] ? ({5'h00,apu_square1_sweep_freq_r} - ({5'h00,apu_square1_sweep_freq_r} >> REG_NR10_r[`NR10_SWEEP_SHIFT])) : ({5'h00,apu_square1_sweep_freq_r} + ({5'h00,apu_square1_sweep_freq_r} >> REG_NR10_r[`NR10_SWEEP_SHIFT]));
+`endif
 
 wire [12:0] apu_square1_period = {REG_NR14_r[`NR14_FREQ_MSB],REG_NR13_r[`NR13_FREQ_LSB],2'b00};
 wire signed [4:0] apu_square1_output = (apu_square1_enable_r & apu_square1_duty_r[apu_square1_pos_r]) ? {apu_square1_volume_r,1'b0} : 5'h00;
@@ -3638,7 +3649,16 @@ reg  [2:0]  apu_noise_env_timer_r;
 reg  [3:0]  apu_noise_volume_r;
 reg  [14:0] apu_noise_lfsr_r;
 
+`ifdef MK2
+// Preserve every NR43 period, including shifts 14/15 and their later register
+// changes. Only the implementation of the shifter changes, not timer precision.
+wire [15:0] apu_noise_scale = 16'h0001 << REG_NR43_r[`NR43_LFSR_SHIFT];
+(* mult_style = "block" *) wire [18:0] apu_noise_product =
+    {REG_NR43_r[`NR43_LFSR_DIV],~|REG_NR43_r[`NR43_LFSR_DIV]} * apu_noise_scale;
+wire [21:0] apu_noise_period = {apu_noise_product,3'b000};
+`else
 wire [21:0] apu_noise_period = {15'h0000,REG_NR43_r[`NR43_LFSR_DIV],~|REG_NR43_r[`NR43_LFSR_DIV],3'h0} << REG_NR43_r[`NR43_LFSR_SHIFT];
+`endif
 wire [4:0] apu_noise_output = (apu_noise_enable_r & apu_noise_lfsr_r[0]) ? {apu_noise_volume_r,1'b0} : 5'h00;
 
 wire [6:0]  apu_data[1:0];

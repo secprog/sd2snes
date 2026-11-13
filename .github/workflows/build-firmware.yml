@@ -129,6 +129,19 @@ jobs:
           echo "$RUNNER_TEMP/gbc-yosys-tools/oss-cad-suite/bin" >> "$GITHUB_PATH"
       - name: Map the unchanged MkII RTL with Yosys
         run: python3 .github/scripts/check-gbc-yosys.py "$RUNNER_TEMP/gbc-yosys"
+      - name: Compare the native baseline without replacing its state or memories
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          # Immutable diagnostic baseline: d9099366, 8,337 native LUT4s.
+          # Keep provenance explicit; never substitute this netlist for HEAD.
+          gh api repos/$GH_REPO/actions/runs/43498299272 > "$RUNNER_TEMP/gbc-yosys/native-run.json"
+          python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["head_sha"] == "d9099366b016e9e52347a7d1f79e3d53a0ff05ea"' "$RUNNER_TEMP/gbc-yosys/native-run.json"
+          gh run download 43498299272 --name fpga-reports-mk2-gbc --dir "$RUNNER_TEMP/gbc-native"
+          native=$(find "$RUNNER_TEMP/gbc-native" -name main_synth.v -print -quit)
+          test -n "$native"
+          python3 .github/scripts/check-gbc-xst-remap.py "$native" "$RUNNER_TEMP/gbc-yosys/xst-remap"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

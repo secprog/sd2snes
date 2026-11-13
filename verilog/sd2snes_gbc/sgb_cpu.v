@@ -1647,6 +1647,37 @@ reg [15:0]  exe_dst_r;
 reg [7:0]   exe_cc_r;
 reg [7:0]   exe_src_alu_r;
 
+`ifdef MK2
+// Byte and pair operands share the same four register-pair muxes. Keep the
+// existing operand registers and their hold on OPR_I; only the read network
+// changes. In particular OPR_A selects AF's high byte, not its flags byte.
+function [15:0] mk2_operand;
+  input [3:0] sel;
+  input [15:0] pc, immediate, bc, de, sp, af, hl;
+  reg [1:0] pair_index;
+  reg [15:0] pair_data, register_data;
+  begin
+    pair_index = sel[3] ? {sel[2], sel[1] & (~sel[2] | sel[0])} : sel[1:0];
+    case(pair_index)
+      0: pair_data=bc;
+      1: pair_data=de;
+      2: pair_data=hl;
+      3: pair_data=af;
+    endcase
+    register_data = sel[3] && sel!=`OPR_HL
+      ? {8'd0, ((!sel[0] || sel==`OPR_A) ? pair_data[15:8] : pair_data[7:0])}
+      : pair_data;
+    case(sel)
+      `OPR_PC: mk2_operand=pc;
+      `OPR_S8: mk2_operand={{8{immediate[7]}},immediate[7:0]};
+      `OPR_U16: mk2_operand=immediate;
+      `OPR_SP: mk2_operand=sp;
+      default: mk2_operand=register_data;
+    endcase
+  end
+endfunction
+`endif
+
 reg [15:0]  exe_res_r;
 reg [7:0]   exe_res_cc_r;
 reg [7:0]   exe_res_los_r;
@@ -2135,6 +2166,14 @@ always @(posedge CLK) begin
   exe_ready_r    <= ~IFD_EXE_valid | (exe_complete_r & ~exe_stall & DBG_EXE_step);
 
   // operand read
+`ifdef MK2
+  if (IFD_EXE_decode[`DEC_SRC] != `OPR_I)
+    exe_src_r <= mk2_operand(IFD_EXE_decode[`DEC_SRC], IFD_EXE_pc_next,
+                            IFD_EXE_op[23:8], `BC_r, `DE_r, SP_r, `AF_r, `HL_r);
+  if (IFD_EXE_decode[`DEC_DST] != `OPR_I)
+    exe_dst_r <= mk2_operand(IFD_EXE_decode[`DEC_DST], IFD_EXE_pc_next,
+                            IFD_EXE_op[23:8], `BC_r, `DE_r, SP_r, `AF_r, `HL_r);
+`else
   case (IFD_EXE_decode[`DEC_SRC])
     //`OPR_I  : exe_src_r <= 0;
     `OPR_PC : exe_src_r[15:0] <= IFD_EXE_pc_next;
@@ -2173,6 +2212,7 @@ always @(posedge CLK) begin
     `OPR_HL : exe_dst_r[15:0] <= `HL_r;
     `OPR_A  : exe_dst_r[15:0] <= {8'h0,A_r};
   endcase
+`endif
 
   // condition code read
   exe_cc_r <= F_r;

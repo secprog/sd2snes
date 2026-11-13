@@ -38,6 +38,34 @@ def main():
         subprocess.run([args.vvp, str(clock)], check=True, timeout=60)
         if args.clock_only:
             return
+        # Compile the production read function AND its actual sequential call
+        # sites, including OPR_I holds. The test oracle is the old flat table.
+        cpu = (root / "verilog/sd2snes_gbc/sgb_cpu.v").read_text()
+        defines = cpu[cpu.index("`define OPR_I"):cpu.index("// Forwarded signals")]
+        aliases = cpu[cpu.index("`define AF_r"):cpu.index("`define HL_r")].strip()
+        aliases += "\n`define HL_r {H_r,L_r}\n"
+        fn_start = cpu.index("function [15:0] mk2_operand;")
+        function = cpu[fn_start:cpu.index("endfunction", fn_start) + len("endfunction")]
+        read_start = cpu.index("  // operand read\n")
+        read_end = cpu.index("  // condition code read", read_start)
+        operand_source = Path(tmp) / "operand_actual.v"
+        operand_source.write_text(defines + aliases + '''
+module gbc_operand_actual(input CLK,
+ input [7:0] A_r,F_r,B_r,C_r,D_r,E_r,H_r,L_r,
+ input [15:0] SP_r,IFD_EXE_pc_next,IFD_EXE_decode,
+ input [23:0] IFD_EXE_op, output [15:0] src,dst);
+ reg [15:0] exe_src_r,exe_dst_r;
+ assign src=exe_src_r; assign dst=exe_dst_r;
+''' + function + "\nalways @(posedge CLK) begin\n" + cpu[read_start:read_end]
+                                  + "\nend\nendmodule\n")
+        operands = Path(tmp) / "operands.vvp"
+        compile_operands = [args.iverilog, "-g2012", "-DMK2", "-s", "gbc_operand_tb",
+                            "-o", str(operands), str(operand_source),
+                            str(root / "tests/rtl/gbc_operand_tb.v")]
+        if args.ivl_base:
+            compile_operands += ["-B", args.ivl_base]
+        subprocess.run(compile_operands, check=True)
+        subprocess.run([args.vvp, str(operands)], check=True, timeout=60)
         out = Path(tmp) / "sram.vvp"
         cmd = [args.iverilog, "-g2012", "-s", "gbc_mk2_sram_tb", "-o", str(out)]
         if args.ivl_base:

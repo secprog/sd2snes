@@ -554,6 +554,11 @@ upd77c25 snes_dspx (
   // ROMs, so every halt poke/poll through the window would otherwise advance
   // the uPD7725 handshake (DR/RQM/DRS) behind the game's back.
   .enable(dspx_enable & ~dspx_dp_enable),
+`ifdef MK2
+`ifdef DSP_COMP
+  .DR_cpu_enable(dspx_enable),
+`endif
+`endif
   .reg_oe_falling(SNES_RD_start),
   .reg_oe_rising(SNES_RD_end),
   .reg_we_rising(SNES_WR_end),

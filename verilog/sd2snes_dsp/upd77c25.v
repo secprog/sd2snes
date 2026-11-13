@@ -23,6 +23,11 @@ module upd77c25(
   output [7:0] DO,
   input A0,
   input enable,
+`ifdef MK2
+`ifdef DSP_COMP
+  input DR_cpu_enable,
+`endif
+`endif
   input reg_oe_falling,
   input reg_oe_rising,
   input reg_we_rising,
@@ -505,6 +510,36 @@ always @(posedge CLK) begin
   end
 end
 
+`ifdef MK2
+`ifdef DSP_COMP
+// Keep CPU request and byte selection in separate bounded LUT functions.
+wire dr_cpu_request, dr_cpu_high;
+dspx_dr_cpu_request dr_request_lut(
+  .chip(DR_cpu_enable), .dp_enable(DP_enable),
+  .strobe(reg_we_rising), .a0(A0), .request(dr_cpu_request)
+);
+dspx_dr_cpu_lane dr_lane_lut(
+  .drc(regs_sr[SR_DRC]), .drs(regs_sr[SR_DRS]), .high_byte(dr_cpu_high)
+);
+always @(posedge CLK) begin
+  if(RST & ~ss_frozen) begin
+    if(dr_cpu_request) begin
+      if(dr_cpu_high) regs_dr[15:8] <= DI;
+      else regs_dr[7:0] <= DI;
+    end else if(ld_dst == 4'b0110 && insn_state == STATE_STORE) begin
+      if (op == I_OP || op == I_RT) regs_dr <= idb;
+      else if (op == I_LD) regs_dr <= ld_id;
+    end
+  end else if(RST & ss_frozen) begin
+    if(ss_wr) begin
+      if(ss_wa == 8'h0a) regs_dr[7:0]  <= ss_wd; // restore low byte
+      if(ss_wa == 8'h0b) regs_dr[15:8] <= ss_wd; // restore high byte
+    end
+  end else begin
+    regs_dr <= 16'h0000;
+  end
+end
+`else
 always @(posedge CLK) begin
   if(RST & ~ss_frozen) begin
     if(enable & reg_we_rising & (A0 == 1'b0)) begin
@@ -530,6 +565,34 @@ always @(posedge CLK) begin
     regs_dr <= 16'h0000;
   end
 end
+`endif
+`else
+always @(posedge CLK) begin
+  if(RST & ~ss_frozen) begin
+    if(enable & reg_we_rising & (A0 == 1'b0)) begin
+      if(!regs_sr[SR_DRC]) begin
+        if(regs_sr[SR_DRS] == 1'b0) begin
+          regs_dr[7:0] <= DI;
+        end else begin
+          regs_dr[15:8] <= DI;
+        end
+      end else begin
+        regs_dr[7:0] <= DI;
+      end
+    end else if(ld_dst == 4'b0110 && insn_state == STATE_STORE) begin
+      if (op == I_OP || op == I_RT) regs_dr <= idb;
+      else if (op == I_LD) regs_dr <= ld_id;
+    end
+  end else if(RST & ss_frozen) begin
+    if(ss_wr) begin
+      if(ss_wa == 8'h0a) regs_dr[7:0]  <= ss_wd; // restore low byte
+      if(ss_wa == 8'h0b) regs_dr[15:8] <= ss_wd; // restore high byte
+    end
+  end else begin
+    regs_dr <= 16'h0000;
+  end
+end
+`endif
 
 assign UPD_DO = (A0 ? regs_sr[15:8] : (regs_sr[SR_DRC] ? regs_dr[7:0] : (regs_sr[SR_DRS] ? regs_dr[15:8] : regs_dr[7:0])));
 assign DO = ss_ctrl ? {7'b0, ss_halted}
@@ -950,3 +1013,25 @@ always @(posedge CLK) begin
 end
 
 endmodule
+
+`ifdef MK2
+`ifdef DSP_COMP
+(* LUT_MAP="yes" *)
+module dspx_dr_cpu_request(input chip, dp_enable, strobe, a0, output reg request);
+always @* begin
+  request = 1'b0;
+  if(chip & ~dp_enable & strobe & (a0 == 1'b0)) request = 1'b1;
+end
+endmodule
+(* LUT_MAP="yes" *)
+module dspx_dr_cpu_lane(input drc, drs, output reg high_byte);
+always @* begin
+  high_byte = 1'b0;
+  if(!drc) begin
+    if(drs == 1'b0) high_byte = 1'b0;
+    else high_byte = 1'b1;
+  end
+end
+endmodule
+`endif
+`endif

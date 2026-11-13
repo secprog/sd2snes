@@ -118,10 +118,15 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
-      - name: Install hosted synthesis tools
+      - name: Install pinned hosted synthesis tools
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends yosys
+          archive="$RUNNER_TEMP/oss-cad-suite-linux-x64-20261112.tgz"
+          curl --fail --location --retry 3 --output "$archive" \
+            https://github.com/YosysHQ/oss-cad-suite-build/releases/download/2026-11-12/oss-cad-suite-linux-x64-20261112.tgz
+          printf '%s  %s\n' 346499255e3e5e6e9bf67e1d378a4e6bc249abd3de3b0caf5b57604bc8ba1752 "$archive" | sha256sum --check
+          mkdir -p "$RUNNER_TEMP/gbc-yosys-tools"
+          tar -xzf "$archive" -C "$RUNNER_TEMP/gbc-yosys-tools"
+          echo "$RUNNER_TEMP/gbc-yosys-tools/oss-cad-suite/bin" >> "$GITHUB_PATH"
       - name: Map the unchanged MkII RTL with Yosys
         run: python3 .github/scripts/check-gbc-yosys.py "$RUNNER_TEMP/gbc-yosys"
       - uses: actions/upload-artifact@v4

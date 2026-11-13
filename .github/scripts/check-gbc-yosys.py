@@ -26,12 +26,13 @@ def quoted(path):
 
 version = subprocess.check_output(["yosys", "-V"], text=True)
 (report / "tool-version.txt").write_text(version)
-# ABC9 is unsupported for LUT4 families in the hosted Yosys version. Compare
-# its documented LUT4-only mapper instead; the ordinary flow allows LUT8s
-# which are later decomposed into physical LUT4s and MUXF primitives.
+# The pinned modern release uses ABC9 for LUT4 families. The distribution's
+# older Yosys 0.33 rejected that combination and its ordinary mapper was larger
+# than XST. Keep physical primitive counts for each independently mapped flow.
 summaries = {}
 for name, options in (("lut4", "-nowidelut"),
-                      ("lut4-no-carry", "-nowidelut -nocarry")):
+                      ("lut4-dff", "-nowidelut -dff"),
+                      ("wide-lut", "")):
     target = report / name
     target.mkdir(exist_ok=True)
     commands = ["read_verilog -lib " + " ".join(map(quoted, wrappers)),

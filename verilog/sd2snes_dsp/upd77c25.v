@@ -217,6 +217,12 @@ reg signed [15:0] regs_k;
 reg signed [15:0] regs_l;
 reg [15:0] regs_trb;
 reg [15:0] regs_tr;
+`ifdef MK2
+`ifdef DSP_COMP
+// Preserve the complete DR register boundary rather than backward retiming it.
+(* register_balancing = "no" *)
+`endif
+`endif
 reg [15:0] regs_dr;
 reg [15:0] regs_sr;
 reg [3:0] regs_sp;

@@ -5,6 +5,7 @@ module gbc_clock_tb;
   wire ce1,ce2,bus_edge,locked,ref_ce1,ref_ce2,ref_bus,ref_locked;
   wire [15:0] err,ref_err;
   integer i,j,cycles=0,seed=32'h7123bac;
+  integer last_ce1=-100;
   gbc_clk dut(.CLK(CLK),.RST(RST),.exact_mode(exact_mode),.sync_strobe(sync_strobe),
     .frame_dot_ctr(dots),.lcd_on(lcd_on),.hold(hold),.ce1(ce1),.ce2(ce2),
     .bus_edge(bus_edge),.locked(locked),.sync_err_last(err));
@@ -14,6 +15,14 @@ module gbc_clock_tb;
   task tick;
     begin
       #2; CLK=1; #1;
+      // The shared audio arithmetic must finish before another APU sample.
+      // Check the stronger production bound through every rate/hold/reset
+      // transition exercised below, independently of the reference equality.
+      if(RST) last_ce1=cycles-100;
+      else if(ce1) begin
+        if(cycles-last_ce1 < 19) $fatal(1,"CE1 spacing below audio scheduling bound");
+        last_ce1=cycles;
+      end
       if({ce1,ce2,bus_edge,locked,err} !== {ref_ce1,ref_ce2,ref_bus,ref_locked,ref_err}
          || dut.k2_r !== reference.k2_r || $signed(dut.ki_r) !== $signed(reference.ki_r))
         begin

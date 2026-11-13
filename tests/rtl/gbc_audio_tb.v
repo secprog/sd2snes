@@ -16,7 +16,20 @@ module gbc_audio_tb;
     .dac_address_ext(9'd0),.play(1'b0),.reset(reset),.palmode(1'b0),
     .sdout(ref_sd),.mclk_out(ref_mc),.lrck_out(ref_lr),.sclk_out(ref_sc));
   reg [19:0] random_state=20'habcde;
-  integer n,b,ones=0;
+  integer n,b,ones=0,channel,stage,until_ce=0,warmup=1024;
+  always @(negedge clk) begin
+    if(!reset) begin
+      for(channel=0;channel<2;channel=channel+1) begin
+        if(dut.sgb_co[2][channel] !== reference.sgb_co[2][channel])
+          $fatal(1,"full-precision CIC output differs channel=%0d",channel);
+        if(dut.sgb_cicstate == dut.ST0_IDLE)
+          for(stage=0;stage<3;stage=stage+1)
+            if(dut.sgb_io[stage][channel] !== reference.sgb_io[stage][channel]
+               || dut.sgb_ci[stage][channel] !== reference.sgb_ci[stage][channel])
+              $fatal(1,"CIC stage state differs after complete rotation");
+      end
+    end
+  end
   initial begin
     repeat(20) @(negedge clk);
     reset=0;
@@ -35,6 +48,23 @@ module gbc_audio_tb;
           if(sd) ones=ones+1;
         end
       end
+    end
+    // Vary input data every clock, not just CE, and include the minimum
+    // supported 7-clock interval (production CE1 is >=19). Exercise resets
+    // at unrelated serializer/filter phases and all volume settings.
+    for(n=0;n<200000;n=n+1) begin
+      @(negedge clk);
+      random_state={random_state[18:0],random_state[19]^random_state[16]};
+      apu=random_state;
+      boost=(n/2000)%8;
+      reset=(n%4093==0);
+      ce=(until_ce==0);
+      if(ce) until_ce=6+(random_state%34);
+      else until_ce=until_ce-1;
+      if(reset) warmup=1024;
+      else if(warmup>0) warmup=warmup-1;
+      else if({sd,mc,lr,sc}!=={ref_sd,ref_mc,ref_lr,ref_sc})
+        $fatal(1,"GB audio differs with jitter/reset cycle=%d",n);
     end
     if(ones==0) $fatal(1,"APU output is silent");
     $display("PASS: GB APU filter, all volume settings and I2S equal the SGB reference (%0d high bits)",ones);

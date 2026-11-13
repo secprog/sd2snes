@@ -129,7 +129,7 @@ hard_and_outputs = {c["connections"]["LO"][0] for c in native["cells"].values()
                     if c["type"] == "MULT_AND"}
 hard_and_carry = {n for n, c in carry.items()
                   if c["connections"]["DI"][0] in hard_and_outputs}
-compare_carry, short_carry, visited = set(), set(), set()
+compare_carry, gate_carry, short_carry, visited = set(), set(), set(), set()
 for name in carry:
     if name in visited:
         continue
@@ -140,8 +140,10 @@ for name in carry:
             chain.add(member)
             pending.extend(carry_edges[member] - chain)
     visited |= chain
-    if not chain & (sum_carry | hard_and_carry) and not any("_wg_cy" in n for n in chain):
-        compare_carry |= chain
+    if not chain & (sum_carry | hard_and_carry):
+        gate_carry |= chain
+        if not any("_wg_cy" in n for n in chain):
+            compare_carry |= chain
     if len(chain) <= 8 and not chain & hard_and_carry:
         short_carry |= chain
 short_carry |= compare_carry
@@ -164,6 +166,8 @@ resub = ("balance; resub -K 6; rewrite; resub -K 6 -N 2; refactor; "
          "rewrite -z; resub -K 10 -N 2; balance; resub -K 12; refactor -z; "
          "resub -K 12 -N 2; rewrite -z; balance; ")
 area_tail = "dch -f; if -K 4 -a; mfs2; lutpack -S 1"
+compress_resub = "; ".join(command.strip() + " -l" for command in resub.split(";")
+                           if command.strip()) + "; "
 profiles = (("fixed-mux", False, None),
             ("fixed-mux-area", False, abc_prefix + "if -K 4 -a; mfs2; lutpack -S 1"),
             ("fixed-mux-area2", False, abc_prefix + "if -K 4 -a; mfs2; mfs2; lutpack -S 1"),
@@ -181,6 +185,14 @@ profiles = (("fixed-mux", False, None),
             ("fixed-mux-sat-area", False, "strash; " + resub + area_tail +
              "; &get -m -n; &mfs2 -K 4 -a; &put; lutpack -S 1"),
             ("lut4-sat", True, "strash; " + resub + area_tail +
+             "; &get -m -n; &mfs2 -K 4; &put; lutpack -S 1"),
+            ("lut4-resub2-sat", True, "strash; " + resub + resub + area_tail +
+             "; &get -m -n; &mfs2 -K 4; &put; lutpack -S 1"),
+            ("lut4-compress-sat", True, "strash; " + compress_resub + area_tail +
+             "; &get -m -n; &mfs2 -K 4; &put; lutpack -S 1"),
+            ("compare-lut4-sat", True, "strash; " + resub + area_tail +
+             "; &get -m -n; &mfs2 -K 4; &put; lutpack -S 1"),
+            ("gate-lut4-sat", True, "strash; " + resub + area_tail +
              "; &get -m -n; &mfs2 -K 4; &put; lutpack -S 1"),
             # Cost 1/2/4 for LUT4/5/6 reflects their decomposition into real
             # LUT4s plus MUXF5/F6. Let ABC select and group these cones anew.
@@ -213,6 +225,8 @@ for profile, remap_mux, abc_script in profiles:
                    or (profile.startswith("widegate-") and c["type"] == "MUXCY" and "_wg_cy" in n)}
     if profile.startswith("compare-"):
         logic_names |= compare_carry
+    if profile == "gate-lut4-sat":
+        logic_names |= gate_carry
     if profile == "short-carry-sat":
         logic_names |= short_carry | short_sums
     logic = [c for n, c in native["cells"].items() if n in logic_names]

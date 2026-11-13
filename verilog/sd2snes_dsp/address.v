@@ -250,7 +250,21 @@ assign ROM_ADDR = SRAM_SNES_ADDR;
 assign ROM_HIT = (IS_ROM | IS_WRITABLE) & ~cc_sel;
 
 assign msu_enable = featurebits[FEAT_MSU1] & (!SNES_ADDR[22] && ((SNES_ADDR[15:0] & 16'hfff8) == 16'h2000));
+`ifdef MK2
+`ifdef DSP_COMP
+// Decode only the address at the existing CLK2 capture boundary. The early
+// address is already registered in main.v; feature/unlock controls stay live.
+wire dma_address_hit;
+dspx_dma_address_hit dma_addr_decode(
+  .clock(CLK), .address_early(SNES_ADDR_early), .selected(dma_address_hit)
+);
+assign dma_enable = (featurebits[FEAT_DMA1] | map_unlock | snescmd_unlock) & dma_address_hit;
+`else
 assign dma_enable = (featurebits[FEAT_DMA1] | map_unlock | snescmd_unlock) & (!SNES_ADDR[22] && ((SNES_ADDR[15:0] & 16'hfff0) == 16'h2020));
+`endif
+`else
+assign dma_enable = (featurebits[FEAT_DMA1] | map_unlock | snescmd_unlock) & (!SNES_ADDR[22] && ((SNES_ADDR[15:0] & 16'hfff0) == 16'h2020));
+`endif
 assign exe_enable =                           (!SNES_ADDR[22] && ((SNES_ADDR[15:0] & 16'hffff) == 16'h2C00));
 assign map_enable =                           (!SNES_ADDR[22] && ((SNES_ADDR[15:0] & 16'hffff) == 16'h2BB2));
 
@@ -331,3 +345,19 @@ assign branch1_enable = (SNES_ADDR == 24'h002A1F);
 assign branch2_enable = (SNES_ADDR == 24'h002A59);
 assign branch3_enable = (SNES_ADDR == 24'h002A5E);
 endmodule
+
+`ifdef MK2
+`ifdef DSP_COMP
+// Match the SNES_ADDR capture without adding a bus cycle. Keep this single
+// address predicate register from being balanced back into the shared decode.
+(* REGISTER_BALANCING = "no" *)
+module dspx_dma_address_hit(
+  input clock,
+  input [23:0] address_early,
+  output reg selected
+);
+always @(posedge clock)
+  selected <= (!address_early[22] && ((address_early[15:0] & 16'hfff0) == 16'h2020));
+endmodule
+`endif
+`endif

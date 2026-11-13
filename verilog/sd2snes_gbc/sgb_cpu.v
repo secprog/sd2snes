@@ -2575,7 +2575,9 @@ reg  [3:0]  ppu_oam_lut_cnt_r;
 wire        ppu_oam_lut_full = ppu_oam_lut_cnt_r[3] & ppu_oam_lut_cnt_r[1];
 `endif
 reg  [3:0]  ppu_oam_lut_ypos_r[`NUM_OAM_LUT-1:0];
+`ifndef MK2
 reg  [7:0]  ppu_oam_lut_xpos_r[`NUM_OAM_LUT-1:0];
+`endif
 reg  [5:0]  ppu_oam_lut_index_r[`NUM_OAM_LUT-1:0];
 wire        ppu_oam_end      = ppu_oam_address_r[7] & &ppu_oam_address_r[4:2]; // 159 + 1 = 160 bytes (40 entries of 4 bytes each)
 
@@ -2696,6 +2698,11 @@ reg         ppu_dot_start_r;
 reg         ppu_stat_write_r;
 
 // OAM LUT lookup operation
+`ifdef MK2
+wire        ppu_oam_lut_found;
+wire [3:0]  ppu_oam_lut_match;
+wire [7:0]  ppu_oam_position_q;
+`else
 reg         ppu_oam_lut_found;
 reg  [3:0]  ppu_oam_lut_match;
 // XST cannot put an entire unpacked register array in an @* sensitivity
@@ -2717,12 +2724,30 @@ always @(ppu_oam_lut_tilex or ppu_tile_ctr_r) begin
   end
 end
 
+`endif
+
 reg         ppu_pix_oam_lut_found_r;
 reg  [3:0]  ppu_pix_oam_lut_match_r;
 reg  [7:0]  ppu_pix_oam_tile_num_r;
 reg  [7:0]  ppu_pix_oam_flag_r;
 reg  [7:0]  ppu_oam_obj_xpos_r;
 wire [3:0]  ppu_pix_obj_row = (ppu_scanline_r[3:0] - ppu_oam_lut_ypos_r[ppu_pix_oam_lut_match_r][3:0]) ^ {4{ppu_pix_oam_flag_r[6]}};
+
+`ifdef MK2
+wire oam_position_step = !cpu_ireset_r && ppu_dot_edge && DBG_advance;
+wire oam_position_write = oam_position_step && ppu_state_r==ST_PPU_OAM_POS
+  && !ppu_oam_lut_full && ppu_pix_phase_r && !DMA_active
+  && ppu_oam_data_r <= (ppu_scanline_r + 16)
+  && (ppu_scanline_r + 16) < (ppu_oam_data_r + (REG_LCDC_r[`LCDC_SP_SIZE] ? 16 : 8));
+gbc_oam_positions #(.SLOTS(`NUM_OAM_LUT)) oam_positions(.CLK(CLK),
+  .CLEAR(oam_position_step && ppu_state_r==ST_PPU_OAM_NEW),
+  .WRITE(oam_position_write), .WADDR(ppu_oam_lut_cnt_r[3:0]),
+  .DATA(ppu_oam_rddata_r - (|ppu_oam_rddata_r ? 8'd8 : 8'd16)),
+  .CONSUME(oam_position_step && ppu_state_r==ST_PPU_PIX_OB2 && !ppu_pix_phase_r),
+  .CADDR(ppu_pix_oam_lut_match_r), .RADDR(ppu_pix_oam_lut_match_r),
+  .TILE(ppu_tile_ctr_r[4:0]), .Q(ppu_oam_position_q),
+  .FOUND(ppu_oam_lut_found), .MATCH(ppu_oam_lut_match));
+`endif
 
 reg         ppu_bgw_fifo_wr_req_r;
 reg  [4:0]  ppu_bgw_fifo_wr_req_index_r;
@@ -3253,7 +3278,9 @@ always @(posedge CLK) begin
           ppu_oam_address_r <= 0;
 
           // use -16 (instead of -8) in order to put the xpos before the dummy tile for empty entries
+`ifndef MK2
           for (ppu_write_i = 0; ppu_write_i < `NUM_OAM_LUT; ppu_write_i = ppu_write_i + 1) ppu_oam_lut_xpos_r[ppu_write_i] <= 0-16;
+`endif
 
           // initialize all entries to be invalid
           ppu_oam_lut_cnt_r <= 0;
@@ -3268,7 +3295,9 @@ always @(posedge CLK) begin
           if (~ppu_oam_lut_full & ppu_pix_phase_r & ~DMA_active) begin
             if (ppu_oam_data_r <= (ppu_scanline_r + 16) && (ppu_scanline_r + 16) < (ppu_oam_data_r + (REG_LCDC_r[`LCDC_SP_SIZE] ? 16 : 8))) begin
               ppu_oam_lut_ypos_r[ppu_oam_lut_cnt_r]  <= ppu_oam_data_r[3:0];
+`ifndef MK2
               ppu_oam_lut_xpos_r[ppu_oam_lut_cnt_r]  <= ppu_oam_rddata_r - (|ppu_oam_rddata_r ? 8 : 16);
+`endif
               ppu_oam_lut_index_r[ppu_oam_lut_cnt_r] <= ppu_oam_address_r[7:2];
 
               ppu_oam_lut_cnt_r <= ppu_oam_lut_cnt_r + 1;
@@ -3354,7 +3383,11 @@ always @(posedge CLK) begin
           ppu_pix_phase_r <= ~ppu_pix_phase_r;
         end
         ST_PPU_PIX_OB0 : begin
+`ifdef MK2
+          ppu_oam_obj_xpos_r <= ppu_oam_position_q;
+`else
           ppu_oam_obj_xpos_r <= ppu_oam_lut_xpos_r[ppu_pix_oam_lut_match_r];
+`endif
 
           ppu_oam_address_r <= {ppu_oam_address_r[7:1],1'b1};
 
@@ -3385,7 +3418,9 @@ always @(posedge CLK) begin
           ppu_vram_address_r <= {ppu_vram_address_r[12:1],1'b1};
 
           // clear match for second phase
+`ifndef MK2
           if (~ppu_pix_phase_r) ppu_oam_lut_xpos_r[ppu_pix_oam_lut_match_r] <= 0-16;
+`endif
 
           if (ppu_pix_phase_r) begin
             // get address of next match

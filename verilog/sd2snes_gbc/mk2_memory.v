@@ -1,4 +1,34 @@
 `timescale 1ns/1ps
+// Sprite positions are inserted once and invalidated after use. Keep the
+// original $f0 sentinel using a validity bit, instead of writing eight bits
+// on every clear/consume. Lookup order and combinational latency are unchanged.
+module gbc_oam_positions #(parameter SLOTS=10)(input CLK, CLEAR, WRITE, CONSUME,
+  input [3:0] WADDR, CADDR, RADDR, input [7:0] DATA, input [4:0] TILE,
+  output [7:0] Q, output reg FOUND, output reg [3:0] MATCH);
+  wire [SLOTS*8-1:0] positions;
+  genvar slot;
+  generate for(slot=0;slot<SLOTS;slot=slot+1) begin : g_slot
+    reg [7:0] xpos;
+    reg valid=0;
+    wire write_here=WRITE && WADDR==slot;
+    wire consume_here=CONSUME && CADDR==slot;
+    always @(posedge CLK) begin
+      if(write_here) xpos<=DATA;
+      valid<=!consume_here && (write_here || (!CLEAR && valid));
+    end
+    assign positions[slot*8 +: 8]=valid ? xpos : 8'hf0;
+  end endgenerate
+  assign Q=positions[RADDR*8 +: 8];
+  integer lookup;
+  always @(positions or TILE) begin
+    MATCH=4'hf; FOUND=0;
+    for(lookup=0;lookup<SLOTS;lookup=lookup+1)
+      if(positions[lookup*8+3 +: 5]==TILE && !FOUND) begin
+        MATCH=lookup; FOUND=1;
+      end
+  end
+endmodule
+
 // Per-row enables avoid a variable bit write becoming a wide feedback mux.
 // Preserve the original procedural priority even when C6_OFF, ROW_DONE,
 // thaw and a delayed SRAM commit coincide on one clock.

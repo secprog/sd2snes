@@ -36,6 +36,7 @@ extra.write_text("(* blackbox *) module BUFGP(input I, output O); endmodule\n")
 run("read", ["read_verilog -lib +/xilinx/cells_sim.v +/xilinx/cells_xtra.v",
              "read_verilog -lib " + " ".join(map(quote, wrappers + [extra])),
              "read_verilog " + quote(netlist), "hierarchy -top main",
+             "blackbox =A:whitebox",
              "write_json " + quote(report / "native.json")])
 native = json.loads((report / "native.json").read_text())["modules"]["main"]
 native_counts = Counter(c["type"] for c in native["cells"].values())

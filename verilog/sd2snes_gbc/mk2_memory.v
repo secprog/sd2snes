@@ -213,7 +213,7 @@ module gbc_pixel_ram #(parameter WIDTH=4)(input CLK, WE,
 endmodule
 
 // 18 rows of 20 dirty cells. Even/odd rows have separate dual-port LUT RAMs:
-// the producer can set one cell while the SNES reads both rows
+// the producer can read-modify-write one row while the SNES reads both rows
 // touched by a packed status byte. Tags give every row an immediate all-zero
 // or all-one default after reset/restart/ROW_DONE, without resetting the RAM.
 // SET wins over CLEAR, including a simultaneous update of that same row.
@@ -223,12 +223,11 @@ module c6_dirty_ram(input CLK, RST, ALL, SET, input [4:0] ROW, COL,
   wire [17:0] clear_rows = CLEAR | {18{RST}};
   wire set_ok = SET && ROW < 18 && COL < 20;
   wire [17:0] set_rows = set_ok ? (18'd1 << ROW) : 18'd0;
-  wire [39:0] read_q;
-  // A set only changes one bit of a materialized row. On the first set after
-  // a tag clear, initialize all columns to the row's default on that clock.
-  // This removes the 20-bit read/modify/write feedback and parity mux.
-  wire initialize_row = clear_rows[ROW] || !valid[ROW];
-  wire fill_one = !clear_rows[ROW] && default_one[ROW];
+  wire [19:0] col_mask = 20'd1 << COL;
+  wire [39:0] write_q, read_q;
+  wire [19:0] old_word = write_q[ROW[0]*20 +: 20];
+  wire [19:0] base_word = clear_rows[ROW] ? 20'd0
+                       : valid[ROW] ? old_word : {20{default_one[ROW]}};
 
   // Five status bytes contain exactly two 20-cell rows. A small constant
   // lookup avoids a divider and reads one even/odd pair in parallel.
@@ -276,17 +275,15 @@ module c6_dirty_ram(input CLK, RST, ALL, SET, input [4:0] ROW, COL,
   wire high_valid = read_sel[2:0] < 2 ? even_valid : odd_valid;
   wire low_default = read_sel[2:0] < 3 ? even_default : odd_default;
   wire high_default = read_sel[2:0] < 2 ? even_default : odd_default;
-  genvar parity, column;
+  genvar parity;
   generate
     for(parity=0; parity<2; parity=parity+1) begin : g_rows
-      for(column=0; column<20; column=column+1) begin : g_column
-        (* ram_style = "distributed" *) reg cells [0:8];
-        wire selected = COL==column;
-        always @(posedge CLK)
-          if(set_ok && !ALL && ROW[0]==parity && (initialize_row || selected))
-            cells[ROW[4:1]] <= selected || fill_one;
-        assign read_q[parity*20+column] = cells[pair_index];
-      end
+      (* ram_style = "distributed" *) reg [19:0] rows [0:8];
+      always @(posedge CLK)
+        if(set_ok && !ALL && ROW[0] == parity)
+          rows[ROW[4:1]] <= base_word | col_mask;
+      assign write_q[parity*20 +: 20] = rows[ROW[4:1]];
+      assign read_q[parity*20 +: 20] = rows[pair_index];
     end
   endgenerate
   always @(posedge CLK) begin

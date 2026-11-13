@@ -6,6 +6,8 @@ module gbc_snapshot_tb;
   reg [23:0] ADDR=0;
   reg [7:0] DIN=0, LCDC=8'h87;
   reg FB_ACK=0, PIXEL=0;
+  reg VWE=0, VBANK=0;
+  reg [12:0] VADDR=0;
   reg [7:0] PX_X=0,PX_Y=0;
   wire [7:0] DOUT, OADDR;
   wire [6:0] CADDR;
@@ -15,7 +17,7 @@ module gbc_snapshot_tb;
   reg [7:0] shown_oam[0:159], shown_cram[0:127];
   reg [7:0] shown_lcdc;
   reg shown_compat;
-  integer frame, i, checks=0, seq_expected=0;
+  integer frame, i, checks=0, seq_expected=0, seed=32'h4319eb7;
 
   gbc_bridge dut(.CLK(CLK),.RST(RST),.SNES_WR_end(WR),.SNES_ADDR(ADDR),
     .DATA_IN(DIN),.VIEW_ENABLE(VIEW),.EF_ENABLE(EF),.DATA_OUT(DOUT),
@@ -23,7 +25,7 @@ module gbc_snapshot_tb;
     .STARVATION(16'd0),.DILATION(16'd0),.P1I(2'b11),
     .PPU_DOT_EDGE(1'b0),.PPU_VSYNC_EDGE(1'b0),.LCD_ON(1'b1),.COMPAT(COMPAT),
     .C6_PX_VALID(PIXEL),.C6_PX_X(PX_X),.C6_PX_Y(PX_Y),.C6_PX_BGR(15'd0),
-    .TAP_VRAM_WE(1'b0),.TAP_VRAM_BANK(1'b0),.TAP_VRAM_ADDR(13'd0),
+    .TAP_VRAM_WE(VWE),.TAP_VRAM_BANK(VBANK),.TAP_VRAM_ADDR(VADDR),
     .TAP_OAM_WE(1'b0),.TAP_CRAM_WE(1'b0),.TAP_CRAM_IDX(7'd0),.TAP_CRAM_DATA(8'd0),
     .TAP_LY0(LY0),.TAP_VBLANK(1'b0),.TAP_LY(8'd0),.TAP_LCDC(LCDC),
     .TAP_SCX(8'd0),.TAP_SCY(8'd0),.TAP_WX(8'd0),.TAP_WY(8'd0),
@@ -40,6 +42,26 @@ module gbc_snapshot_tb;
     if(OREQ) ODATA <= live_oam[OADDR];
     if(CREQ) CDATA <= live_cram[CADDR];
   end
+  // Independent original whole-vector CHR and OBJ accumulators. In
+  // particular, writes on COMMIT belong to the NEXT published frame.
+  reg [47:0] chr_acc=0, chr_pub=0;
+  reg [31:0] obj_acc=0, obj_pub=0;
+  reg gold_busy=0;
+  wire [47:0] chr_set=(VWE && VADDR<13'h1800)
+                     ? (48'd1 << (24*VBANK+(VADDR/256))) : 48'd0;
+  wire [31:0] obj_set=(VWE && VADDR<13'h1000)
+                     ? (32'd1 << (16*VBANK+(VADDR/256))) : 32'd0;
+  always @(posedge CLK) begin
+    if(RST) begin
+      chr_acc<=0; chr_pub<=0; obj_acc<=0; obj_pub<=0; gold_busy<=0;
+    end else begin
+      if(EF && WR && ADDR[7:0]==2 && !gold_busy) begin
+        chr_pub<=chr_acc; obj_pub<=obj_acc; chr_acc<=chr_set; obj_acc<=obj_set;
+      end else begin chr_acc<=chr_acc|chr_set; obj_acc<=obj_acc|obj_set; end
+      if(EF && WR && ADDR[7:0]==2) gold_busy<=1;
+      if(EF && WR && ADDR[7:0]==5) gold_busy<=0;
+    end
+  end
   task tick;
     begin #4; CLK=1; #1; CLK=0; #5; end
   endtask
@@ -54,6 +76,13 @@ module gbc_snapshot_tb;
   endtask
   task command(input [7:0] a);
     begin VIEW=0; EF=1; ADDR={16'hef00,a}; WR=1; tick; WR=0; EF=0; end
+  endtask
+  task read_dirty;
+    integer n;
+    begin
+      for(n=0;n<6;n=n+1) read_status(24'he20210+n,chr_pub>>(8*n));
+      for(n=0;n<4;n=n+1) read_status(24'he20216+n,obj_pub>>(8*n));
+    end
   endtask
   task read_byte(input [23:0] a, input [7:0] expected);
     begin
@@ -203,6 +232,25 @@ module gbc_snapshot_tb;
     read_status(24'he20263,8'hff);
     read_status(24'he20292,8'hff);
     $display("PASS: complete C6 bridge prepare/ready/release and mixed status latency");
+    // One-hot writes in every bank/block, including map-only addresses,
+    // reset, repeated COMMIT, and a write concurrent with the first COMMIT.
+    for(i=0;i<64;i=i+1) begin
+      RST=1; tick; RST=0;
+      VWE=1; VBANK=i/32; VADDR=(i%32)*256+255; tick;
+      command(2); read_dirty;
+      command(2); VWE=0; read_dirty; // busy: publish must remain unchanged
+      command(5); command(2); read_dirty;
+      command(5); command(2); read_dirty; // now empty
+    end
+    for(i=0;i<2000;i=i+1) begin
+      VWE=$random(seed); VBANK=$random(seed); VADDR=$random(seed);
+      if(i%11==0) command(2);
+      else if(i%13==0) command(5);
+      else tick;
+      if(i%7==0) read_dirty;
+    end
+    VWE=0;
+    $display("PASS: shared CHR/OBJ dirt matches independent published vectors across all blocks and commit collisions");
     $finish;
   end
 endmodule

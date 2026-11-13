@@ -1087,17 +1087,20 @@ wire [7:0]  set_misc = {3'b000, snap_msel, 1'b0, snap_regs, snap_cram, snap_oam}
 wire        commit_swap = wr_commit & ~busy_r;
 
 `ifdef MK2
-wire [7:0] dirty_chr_byte, dirty_obj_byte, dirty_map_byte;
+wire [7:0] dirty_chr_byte, dirty_map_byte;
 wire [7:0] dirty_chr_offset=SNES_ADDR[7:0]-8'h10;
-wire [7:0] dirty_obj_offset=SNES_ADDR[7:0]-8'h16;
 wire [7:0] dirty_map_offset=SNES_ADDR[7:0]-8'h1a;
 wire [2:0] dirty_chr_page={1'b0,TAP_VRAM_ADDR[12:11]} + (TAP_VRAM_BANK ? 3'd3 : 3'd0);
+// OBJ is exactly the first sixteen CHR blocks in each VRAM bank. Both
+// accumulators have the same reset and COMMIT boundary, so their bits never
+// differ. Serve OBJ's four bytes from CHR pages 0,1,3,4 instead of storing
+// and publishing the same information twice.
+wire [2:0] dirty_chr_read_page = (SNES_ADDR[7:1]==7'h0b) ? {2'b00,SNES_ADDR[0]}
+                               : (SNES_ADDR[7:1]==7'h0c) ? (SNES_ADDR[0] ? 3'd4 : 3'd3)
+                               : dirty_chr_offset[2:0];
 gbc_dirty_pages #(.PAGES(6)) chr_dirty(.CLK(CLK),.RST(RST),.SWAP(commit_swap),
   .ALL(1'b0),.SET(d_chr_hit),.WPAGE(dirty_chr_page),.BIT(TAP_VRAM_ADDR[10:8]),
-  .RPAGE(dirty_chr_offset[2:0]),.Q(dirty_chr_byte));
-gbc_dirty_pages #(.PAGES(4)) obj_dirty(.CLK(CLK),.RST(RST),.SWAP(commit_swap),
-  .ALL(1'b0),.SET(d_obj_hit),.WPAGE({1'b0,TAP_VRAM_BANK,TAP_VRAM_ADDR[11]}),
-  .BIT(TAP_VRAM_ADDR[10:8]),.RPAGE(dirty_obj_offset[2:0]),.Q(dirty_obj_byte));
+  .RPAGE(dirty_chr_read_page),.Q(dirty_chr_byte));
 gbc_dirty_pages #(.PAGES(8)) map_dirty(.CLK(CLK),.RST(RST),.SWAP(commit_swap),
   .ALL(snap_msel),.SET(d_map_hit),.WPAGE(TAP_VRAM_ADDR[10:8]),
   .BIT(TAP_VRAM_ADDR[7:5]),.RPAGE(dirty_map_offset[2:0]),.Q(dirty_map_byte));
@@ -1482,7 +1485,7 @@ always @(*) begin
     8'h0F:   status_byte = seq_r[15:8];
 `ifdef MK2
     8'h10,8'h11,8'h12,8'h13,8'h14,8'h15: status_byte=dirty_chr_byte;
-    8'h16,8'h17,8'h18,8'h19: status_byte=dirty_obj_byte;
+    8'h16,8'h17,8'h18,8'h19: status_byte=dirty_chr_byte;
     8'h1a,8'h1b,8'h1c,8'h1d,8'h1e,8'h1f,8'h20,8'h21: status_byte=dirty_map_byte;
 `else
     8'h10:   status_byte = dirty_chr_pub_r[7:0];

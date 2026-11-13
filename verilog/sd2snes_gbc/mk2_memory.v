@@ -1,4 +1,23 @@
 `timescale 1ns/1ps
+// Wave RAM has two asynchronous readers and one CPU write address. A validity
+// bit per byte restores the exact SGB2 reset pattern immediately, while the
+// payload remains in LUT RAM. Disabling the APU does not clear the contents.
+module gbc_wave_ram(input CLK, RST, WE, input [3:0] CPU_ADDR, WAVE_ADDR,
+                    input [7:0] DATA, output [7:0] CPU_Q, WAVE_Q);
+  (* ram_style="distributed" *) reg [7:0] bytes [0:15];
+  reg [15:0] valid;
+  localparam [127:0] RESET_BYTES=128'h9f00ff08ff0257007f006608df04f708;
+  always @(posedge CLK) if(WE && !RST) bytes[CPU_ADDR]<=DATA;
+  genvar byte_index;
+  generate for(byte_index=0;byte_index<16;byte_index=byte_index+1) begin : g_byte
+    always @(posedge CLK)
+      if(RST) valid[byte_index]<=0;
+      else if(WE && CPU_ADDR==byte_index) valid[byte_index]<=1;
+  end endgenerate
+  assign CPU_Q=valid[CPU_ADDR] ? bytes[CPU_ADDR] : RESET_BYTES[CPU_ADDR*8 +: 8];
+  assign WAVE_Q=valid[WAVE_ADDR] ? bytes[WAVE_ADDR] : RESET_BYTES[WAVE_ADDR*8 +: 8];
+endmodule
+
 // Double-buffered page dirt. COMMIT swaps the published/live banks, and a
 // simultaneous write belongs to the new live bank. Per-byte validity clears
 // a bank immediately without clearing RAM; ALL supplies an all-one default.

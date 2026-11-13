@@ -75,6 +75,33 @@ module gbc_command_actual(input CLK2, input [23:0] SNES_ADDR_IN,
         # Compile the production read function AND its actual sequential call
         # sites, including OPR_I holds. The test oracle is the old flat table.
         cpu = (root / "verilog/sd2snes_gbc/sgb_cpu.v").read_text()
+        # Exercise the production wave-memory gate/instance and sample latch.
+        # The independent oracle retains the old register-array reset/write
+        # behavior, including simultaneous reset, write and APU sample reads.
+        wave_start = cpu.index("wire apu_wave_write =")
+        wave_end = cpu.index("`else", wave_start)
+        wave_sample = re.search(r"  if \(apu_wave_sample_update_r\)[^;]+;", cpu)[0]
+        wave_source = Path(tmp) / "wave_actual.v"
+        wave_source.write_text('''
+`define NR52_CONTROL_ENABLE 7:7
+module gbc_wave_actual(input CLK,cpu_ireset_r,REG_req_val,REG_req_dbg,
+ input [7:0] REG_NR52_r, input apu_wave_enable_r,
+ input [7:0] REG_address,REG_req_data, input [4:0] apu_wave_pos_r,
+ input apu_wave_sample_update_r, output [7:0] cpu_q,apu_q, output [3:0] sample);
+ wire [7:0] reg_wave_cpu_data,reg_wave_apu_data;
+ reg [3:0] apu_wave_sample_r;
+ assign cpu_q=reg_wave_cpu_data; assign apu_q=reg_wave_apu_data;
+ assign sample=apu_wave_sample_r;
+''' + cpu[wave_start:wave_end] + "\nalways @(posedge CLK) begin\n"
+            + wave_sample + "\nend\nendmodule\n")
+        wave = Path(tmp) / "wave.vvp"
+        compile_wave = [args.iverilog, "-g2012", "-s", "gbc_wave_ram_tb", "-o", str(wave),
+                        str(wave_source), str(root / "tests/rtl/gbc_wave_ram_tb.v"),
+                        str(root / "verilog/sd2snes_gbc/mk2_memory.v")]
+        if args.ivl_base:
+            compile_wave += ["-B", args.ivl_base]
+        subprocess.run(compile_wave, check=True)
+        subprocess.run([args.vvp, str(wave)], check=True, timeout=60)
         # Exhaust every input to the production APU period expressions against
         # the original shifts, including NR43's otherwise inactive high shifts.
         sweep_start = cpu.index("reg  [10:0] apu_square1_sweep_freq_r;")

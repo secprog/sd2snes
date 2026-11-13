@@ -49,6 +49,9 @@ volume settings and I2S pins against the original SGB implementation, with
 jitter and resets. The clock test also checks the CE1 scheduling bound.
 Mk.II APU period shifters use spare multiplier blocks; exhaustive hosted
 checks cover every sweep-frequency/control and noise-period input.
+Mk.II wave audio uses dual-port LUT RAM with per-byte validity. CPU reset
+restores the same sixteen SGB2 bytes immediately; both asynchronous readers,
+the existing write gate and read-before-write sample behavior are preserved.
 
 Mk.II status
 ------------

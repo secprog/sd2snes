@@ -621,7 +621,10 @@ reg [7:0]   REG_NR50_r; // FF24
 reg [7:0]   REG_NR51_r; // FF25
 reg [7:0]   REG_NR52_r; // FF26
 
+`ifndef MK2
 reg [7:0]   REG_WAV_r[15:0]; // FF30-FF3F
+`endif
+wire [7:0]  reg_wave_cpu_data, reg_wave_apu_data;
 
 // PPU
 reg [7:0]   REG_LCDC_r; // FF40
@@ -1154,22 +1157,22 @@ always @(posedge CLK) begin
           8'h25: reg_mdr_r[7:0] <= REG_NR51_r;
           8'h26: reg_mdr_r[7:0] <= {REG_NR52_r[7:7],3'h7,({4{REG_NR52_r[7]}} & {APU_REG_enable})};
 
-          8'h30: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : REG_WAV_r[reg_addr_r[3:0]][7:0];
-          8'h31: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : REG_WAV_r[reg_addr_r[3:0]][7:0];
-          8'h32: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : REG_WAV_r[reg_addr_r[3:0]][7:0];
-          8'h33: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : REG_WAV_r[reg_addr_r[3:0]][7:0];
-          8'h34: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : REG_WAV_r[reg_addr_r[3:0]][7:0];
-          8'h35: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : REG_WAV_r[reg_addr_r[3:0]][7:0];
-          8'h36: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : REG_WAV_r[reg_addr_r[3:0]][7:0];
-          8'h37: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : REG_WAV_r[reg_addr_r[3:0]][7:0];
-          8'h38: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : REG_WAV_r[reg_addr_r[3:0]][7:0];
-          8'h39: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : REG_WAV_r[reg_addr_r[3:0]][7:0];
-          8'h3A: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : REG_WAV_r[reg_addr_r[3:0]][7:0];
-          8'h3B: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : REG_WAV_r[reg_addr_r[3:0]][7:0];
-          8'h3C: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : REG_WAV_r[reg_addr_r[3:0]][7:0];
-          8'h3D: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : REG_WAV_r[reg_addr_r[3:0]][7:0];
-          8'h3E: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : REG_WAV_r[reg_addr_r[3:0]][7:0];
-          8'h3F: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : REG_WAV_r[reg_addr_r[3:0]][7:0];
+          8'h30: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : reg_wave_cpu_data;
+          8'h31: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : reg_wave_cpu_data;
+          8'h32: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : reg_wave_cpu_data;
+          8'h33: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : reg_wave_cpu_data;
+          8'h34: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : reg_wave_cpu_data;
+          8'h35: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : reg_wave_cpu_data;
+          8'h36: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : reg_wave_cpu_data;
+          8'h37: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : reg_wave_cpu_data;
+          8'h38: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : reg_wave_cpu_data;
+          8'h39: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : reg_wave_cpu_data;
+          8'h3A: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : reg_wave_cpu_data;
+          8'h3B: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : reg_wave_cpu_data;
+          8'h3C: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : reg_wave_cpu_data;
+          8'h3D: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : reg_wave_cpu_data;
+          8'h3E: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : reg_wave_cpu_data;
+          8'h3F: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : reg_wave_cpu_data;
 
           8'h40: begin reg_mdr_r[7:0] <= REG_LCDC_r;                    if (reg_wr_r) REG_LCDC_r[7:0] <= reg_wr_data_r[7:0]; end
           8'h41: begin reg_mdr_r[7:0] <= {1'b1,REG_STAT_r[6:0]};        if (reg_wr_r) REG_STAT_r[7:3] <= reg_wr_data_r[7:3]; end
@@ -3638,6 +3641,18 @@ reg  [3:0]  apu_wave_sample_r;
 reg  [3:0]  apu_wave_data_r;
 //reg  [4:0]  apu_wave_data_shifted_r;
 reg  [3:0]  apu_wave_data_shifted_r;
+`ifdef MK2
+// Preserve the existing register transaction gate, including blocked writes
+// while the wave channel is active and the current APU-off behavior.
+wire apu_wave_write = REG_req_val && REG_NR52_r[`NR52_CONTROL_ENABLE]
+                      && (~apu_wave_enable_r | REG_req_dbg) && REG_address[7:4]==4'h3;
+gbc_wave_ram wave_ram(.CLK(CLK), .RST(cpu_ireset_r), .WE(apu_wave_write),
+  .CPU_ADDR(REG_address[3:0]), .WAVE_ADDR(apu_wave_pos_r[4:1]),
+  .DATA(REG_req_data), .CPU_Q(reg_wave_cpu_data), .WAVE_Q(reg_wave_apu_data));
+`else
+assign reg_wave_cpu_data = REG_WAV_r[reg_addr_r[3:0]];
+assign reg_wave_apu_data = REG_WAV_r[apu_wave_pos_r[4:1]];
+`endif
 wire [11:0] apu_wave_period = {REG_NR34_r[`NR34_FREQ_MSB],REG_NR33_r[`NR33_FREQ_LSB],1'b0};
 wire [4:0] apu_wave_output = (apu_wave_enable_r & |REG_NR32_r[`NR32_LEVEL]) ? {apu_wave_data_shifted_r,1'b0} : 5'h00;
 
@@ -3713,7 +3728,7 @@ always @(posedge CLK) begin
   endcase
 
   apu_wave_sample_update_r <= 0;
-  if (apu_wave_sample_update_r) apu_wave_sample_r <= apu_wave_pos_r[0] ? REG_WAV_r[apu_wave_pos_r[4:1]][3:0] : REG_WAV_r[apu_wave_pos_r[4:1]][7:4];
+  if (apu_wave_sample_update_r) apu_wave_sample_r <= apu_wave_pos_r[0] ? reg_wave_apu_data[3:0] : reg_wave_apu_data[7:4];
 
   if (cpu_ireset_r | ~REG_NR52_r[`NR52_CONTROL_ENABLE]) begin
     REG_NR10_r    <= 8'h00; // FF10
@@ -3745,6 +3760,7 @@ always @(posedge CLK) begin
     REG_NR52_r    <= 8'h00; // FF26
 
     // RT1 uses uninitialized WAV RAM data.  One possible set of SGB2 values used.
+`ifndef MK2
     if (cpu_ireset_r) begin
       REG_WAV_r[0]  <= 8'h08;//8'hAC;
       REG_WAV_r[1]  <= 8'hF7;//8'hDD;
@@ -3763,6 +3779,7 @@ always @(posedge CLK) begin
       REG_WAV_r[14] <= 8'h00;//8'hDA;
       REG_WAV_r[15] <= 8'h9F;//8'h48;
     end
+`endif
 
     apu_frame_step_r <= 0;
 
@@ -4108,8 +4125,10 @@ always @(posedge CLK) begin
         8'h25: REG_NR51_r[7:0] <= REG_req_data[7:0];
         8'h26: {REG_NR52_r[7:7],REG_NR52_r[3:0]} <= {REG_req_data[7:7],REG_req_data[3:0]};
 
+`ifndef MK2
         8'h30, 8'h31, 8'h32, 8'h33, 8'h34, 8'h35, 8'h36, 8'h37,
         8'h38, 8'h39, 8'h3A, 8'h3B, 8'h3C, 8'h3D, 8'h3E, 8'h3F: if (~apu_wave_enable_r | REG_req_dbg) REG_WAV_r[REG_address[3:0]] <= REG_req_data;
+`endif
 
       endcase
     end

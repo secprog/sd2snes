@@ -356,6 +356,244 @@ wire [7:0] ss_wa = DP_ADDR[7:0];
 wire [7:0] ss_wd = DI;
 `endif
 wire [3:0] ss_wstk_idx = (ss_wa - 8'h34) >> 1;
+`ifdef MK2
+`ifdef DSP_COMP
+// Decode the address at the existing restore capture edge; retain the original strobe and data pipeline.
+wire [15:0] stack_addr_word_q;
+reg [15:0] stack_restore_permit;
+dspx_stack_restore_address_decoder stack_restore_addr(
+  .CLK(CLK), .addr(DP_ADDR[7:0]), .word(stack_addr_word_q)
+);
+always @* begin
+  stack_restore_permit = 16'h0000;
+  if(ss_wr) begin
+    if(stack_addr_word_q[0]) stack_restore_permit[0] = 1'b1;
+    if(stack_addr_word_q[1]) stack_restore_permit[1] = 1'b1;
+    if(stack_addr_word_q[2]) stack_restore_permit[2] = 1'b1;
+    if(stack_addr_word_q[3]) stack_restore_permit[3] = 1'b1;
+    if(stack_addr_word_q[4]) stack_restore_permit[4] = 1'b1;
+    if(stack_addr_word_q[5]) stack_restore_permit[5] = 1'b1;
+    if(stack_addr_word_q[6]) stack_restore_permit[6] = 1'b1;
+    if(stack_addr_word_q[7]) stack_restore_permit[7] = 1'b1;
+    if(stack_addr_word_q[8]) stack_restore_permit[8] = 1'b1;
+    if(stack_addr_word_q[9]) stack_restore_permit[9] = 1'b1;
+    if(stack_addr_word_q[10]) stack_restore_permit[10] = 1'b1;
+    if(stack_addr_word_q[11]) stack_restore_permit[11] = 1'b1;
+    if(stack_addr_word_q[12]) stack_restore_permit[12] = 1'b1;
+    if(stack_addr_word_q[13]) stack_restore_permit[13] = 1'b1;
+    if(stack_addr_word_q[14]) stack_restore_permit[14] = 1'b1;
+    if(stack_addr_word_q[15]) stack_restore_permit[15] = 1'b1;
+  end
+end
+always @(posedge CLK) begin
+  if(RST & ~ss_frozen) begin
+    if(push_now) begin
+      if(regs_sp == 4'd0) stack[0] <= pc + 1;
+    end
+  end else if(RST & ss_frozen) begin
+    if(stack_restore_permit[0]) begin
+      if(ss_wa[0]) stack[0][10:8] <= ss_wd[2:0];
+      else         stack[0][7:0] <= ss_wd;
+    end
+  end
+end
+
+always @(posedge CLK) begin
+  if(RST & ~ss_frozen) begin
+    if(push_now) begin
+      if(regs_sp == 4'd1) stack[1] <= pc + 1;
+    end
+  end else if(RST & ss_frozen) begin
+    if(stack_restore_permit[1]) begin
+      if(ss_wa[0]) stack[1][10:8] <= ss_wd[2:0];
+      else         stack[1][7:0] <= ss_wd;
+    end
+  end
+end
+
+always @(posedge CLK) begin
+  if(RST & ~ss_frozen) begin
+    if(push_now) begin
+      if(regs_sp == 4'd2) stack[2] <= pc + 1;
+    end
+  end else if(RST & ss_frozen) begin
+    if(stack_restore_permit[2]) begin
+      if(ss_wa[0]) stack[2][10:8] <= ss_wd[2:0];
+      else         stack[2][7:0] <= ss_wd;
+    end
+  end
+end
+
+always @(posedge CLK) begin
+  if(RST & ~ss_frozen) begin
+    if(push_now) begin
+      if(regs_sp == 4'd3) stack[3] <= pc + 1;
+    end
+  end else if(RST & ss_frozen) begin
+    if(stack_restore_permit[3]) begin
+      if(ss_wa[0]) stack[3][10:8] <= ss_wd[2:0];
+      else         stack[3][7:0] <= ss_wd;
+    end
+  end
+end
+
+always @(posedge CLK) begin
+  if(RST & ~ss_frozen) begin
+    if(push_now) begin
+      if(regs_sp == 4'd4) stack[4] <= pc + 1;
+    end
+  end else if(RST & ss_frozen) begin
+    if(stack_restore_permit[4]) begin
+      if(ss_wa[0]) stack[4][10:8] <= ss_wd[2:0];
+      else         stack[4][7:0] <= ss_wd;
+    end
+  end
+end
+
+always @(posedge CLK) begin
+  if(RST & ~ss_frozen) begin
+    if(push_now) begin
+      if(regs_sp == 4'd5) stack[5] <= pc + 1;
+    end
+  end else if(RST & ss_frozen) begin
+    if(stack_restore_permit[5]) begin
+      if(ss_wa[0]) stack[5][10:8] <= ss_wd[2:0];
+      else         stack[5][7:0] <= ss_wd;
+    end
+  end
+end
+
+always @(posedge CLK) begin
+  if(RST & ~ss_frozen) begin
+    if(push_now) begin
+      if(regs_sp == 4'd6) stack[6] <= pc + 1;
+    end
+  end else if(RST & ss_frozen) begin
+    if(stack_restore_permit[6]) begin
+      if(ss_wa[0]) stack[6][10:8] <= ss_wd[2:0];
+      else         stack[6][7:0] <= ss_wd;
+    end
+  end
+end
+
+always @(posedge CLK) begin
+  if(RST & ~ss_frozen) begin
+    if(push_now) begin
+      if(regs_sp == 4'd7) stack[7] <= pc + 1;
+    end
+  end else if(RST & ss_frozen) begin
+    if(stack_restore_permit[7]) begin
+      if(ss_wa[0]) stack[7][10:8] <= ss_wd[2:0];
+      else         stack[7][7:0] <= ss_wd;
+    end
+  end
+end
+
+always @(posedge CLK) begin
+  if(RST & ~ss_frozen) begin
+    if(push_now) begin
+      if(regs_sp == 4'd8) stack[8] <= pc + 1;
+    end
+  end else if(RST & ss_frozen) begin
+    if(stack_restore_permit[8]) begin
+      if(ss_wa[0]) stack[8][10:8] <= ss_wd[2:0];
+      else         stack[8][7:0] <= ss_wd;
+    end
+  end
+end
+
+always @(posedge CLK) begin
+  if(RST & ~ss_frozen) begin
+    if(push_now) begin
+      if(regs_sp == 4'd9) stack[9] <= pc + 1;
+    end
+  end else if(RST & ss_frozen) begin
+    if(stack_restore_permit[9]) begin
+      if(ss_wa[0]) stack[9][10:8] <= ss_wd[2:0];
+      else         stack[9][7:0] <= ss_wd;
+    end
+  end
+end
+
+always @(posedge CLK) begin
+  if(RST & ~ss_frozen) begin
+    if(push_now) begin
+      if(regs_sp == 4'd10) stack[10] <= pc + 1;
+    end
+  end else if(RST & ss_frozen) begin
+    if(stack_restore_permit[10]) begin
+      if(ss_wa[0]) stack[10][10:8] <= ss_wd[2:0];
+      else         stack[10][7:0] <= ss_wd;
+    end
+  end
+end
+
+always @(posedge CLK) begin
+  if(RST & ~ss_frozen) begin
+    if(push_now) begin
+      if(regs_sp == 4'd11) stack[11] <= pc + 1;
+    end
+  end else if(RST & ss_frozen) begin
+    if(stack_restore_permit[11]) begin
+      if(ss_wa[0]) stack[11][10:8] <= ss_wd[2:0];
+      else         stack[11][7:0] <= ss_wd;
+    end
+  end
+end
+
+always @(posedge CLK) begin
+  if(RST & ~ss_frozen) begin
+    if(push_now) begin
+      if(regs_sp == 4'd12) stack[12] <= pc + 1;
+    end
+  end else if(RST & ss_frozen) begin
+    if(stack_restore_permit[12]) begin
+      if(ss_wa[0]) stack[12][10:8] <= ss_wd[2:0];
+      else         stack[12][7:0] <= ss_wd;
+    end
+  end
+end
+
+always @(posedge CLK) begin
+  if(RST & ~ss_frozen) begin
+    if(push_now) begin
+      if(regs_sp == 4'd13) stack[13] <= pc + 1;
+    end
+  end else if(RST & ss_frozen) begin
+    if(stack_restore_permit[13]) begin
+      if(ss_wa[0]) stack[13][10:8] <= ss_wd[2:0];
+      else         stack[13][7:0] <= ss_wd;
+    end
+  end
+end
+
+always @(posedge CLK) begin
+  if(RST & ~ss_frozen) begin
+    if(push_now) begin
+      if(regs_sp == 4'd14) stack[14] <= pc + 1;
+    end
+  end else if(RST & ss_frozen) begin
+    if(stack_restore_permit[14]) begin
+      if(ss_wa[0]) stack[14][10:8] <= ss_wd[2:0];
+      else         stack[14][7:0] <= ss_wd;
+    end
+  end
+end
+
+always @(posedge CLK) begin
+  if(RST & ~ss_frozen) begin
+    if(push_now) begin
+      if(regs_sp == 4'd15) stack[15] <= pc + 1;
+    end
+  end else if(RST & ss_frozen) begin
+    if(stack_restore_permit[15]) begin
+      if(ss_wa[0]) stack[15][10:8] <= ss_wd[2:0];
+      else         stack[15][7:0] <= ss_wd;
+    end
+  end
+end
+`endif
+`endif
 always @(*) begin
   if (DP_ADDR[7:0] >= 8'h34 && DP_ADDR[7:0] <= 8'h53)
     ss_reg_do = DP_ADDR[0] ? {5'b0, ss_stk[10:8]}
@@ -540,7 +778,9 @@ always @(posedge CLK) begin
   if(RST & ~ss_frozen) begin
 `ifdef MK2
     push_now <= 1'b0;
+`ifndef DSP_COMP
     if(push_now) stack[regs_sp] <= pc + 1;
+`endif
 `endif
     case(insn_state)
       STATE_FETCH: begin
@@ -842,8 +1082,15 @@ always @(posedge CLK) begin
     // everything else is here. Mirrors the read mux offset map exactly.
     if(ss_wr) begin
       if(ss_wa >= 8'h34 && ss_wa <= 8'h53) begin
+`ifdef MK2
+`ifndef DSP_COMP
         if(ss_wa[0]) stack[ss_wstk_idx][10:8] <= ss_wd[2:0];
         else         stack[ss_wstk_idx][7:0]  <= ss_wd;
+`endif
+`else
+        if(ss_wa[0]) stack[ss_wstk_idx][10:8] <= ss_wd[2:0];
+        else         stack[ss_wstk_idx][7:0]  <= ss_wd;
+`endif
       end else case(ss_wa)
         8'h00: pc[7:0]          <= ss_wd;
         8'h01: pc[10:8]         <= ss_wd[2:0];
@@ -950,3 +1197,43 @@ always @(posedge CLK) begin
 end
 
 endmodule
+
+`ifdef MK2
+`ifdef DSP_COMP
+// Module-level control preserves this address-only capture stage.
+(* register_balancing="no" *)
+module dspx_stack_restore_address_decoder(
+  input CLK,
+  input [7:0] addr,
+  output reg [15:0] word
+);
+reg [15:0] word_d;
+wire [3:0] word_index = (addr - 8'h34) >> 1;
+initial word = 16'h0000;
+always @* begin
+  word_d = 16'h0000;
+  if(addr >= 8'h34 && addr <= 8'h53) begin
+    if(word_index == 4'd0) word_d[0] = 1'b1;
+    if(word_index == 4'd1) word_d[1] = 1'b1;
+    if(word_index == 4'd2) word_d[2] = 1'b1;
+    if(word_index == 4'd3) word_d[3] = 1'b1;
+    if(word_index == 4'd4) word_d[4] = 1'b1;
+    if(word_index == 4'd5) word_d[5] = 1'b1;
+    if(word_index == 4'd6) word_d[6] = 1'b1;
+    if(word_index == 4'd7) word_d[7] = 1'b1;
+    if(word_index == 4'd8) word_d[8] = 1'b1;
+    if(word_index == 4'd9) word_d[9] = 1'b1;
+    if(word_index == 4'd10) word_d[10] = 1'b1;
+    if(word_index == 4'd11) word_d[11] = 1'b1;
+    if(word_index == 4'd12) word_d[12] = 1'b1;
+    if(word_index == 4'd13) word_d[13] = 1'b1;
+    if(word_index == 4'd14) word_d[14] = 1'b1;
+    if(word_index == 4'd15) word_d[15] = 1'b1;
+  end
+end
+always @(posedge CLK) begin
+  word <= word_d;
+end
+endmodule
+`endif
+`endif

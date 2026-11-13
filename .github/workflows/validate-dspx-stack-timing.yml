@@ -1,149 +1,78 @@
-name: Validate DSPX stack repair and strict timing
+name: Validate DSPX combinational DMA decoder and strict timing
 on:
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
 concurrency:
-  group: dspx-stack-timing-${{ github.ref }}
+  group: dspx-dma-luts-${{ github.ref }}
   cancel-in-progress: false
-
 env:
   PYTHONDONTWRITEBYTECODE: '1'
   IGNORE_TIMING: '0'
-  BASELINE: 689f3a2a4006d4aff66e343bd12be772eedad190
-
+  BASELINE: 4d0199bf639629284546858b2b92abcd840b48a9
 jobs:
   proof:
-    name: Prove current DSPX stack integration and all changed state
+    name: Prove complete address module and unchanged state
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - name: Authenticate current source boundary before tools
+      - name: Authenticate exact address-only source change
         run: |
           set -euo pipefail
-          report="$RUNNER_TEMP/dspx-stack-only-proof"
+          report="$RUNNER_TEMP/dspx-dma-luts-proof"
           mkdir -p "$report"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test "$(git rev-parse "$BASELINE:verilog")" = c2e332a461e38c60b144e08ece1d62b949bb8db2
+          test "$(git rev-parse "$BASELINE:verilog")" = 893e807029df25af8263fd63fa71dadabf02b0d0
           git diff --name-only "$BASELINE" HEAD > "$report/changed-paths.txt"
-          printf '%s\n' .github/scripts/check-dspx-strict-timing.py .github/scripts/prepare-dspx-stack-only-proof.py \
-            .github/workflows/validate-dspx-stack-timing.yml verilog/sd2snes_dsp/upd77c25.v \
-            | LC_ALL=C sort > "$report/expected-changed-paths.txt"
+          printf '%s\n' .github/scripts/validate-dspx-dma-luts.py .github/workflows/validate-dspx-stack-timing.yml verilog/sd2snes_dsp/address.v | LC_ALL=C sort > "$report/expected-changed-paths.txt"
           cmp "$report/expected-changed-paths.txt" "$report/changed-paths.txt"
-          test "$(git hash-object --no-filters verilog/sd2snes_dsp/upd77c25.v)" = 6660fc95958e6eb0117d2018c1897257fb0b6cc2
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/address.v)" = 79d146a51085d97214049ed7bb306643aa3b9142
+          test "$(git hash-object --no-filters .github/scripts/validate-dspx-dma-luts.py)" = f0b456739a6ad2d3783d9cae07fd8bb3c5e07802
           test "$(git hash-object --no-filters .github/scripts/post-sync-evidence.py)" = fdb60667eb015c3769b2adc452864396ff64e9e7
           python3 .github/scripts/post-sync-evidence.py snapshot "$GITHUB_WORKSPACE" "$report/source-before"
           git diff "$BASELINE" HEAD -- verilog > "$report/production-change.diff"
           printf 'Source head: %s\nBaseline: %s\n' "$GITHUB_SHA" "$BASELINE" > "$report/identity.txt"
-      - name: Exercise strict report parser against setup, hold and constraint mutations
+      - name: Exercise strict timing and LUT evidence controls
         run: |
           set -euo pipefail
-          python3 .github/scripts/check-dspx-strict-timing.py --self-test "$RUNNER_TEMP/dspx-stack-only-proof/timing-parser-controls.json"
+          python3 .github/scripts/check-dspx-strict-timing.py --self-test "$RUNNER_TEMP/dspx-dma-luts-proof/strict-controls.json"
+          python3 .github/scripts/validate-dspx-dma-luts.py controls "$RUNNER_TEMP/dspx-dma-luts-proof/control-results"
       - name: Install and identify hosted proof tools
         run: |
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends yosys iverilog
-          report="$RUNNER_TEMP/dspx-stack-only-proof"
-          yosys -V | tee "$report/tool-version.txt"
-          grep -F 'Yosys 0.33 (git sha1 2584903a060)' "$report/tool-version.txt"
-          iverilog -V > "$report/iverilog-version.txt" 2>&1
-          grep -F 'Icarus Verilog version 12.0' "$report/iverilog-version.txt"
-      - name: Bind exact current source and prepare complete stack models
+          yosys -V | tee "$RUNNER_TEMP/dspx-dma-luts-proof/tool-version.txt"
+          grep -F 'Yosys 0.33 (git sha1 2584903a060)' "$RUNNER_TEMP/dspx-dma-luts-proof/tool-version.txt"
+          iverilog -V > "$RUNNER_TEMP/dspx-dma-luts-proof/iverilog-version.txt" 2>&1
+          grep -F 'Icarus Verilog version 12.0' "$RUNNER_TEMP/dspx-dma-luts-proof/iverilog-version.txt"
+      - name: Prove full module with binary and unknown inputs and actual counterexamples
         run: |
           set -euo pipefail
-          python3 .github/scripts/prepare-dspx-stack-only-proof.py "$RUNNER_TEMP/dspx-stack-only-proof"
-      - name: Audit all state bits and prove their observation ordering
-        run: |
-          set -euo pipefail
-          cd "$RUNNER_TEMP/dspx-stack-only-proof"
-          sha256sum --check SHA256SUMS
-          variants=(gold gate bad-data bad-run bad-restore bad-reset bad-push bad-strobe bad-lane bad-word bad-prefix bad-return bad-high-half bad-low-half bad-cpu-permit bad-x-call-data bad-x-restore-data bad-x-write-mask bad-x-address bad-x-high-address bad-x-cpu-guard)
-          for variant in "${variants[@]}"; do
-            mkdir "$variant"
-            cp "$variant.v" "$variant/model.v"
-            (
-              cd "$variant"
-              # Do not optimize away X-sensitive controls or dynamic memory
-              # semantics with opt_expr or the general memory pipeline.
-              yosys -l preparation.log -p 'read_verilog -sv -formal model.v; hierarchy -check -top stack_model; flatten; proc -ifx -noopt; check -assert; memory_memx; memory_collect; memory_map; dffunmap; setundef -undriven -undef; opt_clean; check -assert; write_json state.json'
-              model_name=gate
-              if [[ "$variant" == gold ]]; then model_name=gold; fi
-              python3 "$GITHUB_WORKSPACE/.github/scripts/cut-dsp-stack-case-state.py" \
-                state.json transition.json "$model_name" | tee state-audit.log
-              yosys -l state-view.log -p "read_json transition.json; hierarchy -check -top $model_name; sat -verify -enable_undef -prove state_view_ok 1 -show-inputs -show state_view_ok -timeout 180"
-              grep -F 'SAT proof finished - no model found: SUCCESS!' state-view.log
-              if [[ "$variant" == gold ]]; then
-                result=0
-                yosys -l state-view-mutant.log -p 'read_json state-view-mutant.json; hierarchy -check -top gold; sat -verify -enable_undef -set-def-inputs -prove state_view_ok 1 -show-inputs -show state_view_ok -dump_json state-view-mutant-counterexample.json -timeout 180' || result=$?
-                test "$result" -ne 0
-                grep -F 'SAT proof finished - model found: FAIL!' state-view-mutant.log
-                test -s state-view-mutant-counterexample.json
-              fi
-            )
-          done
-
-      - name: Prove strict state and reads and require real binary and X counterexamples
-        run: |
-          set -euo pipefail
-          cd "$RUNNER_TEMP/dspx-stack-only-proof"
-          for mode in binary xstate; do
-            if [[ "$mode" == binary ]]; then
-              variants=(gate bad-data bad-run bad-restore bad-reset bad-push bad-strobe bad-lane bad-word bad-prefix bad-return bad-high-half bad-low-half bad-cpu-permit bad-x-call-data bad-x-restore-data bad-x-write-mask bad-x-address bad-x-high-address bad-x-cpu-guard)
-              input_flags='-set-def-inputs'
-            else
-              variants=(bad-x-call-data bad-x-restore-data bad-x-write-mask bad-x-address bad-x-high-address bad-x-cpu-guard gate)
-              input_flags=''
-            fi
-            for variant in "${variants[@]}"; do
-              cat > "$variant/prove-$mode.ys" <<YOSYS
-          read_json ../gold/transition.json
-          read_json transition.json
-          miter -equiv -make_assert -make_outputs -make_outcmp gold gate miter
-          hierarchy -check -top miter
-          flatten -wb
-          hierarchy -check -top miter
-          opt_clean
-          check -assert
-          write_json miter-$mode.json
-          sat -verify -enable_undef $input_flags -prove-asserts -show-inputs -show-outputs -dump_json counterexample-$mode.json -timeout 300
-          YOSYS
-              result=0
-              (cd "$variant" && yosys -l "proof-$mode.log" -s "prove-$mode.ys") || result=$?
-              test -s "$variant/miter-$mode.json"
-              if [[ "$variant" == gate || ( "$variant" == bad-x-* && "$mode" == binary ) ]]; then
-                test "$result" -eq 0
-                grep -F 'SAT proof finished - no model found: SUCCESS!' "$variant/proof-$mode.log"
-              else
-                test "$result" -ne 0
-                grep -F 'SAT proof finished - model found: FAIL!' "$variant/proof-$mode.log"
-                test -s "$variant/counterexample-$mode.json"
-              fi
-            done
-          done
-          sha256sum --check SHA256SUMS
-          printf 'Fresh current-baseline stack-only decoder component proof: all176 stack transitions and both reads match for common binary and unrestricted Yosys-X state/inputs; thirteen binary and six binary-equivalent X mutations produced counterexamples. Component proof only; the dependent native job independently checks actual timing. No whole-FPGA equivalence or hardware result.\n' \
-            | tee verified.txt >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Require unchanged full proof checkout and index
+          python3 .github/scripts/validate-dspx-dma-luts.py proof "$RUNNER_TEMP/dspx-dma-luts-proof"
+          (cd "$RUNNER_TEMP/dspx-dma-luts-proof" && sha256sum --check SHA256SUMS)
+          cat "$RUNNER_TEMP/dspx-dma-luts-proof/verified.txt" >> "$GITHUB_STEP_SUMMARY"
+      - name: Require unchanged proof checkout and index
         if: always()
         run: |
           set -euo pipefail
-          report="$RUNNER_TEMP/dspx-stack-only-proof"
+          report="$RUNNER_TEMP/dspx-dma-luts-proof"
           python3 .github/scripts/post-sync-evidence.py snapshot "$GITHUB_WORKSPACE" "$report/source-after"
           cmp "$report/source-before.json" "$report/source-after.json"
           cmp "$report/source-before-index.txt" "$report/source-after-index.txt"
-      - name: Retain complete proof models, state audits, miters and witnesses
+      - name: Retain complete models, miters, state and counterexample evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: dspx-stack-only-proof
-          path: ${{ runner.temp }}/dspx-stack-only-proof/
+          name: dspx-dma-luts-proof
+          path: ${{ runner.temp }}/dspx-dma-luts-proof/
           if-no-files-found: error
           retention-days: 14
+
 
   native:
     name: Build one strict DSPX implementation with unchanged constraints
@@ -156,7 +85,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/download-artifact@v4
         with:
-          name: dspx-stack-only-proof
+          name: dspx-dma-luts-proof
           path: ${{ runner.temp }}/accepted-proof/
       - name: Bind native checkout to this run's successful proof
         run: |
@@ -164,13 +93,21 @@ jobs:
           report="$RUNNER_TEMP/dspx-native"
           mkdir -p "$report"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test "$(git hash-object --no-filters verilog/sd2snes_dsp/upd77c25.v)" = 6660fc95958e6eb0117d2018c1897257fb0b6cc2
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/main.v)" = 82c29e4d6a6b3a3f894d810bbc69e3fd9915b019
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/upd77c25.v)" = 0374661e4196db07b7206ff31b691004cfb53f74
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/address.v)" = 79d146a51085d97214049ed7bb306643aa3b9142
           test -s "$RUNNER_TEMP/accepted-proof/verified.txt"
           (cd "$RUNNER_TEMP/accepted-proof" && sha256sum --check SHA256SUMS)
           python3 .github/scripts/post-sync-evidence.py snapshot "$GITHUB_WORKSPACE" "$report/source-before"
           cmp "$report/source-before.json" "$RUNNER_TEMP/accepted-proof/source-before.json"
           cmp "$report/source-before-index.txt" "$RUNNER_TEMP/accepted-proof/source-before-index.txt"
           printf 'Source head: %s\nIGNORE_TIMING=0\nDefault DSPX MAP/PAR cost table=68\n' "$GITHUB_SHA" > "$report/identity.txt"
+      - name: Download exact adopted baseline timing reports
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/validate-dspx-dma-luts.py baseline "$RUNNER_TEMP/dspx-baseline"
       - name: Exercise existing hosted source and owned-container evidence controls
         run: |
           set -euo pipefail
@@ -258,6 +195,38 @@ jobs:
           sha256sum --check "$report/ip/generated-products.sha256" > "$report/ip-final-check.txt"
           find verilog/sd2snes_dsp/ip/mk2/build -type f -print0 | sort -z | xargs -0 sha256sum > "$report/ip-final-products.sha256"
           cmp "$report/ip/generated-products.sha256" "$report/ip-final-products.sha256"
+          printf 'Full source/index/IP immutability verified\n' > "$report/integrity-verified.txt"
+      - name: Collect actual bounded combinational DMA LUTs and incident nets
+        if: always() && steps.native.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          report="$RUNNER_TEMP/dspx-native"
+          physical="$RUNNER_TEMP/dspx-dma-luts-physical-raw"
+          mkdir -p "$physical" "$report/physical"
+          test -s verilog/sd2snes_dspx/main_map.ncd
+          export_status=0
+          docker run --rm --user 0:0 --network bridge --mac-address 08:00:27:68:c9:35 \
+            --volume "$GITHUB_WORKSPACE:/work:ro" --volume "$physical:/physical" --volume "$report:/report" \
+            --workdir /work/verilog/sd2snes_dspx --env GITHUB_ACTIONS=true --entrypoint /bin/bash \
+            sha256:5e3bbb00649997abca8843b1d82d8529eda99a0f2868d37ad9777e0ad5fd50e8 \
+            -c 'set -euo pipefail; sha256sum main_map.ncd main.pcf > /report/physical/input-identities.txt; xdl -ncd2xdl main_map.ncd /physical/map.xdl' \
+            > "$report/physical/export-and-collection.log" 2>&1 || export_status=$?
+          collection_status=125
+          if [[ "$export_status" == 0 ]]; then
+            collection_status=0
+            python3 .github/scripts/validate-dspx-dma-luts.py collect "$physical/map.xdl" "$report/physical" > "$report/physical/collection.log" 2>&1 || collection_status=$?
+          fi
+          python3 .github/scripts/post-sync-evidence.py snapshot "$GITHUB_WORKSPACE" "$report/source-after-physical"
+          cmp "$report/source-before.json" "$report/source-after-physical.json"
+          cmp "$report/source-before-index.txt" "$report/source-after-physical-index.txt"
+          sha256sum --check "$report/ip/generated-products.sha256" > "$report/physical/ip-final-check.txt"
+          printf 'export=%s collection=%s\n' "$export_status" "$collection_status" > "$report/physical/collection-exits.txt"
+          test "$export_status" = 0 && test "$collection_status" = 0
+      - name: Measure improvement while retaining actual strict timing failures
+        if: always() && steps.native.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/validate-dspx-dma-luts.py analyze "$RUNNER_TEMP/dspx-native" "$RUNNER_TEMP/dspx-baseline"
       - name: Require routed zero-score setup and hold with exact native options and PCF
         run: |
           set -euo pipefail
@@ -278,7 +247,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: dspx-strict-native-reports
+          name: dspx-dma-luts-native-reports
           path: ${{ runner.temp }}/dspx-native/
           if-no-files-found: error
           retention-days: 14
@@ -286,17 +255,33 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: dspx-evidence-controls-result
+          name: dspx-dma-luts-evidence-controls
           path: ${{ runner.temp }}/dspx-evidence-controls/self-test-results.json
           if-no-files-found: warn
           retention-days: 14
       - name: Upload candidate FPGA only after all strict gates pass
         uses: actions/upload-artifact@v4
         with:
-          name: dspx-strict-timing-candidate
+          name: dspx-dma-luts-strict-candidate
           path: |
             verilog/sd2snes_dspx/fpga_dspx.bit
             ${{ runner.temp }}/dspx-native/strict-timing-result.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Retain implementation for future read-only hosted inspection
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dspx-dma-luts-design-github-only
+          path: |
+            verilog/sd2snes_dspx/main_map.ncd
+            verilog/sd2snes_dspx/main.ncd
+            verilog/sd2snes_dspx/main.ngd
+            verilog/sd2snes_dspx/main.ngc
+            verilog/sd2snes_dspx/main.pcf
+            verilog/sd2snes_dsp/ip/mk2/build/*.ngc
+            verilog/sd2snes_dsp/ip/mk2/build/*.v
+            ${{ runner.temp }}/dspx-dma-luts-physical-raw/map.xdl
           if-no-files-found: error
           retention-days: 14
       - name: Remove only this job's completed container

@@ -250,7 +250,29 @@ assign ROM_ADDR = SRAM_SNES_ADDR;
 assign ROM_HIT = (IS_ROM | IS_WRITABLE) & ~cc_sel;
 
 assign msu_enable = featurebits[FEAT_MSU1] & (!SNES_ADDR[22] && ((SNES_ADDR[15:0] & 16'hfff8) == 16'h2000));
+`ifdef MK2
+`ifdef DSP_COMP
+// Two bounded LUT levels from address to DMA select. Keep all address state
+// and the live feature/unlock controls at their original capture boundaries.
+wire dma_hi_hit, dma_mid_hit, dma_lo_hit, dma_bank_permission;
+dspx_dma_cmp2 dma_hi_lut(.addr(SNES_ADDR[15:12]), .match(dma_hi_hit));
+dspx_dma_cmp0 dma_mid_lut(.addr(SNES_ADDR[11:8]), .match(dma_mid_hit));
+dspx_dma_cmp2 dma_lo_lut(.addr(SNES_ADDR[7:4]), .match(dma_lo_hit));
+dspx_dma_permission dma_permission_lut(
+  .dma_feature(featurebits[FEAT_DMA1]), .map_unlock(map_unlock),
+  .snescmd_unlock(snescmd_unlock), .bank22(SNES_ADDR[22]),
+  .allowed(dma_bank_permission)
+);
+dspx_dma_join dma_join_lut(
+  .high_match(dma_hi_hit), .middle_match(dma_mid_hit),
+  .low_match(dma_lo_hit), .allowed(dma_bank_permission), .selected(dma_enable)
+);
+`else
 assign dma_enable = (featurebits[FEAT_DMA1] | map_unlock | snescmd_unlock) & (!SNES_ADDR[22] && ((SNES_ADDR[15:0] & 16'hfff0) == 16'h2020));
+`endif
+`else
+assign dma_enable = (featurebits[FEAT_DMA1] | map_unlock | snescmd_unlock) & (!SNES_ADDR[22] && ((SNES_ADDR[15:0] & 16'hfff0) == 16'h2020));
+`endif
 assign exe_enable =                           (!SNES_ADDR[22] && ((SNES_ADDR[15:0] & 16'hffff) == 16'h2C00));
 assign map_enable =                           (!SNES_ADDR[22] && ((SNES_ADDR[15:0] & 16'hffff) == 16'h2BB2));
 
@@ -331,3 +353,34 @@ assign branch1_enable = (SNES_ADDR == 24'h002A1F);
 assign branch2_enable = (SNES_ADDR == 24'h002A59);
 assign branch3_enable = (SNES_ADDR == 24'h002A5E);
 endmodule
+
+`ifdef MK2
+`ifdef DSP_COMP
+// Continuous expressions retain the original four-state address semantics.
+(* LUT_MAP = "yes" *)
+module dspx_dma_cmp2(input [3:0] addr, output match);
+assign match = (addr == 4'h2);
+endmodule
+
+(* LUT_MAP = "yes" *)
+module dspx_dma_cmp0(input [3:0] addr, output match);
+assign match = (addr == 4'h0);
+endmodule
+
+(* LUT_MAP = "yes" *)
+module dspx_dma_permission(
+  input dma_feature, input map_unlock, input snescmd_unlock, input bank22,
+  output allowed
+);
+assign allowed = (dma_feature | map_unlock | snescmd_unlock) & !bank22;
+endmodule
+
+(* LUT_MAP = "yes" *)
+module dspx_dma_join(
+  input high_match, input middle_match, input low_match, input allowed,
+  output selected
+);
+assign selected = high_match & middle_match & low_match & allowed;
+endmodule
+`endif
+`endif

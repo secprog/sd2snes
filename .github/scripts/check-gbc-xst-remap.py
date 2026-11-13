@@ -7,6 +7,7 @@ from collections import Counter
 import hashlib
 import json
 from pathlib import Path
+import re
 import subprocess
 import sys
 
@@ -33,13 +34,24 @@ wrappers = [root / "verilog/sd2snes_sgb/ip/mk2" / (n + ".v")
 # boundary in this experiment; no clock primitive is remapped or simulated.
 extra = report / "legacy.v"
 extra.write_text("(* blackbox *) module BUFGP(input I, output O); endmodule\n")
+# NetGen marks its simulation model as a black box for synthesis and hides its
+# body with translate_off. Inspect a diagnostic copy with only those guards
+# removed; preserve the original artifact and hash. This is still NOT an
+# implementation netlist or a replacement for native MAP/PAR qualification.
+diagnostic = report / "native-diagnostic.v"
+source = netlist.read_text()
+source = re.sub(r"// synthesis translate_(?:off|on)", "", source)
+source = source.replace("/* synthesis syn_black_box syn_noprune=1 */", "")
+diagnostic.write_text(source)
 run("read", ["read_verilog -lib +/xilinx/cells_sim.v +/xilinx/cells_xtra.v",
              "read_verilog -lib " + " ".join(map(quote, wrappers + [extra])),
-             "read_verilog " + quote(netlist), "hierarchy -top main",
+             "read_verilog " + quote(diagnostic), "hierarchy -top main",
              "blackbox =A:whitebox",
              "write_json " + quote(report / "native.json")])
 native = json.loads((report / "native.json").read_text())["modules"]["main"]
 native_counts = Counter(c["type"] for c in native["cells"].values())
+if sum(native_counts[t] for t in ("LUT1", "LUT2", "LUT3", "LUT4")) < 5000:
+    raise RuntimeError("native diagnostic did not retain the expected LUT primitives")
 summaries = {}
 for profile, remap_mux, abc_width in (("fixed-mux", False, "4"),
                                       ("lut4", True, "4"),
@@ -59,6 +71,8 @@ for profile, remap_mux, abc_width in (("fixed-mux", False, "4"),
                  if c["type"] in ("VCC", "GND") for bits in c["connections"].values()
                  for bit in bits if isinstance(bit, int)}
     inputs, outputs = sorted(used - driven - constants.keys()), sorted(driven & boundary)
+    if not inputs or not outputs:
+        raise RuntimeError("empty native logic boundary")
     all_bits = sorted(driven | used)
 
     def signal(bit):

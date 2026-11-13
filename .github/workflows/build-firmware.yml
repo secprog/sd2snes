@@ -156,8 +156,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        profile: [lut4-sat]
-        register_duplication: [project, 'off']
+        profile: [compare-lut4-sat, gate-lut4-sat]
+        register_duplication: [project]
     uses: ./.github/workflows/gbc-native-remap.yml
     with:
       native_run: ${{ inputs.mk2_run_id }}

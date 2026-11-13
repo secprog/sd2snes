@@ -177,7 +177,23 @@ wire [7:0] UPD_DO;
 wire ss_ctrl;
 wire ss_regwin;
 reg  ss_frozen; initial ss_frozen = 1'b0;
+`ifdef MK2
+`ifdef DSP_COMP
+// DSPX_RAM_WRITE_JOIN_BEGIN
+wire ram_web;
+wire ram_write_ctrl_block = ss_window_en & (DP_ADDR == 11'h7ff);
+wire ram_write_scan_block = ss_window_en & ss_frozen & (DP_ADDR[10:8] == 3'b110);
+dspx_ram_write_join ram_write_join_lut(
+  .strobe(reg_we_rising), .dp_enabled(DP_enable),
+  .scan_block(ram_write_scan_block), .ctrl_block(ram_write_ctrl_block), .write_enable(ram_web)
+);
+// DSPX_RAM_WRITE_JOIN_END
+`else
 wire ram_web = reg_we_rising & DP_enable & ~ss_regwin & ~ss_ctrl;
+`endif
+`else
+wire ram_web = reg_we_rising & DP_enable & ~ss_regwin & ~ss_ctrl;
+`endif
 
 `ifdef MK2
 `ifndef DEBUG
@@ -1033,5 +1049,18 @@ always @* begin
   end
 end
 endmodule
+`endif
+`endif
+
+`ifdef MK2
+`ifdef DSP_COMP
+// DSPX_RAM_WRITE_HELPER_BEGIN
+// Keep the complete original bitwise expression, including reconvergent X
+// behavior. The independent address blockers are ready before the DP select.
+(* LUT_MAP="yes" *)
+module dspx_ram_write_join(input strobe, dp_enabled, scan_block, ctrl_block, output write_enable);
+assign write_enable = strobe & dp_enabled & ~(dp_enabled & scan_block) & ~(dp_enabled & ctrl_block);
+endmodule
+// DSPX_RAM_WRITE_HELPER_END
 `endif
 `endif

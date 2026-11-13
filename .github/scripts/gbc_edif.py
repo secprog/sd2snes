@@ -129,9 +129,9 @@ class Network:
         return {"cells": cells, "ports": ports,
                 "netnames": {n: {"bits": [i]} for n, i in ids.items() if n in self.nets}}, ids
 
-    def fixed_signature(self, logic_types):
+    def fixed_signature(self, logic_types, logic_names=()):
         """Properties, types and the net on every fixed pin must stay identical."""
-        fixed = {n for n in self.instances if self.types[n] not in logic_types}
+        fixed = {n for n in self.instances if self.types[n] not in logic_types and n not in logic_names}
         fixed_nets = {n for p, n in self.pin_net.items() if p[0] is None or p[0] in fixed}
         return {
             "interface": copy.deepcopy(one(self.view, "interface")),
@@ -142,16 +142,16 @@ class Network:
                                if n in fixed_nets},
         }
 
-    def splice(self, mapped, inputs, outputs, logic_types, ids):
+    def splice(self, mapped, inputs, outputs, logic_types, ids, logic_names=()):
         """Replace only proved combinational cells in the original native EDIF.
 
         Boundary nets keep their original identifiers. Explicit identity LUTs
         handle aliases/constant outputs, so no fixed pin, net property, clock,
         reset, memory, carry chain or I/O definition needs to be rewritten.
         """
-        original_signature = self.fixed_signature(logic_types)
+        original_signature = self.fixed_signature(logic_types, logic_names)
         result = copy.deepcopy(self)
-        removed = {n for n in self.instances if self.types[n] in logic_types}
+        removed = {n for n in self.instances if self.types[n] in logic_types or n in logic_names}
         by_id = {v: n for n, v in ids.items()}
         require(len(by_id) == len(ids), "Duplicate native net identifiers")
         pins = {n: [copy.deepcopy(p) for p in one(node, "joined")[1:]
@@ -239,6 +239,6 @@ class Network:
                               *new_instances, *new_nets]
         # Parse our actual output again, independently of the mutation objects.
         rebuilt = Network(emit(result.tree))
-        require(rebuilt.fixed_signature(logic_types) == original_signature,
+        require(rebuilt.fixed_signature(logic_types, logic_names) == original_signature,
                 "Fixed implementation structure changed during EDIF splicing")
         return rebuilt

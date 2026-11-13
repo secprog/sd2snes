@@ -61,8 +61,8 @@ else:
     native = json.loads((report / "native.json").read_text())["modules"]["main"]
 
 
-def render_logic(model, logic_types, inputs, outputs, module_name):
-    logic = [c for c in model["cells"].values() if c["type"] in logic_types]
+def render_logic(model, logic_types, inputs, outputs, module_name, logic_names=()):
+    logic = [c for n, c in model["cells"].items() if c["type"] in logic_types or n in logic_names]
     bits = {b for c in logic for values in c["connections"].values()
             for b in values if isinstance(b, int)} | set(inputs) | set(outputs)
     constants = {bit: str(int(c["type"] == "VCC")) for c in model["cells"].values()
@@ -90,6 +90,8 @@ def render_logic(model, logic_types, inputs, outputs, module_name):
             expression = f"({len(init)}'b{init} >> {address})"
         elif c["type"] == "INV":
             expression = "~" + ports["I"]
+        elif c["type"] == "MUXCY":
+            expression = f"{ports['S']} ? {ports['CI']} : {ports['DI']}"
         else:
             expression = f"{ports['S']} ? {ports['I1']} : {ports['I0']}"
         lines.append(f"assign {ports['O']}={expression};")
@@ -119,7 +121,9 @@ profiles = (("fixed-mux", False, None),
             ("lut4-area", True, abc_prefix + "if -K 4 -a; mfs2; lutpack -S 1"),
             ("fixed-mux-resyn2", False, "strash; " + resyn2 + resyn2 + area_tail),
             ("fixed-mux-resub", False, "strash; " + resub + area_tail),
-            ("lut4-resub", True, "strash; " + resub + area_tail))
+            ("lut4-resub", True, "strash; " + resub + area_tail),
+            ("widegate-area", False, abc_prefix + "if -K 4 -a; mfs2; lutpack -S 1"),
+            ("widegate-resub", False, "strash; " + resub + area_tail))
 if len(sys.argv) > 3:
     selected = set(sys.argv[3:])
     if not selected <= {p[0] for p in profiles}:
@@ -129,11 +133,16 @@ for profile, remap_mux, abc_script in profiles:
     logic_types = {"LUT1", "LUT2", "LUT3", "LUT4", "INV"}
     if remap_mux:
         logic_types |= {"MUXF5", "MUXF6", "MUXF7", "MUXF8"}
-    logic = [c for c in native["cells"].values() if c["type"] in logic_types]
+    # XST also uses carry multiplexers for wide gates (not arithmetic). Let
+    # these named cones participate in Boolean optimization in two trials;
+    # all arithmetic carry chains and every state/memory primitive stay fixed.
+    logic_names = {n for n, c in native["cells"].items() if c["type"] in logic_types
+                   or (profile.startswith("widegate-") and c["type"] == "MUXCY" and "_wg_cy" in n)}
+    logic = [c for n, c in native["cells"].items() if n in logic_names]
     driven = {bit for c in logic for bit in c["connections"]["O"] if isinstance(bit, int)}
     used = {bit for c in logic for port, bits in c["connections"].items() if port != "O"
             for bit in bits if isinstance(bit, int)}
-    boundary = {bit for c in native["cells"].values() if c["type"] not in logic_types
+    boundary = {bit for n, c in native["cells"].items() if n not in logic_names
                 for bits in c["connections"].values() for bit in bits if isinstance(bit, int)}
     boundary |= {bit for port in native["ports"].values() for bit in port["bits"]
                  if isinstance(bit, int)}
@@ -144,7 +153,7 @@ for profile, remap_mux, abc_script in profiles:
     if not inputs or not outputs:
         raise RuntimeError("empty native logic boundary")
     source = report / (profile + ".v")
-    source.write_text(render_logic(native, logic_types, inputs, outputs, "gbc_logic"))
+    source.write_text(render_logic(native, logic_types, inputs, outputs, "gbc_logic", logic_names))
     if not summaries:
         corrupt = report / "corrupt-output.v"
         corrupt.write_text(
@@ -158,6 +167,7 @@ for profile, remap_mux, abc_script in profiles:
             expect_counterexample=True)
     (report / (profile + "-boundary.json")).write_text(json.dumps({
         "inputs": inputs, "outputs": outputs, "logic_types": sorted(logic_types),
+        "logic_names": sorted(logic_names),
     }, indent=2) + "\n")
     abc_command = "abc -lut 4"
     if abc_script:
@@ -185,7 +195,7 @@ for profile, remap_mux, abc_script in profiles:
                   "write_json " + quote(report / (profile + ".json"))])
     result = json.loads((report / (profile + ".json")).read_text())["modules"]["gbc_logic"]
     cells = Counter(c["type"] for c in result["cells"].values())
-    fixed = Counter(c["type"] for c in native["cells"].values() if c["type"] not in logic_types)
+    fixed = Counter(c["type"] for n, c in native["cells"].items() if n not in logic_names)
     summaries[profile] = {
         "native_sha256": hashlib.sha256(netlist.read_bytes()).hexdigest(),
         "native_cells": dict(sorted(native_counts.items())),
@@ -196,12 +206,12 @@ for profile, remap_mux, abc_script in profiles:
         "limitations": "Diagnostic only; fixed macro boundaries, no native placement/timing or console validation.",
     }
     if network is not None:
-        rebuilt = network.splice(result, inputs, outputs, logic_types, native_ids)
+        rebuilt = network.splice(result, inputs, outputs, logic_types, native_ids, logic_names)
         # Prove the parsed output EDIF as well as ABC's in-memory mapping. This
         # catches connection, INIT, output-alias and constant reconstruction bugs.
         rebuilt_model, _ = rebuilt.logic_model(native_ids)
         merged = report / (profile + "-merged.v")
-        merged.write_text(render_logic(rebuilt_model, logic_types, inputs, outputs, "gbc_merged"))
+        merged.write_text(render_logic(rebuilt_model, logic_types, inputs, outputs, "gbc_merged", logic_names))
         run(profile + "-merged", ["read_verilog " + quote(source) + " " + quote(merged),
                                   "proc", "opt",
                                   "miter -equiv -flatten gbc_logic gbc_merged miter",

@@ -115,7 +115,7 @@ jobs:
     needs: gbc-checks
     name: Diagnose GBC Spartan-3 logic mapping
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
       - name: Install pinned hosted synthesis tools
@@ -127,18 +127,17 @@ jobs:
           mkdir -p "$RUNNER_TEMP/gbc-yosys-tools"
           tar -xzf "$archive" -C "$RUNNER_TEMP/gbc-yosys-tools"
           echo "$RUNNER_TEMP/gbc-yosys-tools/oss-cad-suite/bin" >> "$GITHUB_PATH"
-      - name: Map the unchanged MkII RTL with Yosys
-        run: python3 .github/scripts/check-gbc-yosys.py "$RUNNER_TEMP/gbc-yosys"
       - name: Compare the native baseline without replacing its state or memories
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          # Immutable diagnostic baseline: d9099366, 8,337 native LUT4s.
+          # Immutable diagnostic baseline: c94754d4, including CIC sharing.
           # Keep provenance explicit; never substitute this netlist for HEAD.
-          gh api repos/$GH_REPO/actions/runs/43498299272 > "$RUNNER_TEMP/gbc-yosys/native-run.json"
-          python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["head_sha"] == "d9099366b016e9e52347a7d1f79e3d53a0ff05ea"' "$RUNNER_TEMP/gbc-yosys/native-run.json"
-          gh run download 43498299272 --name fpga-reports-mk2-gbc --dir "$RUNNER_TEMP/gbc-native"
+          mkdir -p "$RUNNER_TEMP/gbc-yosys"
+          gh api repos/$GH_REPO/actions/runs/43508728031 > "$RUNNER_TEMP/gbc-yosys/native-run.json"
+          python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["head_sha"] == "c94754d4ecf19682e8df890c304557f7d8478c6d"' "$RUNNER_TEMP/gbc-yosys/native-run.json"
+          gh run download 43508728031 --name fpga-reports-mk2-gbc --dir "$RUNNER_TEMP/gbc-native"
           native=$(find "$RUNNER_TEMP/gbc-native" -name main_synth.v -print -quit)
           test -n "$native"
           python3 .github/scripts/check-gbc-xst-remap.py "$native" "$RUNNER_TEMP/gbc-yosys/xst-remap"
@@ -268,6 +267,10 @@ jobs:
               --volume "$GITHUB_WORKSPACE:/work" --workdir /work/verilog/sd2snes_gbc \
               --entrypoint /bin/bash sd2snes-ci:mk2 \
               -c 'netgen -w -sim -ofmt verilog main.ngc main_synth.v'
+            docker run --rm --user 0:0 --mac-address 08:00:27:68:c9:35 \
+              --volume "$GITHUB_WORKSPACE:/work" --workdir /work/verilog/sd2snes_gbc \
+              --entrypoint /bin/bash sd2snes-ci:mk2 \
+              -c 'ngc2edif main.ngc main_native.edf'
           fi
 
       - name: Verify MkII byte-wide log against the installed Xilinx RAM model
@@ -323,6 +326,11 @@ jobs:
             verilog/*/*.xst
             verilog/*/*.prj
             verilog/sd2snes_gbc/main_synth.v
+            verilog/sd2snes_gbc/main_native.edf
+            verilog/sd2snes_gbc/main.ngc
+            verilog/sd2snes_sgb/ip/mk2/vram.ngc
+            verilog/sd2snes_sgb/ip/mk2/snescmd_buf.ngc
+            verilog/sd2snes_sgb/ip/mk2/oam.ngc
             verilog/*/*.unroutes
             verilog/*/output_files/*.rpt
             verilog/*/output_files/*.summary

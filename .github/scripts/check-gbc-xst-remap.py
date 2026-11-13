@@ -56,9 +56,16 @@ native_counts = Counter(c["type"] for c in native["cells"].values())
 if sum(native_counts[t] for t in ("LUT1", "LUT2", "LUT3", "LUT4")) < 5000:
     raise RuntimeError("native diagnostic did not retain the expected LUT primitives")
 summaries = {}
-for profile, remap_mux, abc_width in (("fixed-mux", False, "4"),
-                                      ("lut4", True, "4"),
-                                      ("wide-lut", True, "4:8")):
+# Use ABC's area-oriented cut selection as well as its default delay-oriented
+# selection. Every candidate has the same whole-cone proof obligation; a lower
+# logic count still requires native MAP/PAR before it can become an FPGA image.
+abc_prefix = "strash; &get -n; &fraig -x; &put; scorr; dc2; dretime; strash; dch -f; "
+profiles = (("fixed-mux", False, None),
+            ("fixed-mux-area", False, abc_prefix + "if -K 4 -a; mfs2; lutpack -S 1"),
+            ("fixed-mux-area2", False, abc_prefix + "if -K 4 -a; mfs2; mfs2; lutpack -S 1"),
+            ("lut4", True, None),
+            ("lut4-area", True, abc_prefix + "if -K 4 -a; mfs2; lutpack -S 1"))
+for profile, remap_mux, abc_script in profiles:
     logic_types = {"LUT1", "LUT2", "LUT3", "LUT4", "INV"}
     if remap_mux:
         logic_types |= {"MUXF5", "MUXF6", "MUXF7", "MUXF8"}
@@ -101,6 +108,14 @@ for profile, remap_mux, abc_width in (("fixed-mux", False, "4"),
     lines.append("endmodule")
     source = report / (profile + ".v")
     source.write_text("\n".join(lines) + "\n")
+    (report / (profile + "-boundary.json")).write_text(json.dumps({
+        "inputs": inputs, "outputs": outputs, "logic_types": sorted(logic_types),
+    }, indent=2) + "\n")
+    abc_command = "abc -lut 4"
+    if abc_script:
+        script_path = report / (profile + ".abc")
+        script_path.write_text(abc_script + "\n")
+        abc_command += " -script " + quote(script_path)
     # Compare at every fixed-macro input and top-level output. Sequential
     # state, carry chains, memories, clocking and I/O stay outside these cones.
     run(profile, ["read_verilog " + quote(source), "hierarchy -top gbc_logic",
@@ -109,7 +124,7 @@ for profile, remap_mux, abc_width in (("fixed-mux", False, "4"),
                   # ABC can legally repurpose/eliminate named internal nodes;
                   # matching those names creates false equivalence cutpoints.
                   "rename -hide",
-                  "design -save reference", "abc -lut " + abc_width, "clean",
+                  "design -save reference", abc_command, "clean",
                   "design -save mapped", "rename gbc_logic gate",
                   "design -copy-from reference -as gold gbc_logic",
                   # Some boundary outputs also feed other output cones (for

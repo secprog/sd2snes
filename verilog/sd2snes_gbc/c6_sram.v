@@ -67,8 +67,23 @@ module c6_sram(
       default: ;
     endcase
   end
-  reg [77:0] work;
   reg [2:0] byte_index;
+  // The FIFO retains its oldest word until the final store is acknowledged.
+  // New pushes move both the shift register and its tap, preserving HEAD.
+  // Read that word in place instead of copying and shifting another 64 bits.
+  reg [7:0] write_pixel;
+  always @(*) begin
+    case(byte_index)
+      0: write_pixel=head[63:56];
+      1: write_pixel=head[55:48];
+      2: write_pixel=head[47:40];
+      3: write_pixel=head[39:32];
+      4: write_pixel=head[31:24];
+      5: write_pixel=head[23:16];
+      6: write_pixel=head[15:8];
+      default: write_pixel=head[7:0];
+    endcase
+  end
   reg different;
 
   reg cache_valid, cache_stretch, cache_active, cache_discard;
@@ -131,7 +146,7 @@ module c6_sram(
       prepare_pending <= 0; request_row <= 0; request_stretch <= 0;
       state <= IDLE; byte_index <= 0; different <= 0;
       column <= 0; line <= 0; pixel <= 0; plane <= 0; pixels <= 0;
-      work <= 0; COMMIT_ROW <= 0; COMMIT_COL <= 0;
+      COMMIT_ROW <= 0; COMMIT_COL <= 0;
       COMMIT_LAST <= 0; COMMIT_DIFF <= 0;
     end else begin
       if (WR && full) OVERFLOW <= 1;
@@ -152,7 +167,7 @@ module c6_sram(
           // Producer first. An idle PPU (HBlank/frozen row) lets prefetch run;
           // cache reads yield at each output tile, so neither side loses data.
           if (!empty) begin
-            work <= head; byte_index <= 0; different <= 0;
+            byte_index <= 0; different <= 0;
             MEM_ADDR <= {3'b111,head[76:64],3'b000};
             MEM_WR <= 0; MEM_REQ <= 1; state <= WRITE_READ;
           end else if (cache_active) state <= CACHE_READ;
@@ -165,23 +180,24 @@ module c6_sram(
           end
         end
         WRITE_READ: if (MEM_ACK) begin
-          different <= different || MEM_Q != work[63:56];
+          different <= different || MEM_Q != write_pixel;
           MEM_REQ <= 0; state <= WRITE_STORE;
         end
         WRITE_STORE: begin
           if (!MEM_REQ) begin
-            MEM_WR <= 1; MEM_DATA <= work[63:56]; MEM_REQ <= 1;
+            MEM_WR <= 1; MEM_DATA <= write_pixel; MEM_REQ <= 1;
           end else if (MEM_ACK) begin
             MEM_REQ <= 0;
             if (byte_index == 7) begin
-              COMMIT <= 1; COMMIT_ROW <= work[76:72];
-              COMMIT_COL <= work[71:67]; COMMIT_LAST <= work[77];
+              COMMIT <= 1; COMMIT_ROW <= head[76:72];
+              COMMIT_COL <= head[71:67]; COMMIT_LAST <= head[77];
               COMMIT_DIFF <= different;
               state <= IDLE;
             end else begin
-              work[63:0] <= {work[55:0],8'd0};
               byte_index <= byte_index + 1'b1;
-              MEM_ADDR <= MEM_ADDR + 1'b1;
+              // This arm runs only for bytes 0..6; the increment cannot
+              // carry into the tile-line address.
+              MEM_ADDR <= {MEM_ADDR[18:3],byte_index + 3'd1};
               MEM_WR <= 0; MEM_REQ <= 1; state <= WRITE_READ;
             end
           end

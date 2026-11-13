@@ -145,7 +145,14 @@ localparam K2_BITS=21, DIFF_BITS=18, ERR_BITS=17, KI_BITS=14,
 localparam K2_BITS=24, DIFF_BITS=19, ERR_BITS=19, KI_BITS=18,
            KI_NEXT_BITS=18, P_BITS=22;
 `endif
+`ifdef MK2
+// Every committed rate, including Exact, lies in 0x19778c..0x19fb40.
+// Its upper five bits are invariant, not a register needing a wide mux.
+reg [15:0] rate_low_r;
+wire [20:0] k2_r = {5'h19,rate_low_r};
+`else
 reg  [K2_BITS-1:0] k2_r;
+`endif
 reg  [23:0] acc_r;
 reg         ce2_r;
 reg         ce1_r;
@@ -238,9 +245,21 @@ reg  [16:0]       err_abs_q;
 reg  signed [KI_BITS-1:0] ki_r;        // the integral term, in LSB of K2
 reg  signed [KI_NEXT_BITS-1:0] ki_next_r; // ... before its clamp
 reg  signed [P_BITS-1:0] p_term_r;     // kp * err, in LSB of K2
+`ifdef MK2
+// Separate pipeline registers avoid a three-input mux on every target bit.
+// NOM+KI is positive and fits 21 bits. For every 17-bit dot input the next
+// difference is 889030..2251750, positive and fitting 22 unsigned bits.
+// After clamping, only the low 16 rate bits vary. The upper slew bound can
+// cross 0x1a0000, so retain its carry; the lower bound stays above 0x190000.
+reg [20:0] tgt_sum_r;
+reg [21:0] tgt_diff_r;
+reg [15:0] tgt_low_r, k2_lo_low_r;
+reg [16:0] k2_hi_low_r;
+`else
 reg  signed [23:0] tgt_r;
 reg  signed [23:0] k2_hi_r;     // k2 + slew, registered so ST_SLEW2 only compares
 reg  signed [23:0] k2_lo_r;     // k2 - slew
+`endif
 reg  [3:0]        lock_ctr_r;
 reg               locked_r;
 reg               skip_r;       // skip the next update (LCD off / first SYNC after on)
@@ -290,7 +309,11 @@ wire signed [23:0] slew_w    = locked_q ? SLEW_LOCKED : SLEW_UNLOCKED;
 
 always @(posedge CLK) begin
   if (RST) begin
+`ifdef MK2
+    rate_low_r <= exact_mode ? K2_EXACT[15:0] : K2_NOM[15:0];
+`else
     k2_r       <= exact_mode ? K2_EXACT : K2_NOM;
+`endif
     st_r       <= ST_IDLE;
     dot_q      <= 17'd0;
     frozen_q   <= 1'b0;
@@ -301,9 +324,14 @@ always @(posedge CLK) begin
     ki_r       <= 18'sd0;
     ki_next_r  <= 18'sd0;
     p_term_r   <= 22'sd0;
+`ifdef MK2
+    tgt_sum_r <= 0; tgt_diff_r <= 0; tgt_low_r <= 0;
+    k2_hi_low_r <= 0; k2_lo_low_r <= 0;
+`else
     tgt_r      <= 24'sd0;
     k2_hi_r    <= 24'sd0;
     k2_lo_r    <= 24'sd0;
+`endif
     lock_ctr_r <= 4'd0;
     locked_r   <= 1'b0;
     skip_r     <= 1'b1;
@@ -315,7 +343,11 @@ always @(posedge CLK) begin
     // the loop still measures and publishes the phase error -- it is free
     // telemetry, and watching it walk is how one tells "Exact, as designed"
     // from "genlock, broken" over USB.
+`ifdef MK2
+    if (exact_mode) rate_low_r <= K2_EXACT[15:0];
+`else
     if (exact_mode) k2_r <= K2_EXACT;
+`endif
 
     case (st_r)
       // A strobe that lands while the walk is still running is ignored.  The
@@ -394,23 +426,41 @@ always @(posedge CLK) begin
       end
 
       ST_TGT1: begin
+`ifdef MK2
+        tgt_sum_r <= $signed({1'b0, K2_NOM[22:0]}) + $signed(ki_r);
+`else
         tgt_r <= $signed({1'b0, K2_NOM[22:0]}) + $signed(ki_r);
+`endif
         st_r  <= ST_TGT2;
       end
 
       ST_TGT2: begin
+`ifdef MK2
+        tgt_diff_r <= $signed({1'b0,tgt_sum_r}) - $signed(p_term_r);
+`else
         tgt_r <= tgt_r - $signed(p_term_r);
+`endif
         st_r  <= ST_CLAMP;
       end
 
       ST_CLAMP: begin
+`ifdef MK2
+        tgt_low_r <= (tgt_diff_r < K2_MIN) ? K2_MIN[15:0]
+                   : (tgt_diff_r > K2_MAX) ? K2_MAX[15:0] : tgt_diff_r[15:0];
+`else
         tgt_r <= (tgt_r < K2_MIN) ? K2_MIN : (tgt_r > K2_MAX) ? K2_MAX : tgt_r;
+`endif
         st_r  <= ST_SLEW1;
       end
 
       ST_SLEW1: begin
+`ifdef MK2
+        k2_hi_low_r <= {1'b0,rate_low_r} + 17'd8429;
+        k2_lo_low_r <= rate_low_r - 16'd8429;
+`else
         k2_hi_r <= k2_cur_w + slew_w;
         k2_lo_r <= k2_cur_w - slew_w;
+`endif
         st_r    <= ST_SLEW2;
       end
 
@@ -418,13 +468,15 @@ always @(posedge CLK) begin
         // Only compares and muxes: both bounds and the target are registers,
         // so nothing here reads k2_r.
         if (!exact_mode)
-          k2_r <=
 `ifdef MK2
-                  !locked_q ? tgt_r[K2_BITS-1:0] :
-`endif
-                  (tgt_r > k2_hi_r) ? k2_hi_r[K2_BITS-1:0]
+          rate_low_r <= !locked_q ? tgt_low_r
+                      : ({1'b0,tgt_low_r} > k2_hi_low_r) ? k2_hi_low_r[15:0]
+                      : (tgt_low_r < k2_lo_low_r) ? k2_lo_low_r : tgt_low_r;
+`else
+          k2_r <= (tgt_r > k2_hi_r) ? k2_hi_r[K2_BITS-1:0]
                 : (tgt_r < k2_lo_r) ? k2_lo_r[K2_BITS-1:0]
                                     : tgt_r[K2_BITS-1:0];
+`endif
         st_r <= ST_IDLE;
       end
 

@@ -116,21 +116,21 @@ module c6_sram(
   c6_row_cache cache(.CLK(CLK), .WE(cache_we), .WADDR(cache_addr),
                      .DATA(cache_data), .RADDR(VADDR[10:0]), .Q(cache_q));
 
-  function [7:0] planar;
-    input [63:0] data;
-    input [2:0] p;
-    input stretch;
-    integer k;
-    reg [7:0] b;
-    reg [7:0] raw;
-    begin
-      for (k=0; k<8; k=k+1) begin
-        b=data[63-8*k -: 8];
-        raw[7-k]=b[p];
-      end
-      planar=stretch ? {raw[7],raw[7],raw[6],raw[5],raw[5],raw[4],raw[3],raw[3]} : raw;
-    end
-  endfunction
+  // Multiplying a pair of bytes by 2^(7-plane) puts the selected bits at
+  // product[7] and product[15]. Four spare MULT18X18s replace eight variable
+  // bit selectors, with no rounding, pixel loss, or extra pipeline cycle.
+  wire [7:0] plane_scale = 8'h80 >> plane;
+  wire [7:0] plane_bits;
+  genvar pair;
+  generate for(pair=0; pair<4; pair=pair+1) begin : g_planar_pair
+    (* mult_style = "block" *) wire [22:0] product =
+        pixels[pair*16 +: 16] * plane_scale;
+    assign plane_bits[pair*2] = product[7];
+    assign plane_bits[pair*2+1] = product[15];
+  end endgenerate
+  wire [7:0] planar_byte = cache_stretch
+      ? {plane_bits[7],plane_bits[7],plane_bits[6],plane_bits[5],
+         plane_bits[5],plane_bits[4],plane_bits[3],plane_bits[3]} : plane_bits;
 
   localparam IDLE=0, WRITE_READ=1, WRITE_STORE=2, CACHE_READ=3, CACHE_PLANES=4;
   reg [2:0] state;
@@ -226,7 +226,7 @@ module c6_sram(
         CACHE_PLANES: begin
           cache_we <= 1;
           cache_addr <= {column,plane[2:1],line,plane[0]};
-          cache_data <= planar(pixels,plane,cache_stretch);
+          cache_data <= planar_byte;
           if (plane == 7) begin
             plane <= 0;
             if (line == 7 && column == (cache_stretch ? 31 : 19)) begin

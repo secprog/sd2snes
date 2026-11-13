@@ -198,6 +198,16 @@ jobs:
           docker run "${args[@]}" --env ISE_CTABLE --env IGNORE_TIMING --entrypoint /bin/bash "sd2snes-ci:$BOARD" \
             .github/scripts/build.sh "$BOARD" "$CORE" 2>&1 | tee "$RUNNER_TEMP/fpga-build.log"
 
+      - name: Export experimental MkII GBC synthesis for resource analysis
+        if: always() && matrix.board == 'mk2' && matrix.core == 'gbc'
+        run: |
+          if [[ -s verilog/sd2snes_gbc/main.ngc ]]; then
+            docker run --rm --user 0:0 --mac-address 08:00:27:68:c9:35 \
+              --volume "$GITHUB_WORKSPACE:/work" --workdir /work/verilog/sd2snes_gbc \
+              --entrypoint /bin/bash sd2snes-ci:mk2 \
+              -c 'netgen -w -sim -ofmt verilog main.ngc main_synth.v'
+          fi
+
       - name: Collect FPGA image
         env:
           FPGA_EXT: ${{ matrix.extension }}
@@ -232,6 +242,7 @@ jobs:
             verilog/*/*.pcf
             verilog/*/*.xst
             verilog/*/*.prj
+            verilog/sd2snes_gbc/main_synth.v
             verilog/*/*.unroutes
             verilog/*/output_files/*.rpt
             verilog/*/output_files/*.summary

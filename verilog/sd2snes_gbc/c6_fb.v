@@ -162,7 +162,11 @@ wire        c6_off   = TAP_LY0 & ~ctl_en_r &  en_eff_r;
 //-------------------------------------------------------------------
 // state
 //-------------------------------------------------------------------
+`ifdef GBC_EXTERNAL_FB
+wire [17:0] row_frozen_r, thaw_pend_r, row_clid_r;
+`else
 reg  [17:0]  row_frozen_r, thaw_pend_r, row_clid_r;
+`endif
 `ifndef GBC_EXTERNAL_FB
 reg  [359:0] dirty_r;
 `endif
@@ -330,13 +334,22 @@ wire        vg_pos    = ~vg_r[15] & |vg_r;
 wire        vb_pos    = ~vb_r[15] & |vb_r;
 wire [2:0]  cl_vote   = {vb_pos, vg_pos, vr_pos};
 
+`ifdef GBC_EXTERNAL_FB
+c6_row_flags row_flags(.CLK(CLK), .RST(RST | c6_reset), .OFF(c6_off),
+  .THAW(thaw_now), .THAW_ROW(px_row), .FREEZE(wr2_r & wr_last2_r),
+  .FREEZE_ROW(wr_row2_r), .CLID(cl_id_r), .DONE(rd_mask),
+  .FROZEN(row_frozen_r), .PENDING(thaw_pend_r), .ROW_CLID(row_clid_r));
+`endif
+
 always @(posedge CLK) begin
   if (RST | c6_reset) begin
     en_eff_r       <= c6_reset;
     hold_eff_r     <= c6_reset & ctl_hold_r;
+`ifndef GBC_EXTERNAL_FB
     row_frozen_r   <= 18'd0;
     thaw_pend_r    <= 18'd0;
     row_clid_r     <= 18'd0;
+`endif
     cl_cur_r       <= 3'd0;
     cl_prev_r      <= 3'd0;
     cl_cand_r      <= 3'd0;
@@ -356,27 +369,35 @@ always @(posedge CLK) begin
       en_eff_r   <= ctl_en_r;
       hold_eff_r <= ctl_hold_r;
     end
+`ifndef GBC_EXTERNAL_FB
     if (c6_off) begin
       row_frozen_r <= 18'd0;
       thaw_pend_r  <= 18'd0;
     end
+`endif
 
     // ---- ROW_DONE: arm the thaw (the dirty bits are cleared below) -------
+`ifndef GBC_EXTERNAL_FB
     if (|rd_mask) thaw_pend_r <= thaw_pend_r | rd_mask;
+`endif
     if (rd_bad & ~(&rowdone_bad_r)) rowdone_bad_r <= rowdone_bad_r + 16'd1;
 
     // ---- thaw / drop at (0, 8r) -------------------------------------------
+`ifndef GBC_EXTERNAL_FB
     if (thaw_now) begin
       row_frozen_r[px_row] <= 1'b0;
       thaw_pend_r[px_row]  <= 1'b0;
       row_clid_r[px_row]   <= cl_id_r;
     end
+`endif
     if (drop_now & ~(&rows_dropped_r)) rows_dropped_r <= rows_dropped_r + 16'd1;
 
     // ---- the compare of the last word lands: the row freezes -------------
     // On the same edge its dirty bit is set (below), never before it: a row
     // that reads frozen has every bit of its last word in the bitmap.
+`ifndef GBC_EXTERNAL_FB
     if (wr2_r & wr_last2_r) row_frozen_r[wr_row2_r] <= 1'b1;
+`endif
 
     // ---- the vote -----------------------------------------------------
     if (TAP_VBLANK & en_eff_r) begin

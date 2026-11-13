@@ -1,4 +1,29 @@
 `timescale 1ns/1ps
+// Per-row enables avoid a variable bit write becoming a wide feedback mux.
+// Preserve the original procedural priority even when C6_OFF, ROW_DONE,
+// thaw and a delayed SRAM commit coincide on one clock.
+module c6_row_flags(input CLK, RST, OFF, THAW, FREEZE, CLID,
+  input [17:0] DONE, input [4:0] THAW_ROW, FREEZE_ROW,
+  output reg [17:0] FROZEN, PENDING, ROW_CLID);
+  wire keep_pending = !OFF || (|DONE);
+  genvar row;
+  generate for(row=0;row<18;row=row+1) begin : g_row
+    wire thaw_here = THAW && THAW_ROW==row;
+    wire freeze_here = FREEZE && FREEZE_ROW==row;
+    always @(posedge CLK) begin
+      if(RST) begin
+        FROZEN[row] <= 0;
+        PENDING[row] <= 0;
+        ROW_CLID[row] <= 0;
+      end else begin
+        FROZEN[row] <= freeze_here || (!OFF && !thaw_here && FROZEN[row]);
+        PENDING[row] <= !thaw_here && ((keep_pending && PENDING[row]) || DONE[row]);
+        if(thaw_here) ROW_CLID[row] <= CLID;
+      end
+    end
+  end endgenerate
+endmodule
+
 // Small memories can use LUT RAM on Mk.II when no block RAM is available.
 // Port B is read-only in this build: SGB_MCU_ACCESS is disabled. Both clocks
 // are the same CLK; HRAM removes the unused second port before inference.
@@ -50,6 +75,11 @@ module gbc_snapshot_ram(input CLK, RST,
   reg [5:0] cram_addr;
   reg [31:0] oam_word, cram_word;
   reg [23:0] cram_shift;
+  // Present exactly one write address/data/enable to XST. Separate indexed
+  // assignments are treated as multiple write ports and flatten this RAM.
+  wire write_enable = !RST && (oam_pending || cram_delayed);
+  wire [7:0] write_addr = oam_pending ? {1'b0,oam_addr} : {2'b10,cram_addr};
+  wire [31:0] write_data = oam_pending ? oam_word : cram_word;
   integer init_i;
   initial for(init_i=0;init_i<256;init_i=init_i+1) words[init_i]=0;
   always @(posedge CLK) begin
@@ -64,8 +94,7 @@ module gbc_snapshot_ram(input CLK, RST,
         cram_word <= {CRAM_DATA,cram_shift};
       end
     end
-    if(!RST && oam_pending) words[{1'b0,oam_addr}] <= oam_word;
-    else if(!RST && cram_delayed) words[{2'b10,cram_addr}] <= cram_word;
+    if(write_enable) words[write_addr] <= write_data;
     q <= words[read_addr];
     read_byte <= CRAM_RADDR[1:0];
   end

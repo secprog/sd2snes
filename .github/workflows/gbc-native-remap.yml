@@ -1,0 +1,101 @@
+name: GBC native remapping experiment
+
+on:
+  workflow_dispatch:
+    inputs:
+      native_run:
+        description: Native MkII GBC run containing NGC, EDIF and CoreGen outputs
+        type: string
+        required: true
+        default: '43510243832'
+      profile:
+        description: Proved combinational mapping candidate
+        type: choice
+        required: true
+        default: fixed-mux-area
+        options: [fixed-mux-area, lut4-area, fixed-mux, lut4]
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  implementation:
+    name: Prove and implement ${{ inputs.profile }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Fetch and verify the exact native source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          NATIVE_RUN: ${{ inputs.native_run }}
+        run: |
+          set -euo pipefail
+          [[ "$NATIVE_RUN" =~ ^[0-9]+$ ]]
+          mkdir -p .ci-tools/gbc-remap/reports
+          gh api "repos/$GH_REPO/actions/runs/$NATIVE_RUN" > .ci-tools/gbc-remap/reports/native-run.json
+          native_sha=$(python3 -c 'import json; print(json.load(open(".ci-tools/gbc-remap/reports/native-run.json"))["head_sha"])')
+          [[ "$native_sha" =~ ^[0-9a-f]{40}$ ]]
+          git diff --exit-code "$native_sha" HEAD -- verilog/ utils/
+          gh run download "$NATIVE_RUN" --name fpga-reports-mk2-gbc --dir .ci-tools/gbc-remap/native
+          python3 - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          root = Path('.ci-tools/gbc-remap')
+          identities = {}
+          for name in ('main.ngc', 'main_native.edf', 'main_map.mrp', 'vram.ngc', 'snescmd_buf.ngc', 'oam.ngc'):
+              found = list((root/'native').rglob(name))
+              assert len(found) == 1 and found[0].is_file(), name
+              identities[name] = hashlib.sha256(found[0].read_bytes()).hexdigest()
+          (root/'reports/native-sha256.json').write_text(json.dumps(identities, indent=2)+'\n')
+          PY
+      - uses: ./.github/actions/prepare-build-image
+        with:
+          target: mk2
+      - name: Install pinned hosted logic tools
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/oss-cad-suite-linux-x64-20261112.tgz"
+          curl --fail --location --retry 3 --output "$archive" \
+            https://github.com/YosysHQ/oss-cad-suite-build/releases/download/2026-11-12/oss-cad-suite-linux-x64-20261112.tgz
+          printf '%s  %s\n' 346499255e3e5e6e9bf67e1d378a4e6bc249abd3de3b0caf5b57604bc8ba1752 "$archive" | sha256sum --check
+          mkdir -p "$RUNNER_TEMP/gbc-yosys-tools"
+          tar -xzf "$archive" -C "$RUNNER_TEMP/gbc-yosys-tools"
+          echo "$RUNNER_TEMP/gbc-yosys-tools/oss-cad-suite/bin" >> "$GITHUB_PATH"
+      - name: Prove mapping and the serialized native EDIF
+        env:
+          PROFILE: ${{ inputs.profile }}
+        run: |
+          set -euo pipefail
+          native=$(find .ci-tools/gbc-remap/native -name main_native.edf -print -quit)
+          python3 .github/scripts/check-gbc-xst-remap.py "$native" .ci-tools/gbc-remap/reports "$PROFILE"
+      - name: Check native round trip and implement with strict timing
+        env:
+          PROFILE: ${{ inputs.profile }}
+        run: |
+          set -o pipefail
+          docker run --rm --user 0:0 --mac-address 08:00:27:68:c9:35 \
+            --volume "$GITHUB_WORKSPACE:/work" --workdir /work --env PROFILE \
+            --entrypoint /bin/bash sd2snes-ci:mk2 \
+            .github/scripts/implement-gbc-remap.sh 2>&1 | tee .ci-tools/gbc-remap/reports/implementation.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gbc-native-remap-${{ inputs.profile }}
+          path: |
+            .ci-tools/gbc-remap/reports/
+            .ci-tools/gbc-remap/baseline/*.mrp
+            .ci-tools/gbc-remap/baseline/*.bld
+            .ci-tools/gbc-remap/candidate/*.mrp
+            .ci-tools/gbc-remap/candidate/*.bld
+            .ci-tools/gbc-remap/candidate/*.par
+            .ci-tools/gbc-remap/candidate/*.twr
+            .ci-tools/gbc-remap/candidate/*.pcf
+            .ci-tools/gbc-remap/candidate/*.bgn
+            .ci-tools/gbc-remap/candidate/fpga_gbc.bit
+          if-no-files-found: error
+          retention-days: 14

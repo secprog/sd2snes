@@ -10,6 +10,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+from gbc_edif import Network, emit
 
 root = Path(__file__).resolve().parents[2]
 netlist = Path(sys.argv[1]).resolve()
@@ -28,30 +29,66 @@ def quote(path):
     return '"' + str(path) + '"'
 
 
-wrappers = [root / "verilog/sd2snes_sgb/ip/mk2" / (n + ".v")
-            for n in ("vram", "snescmd_buf", "oam")]
-# BUFGP is the legacy combined input/clock buffer used by XST. It is a fixed
-# boundary in this experiment; no clock primitive is remapped or simulated.
-extra = report / "legacy.v"
-extra.write_text("(* blackbox *) module BUFGP(input I, output O); endmodule\n")
-# NetGen marks its simulation model as a black box for synthesis and hides its
-# body with translate_off. Inspect a diagnostic copy with only those guards
-# removed; preserve the original artifact and hash. This is still NOT an
-# implementation netlist or a replacement for native MAP/PAR qualification.
-diagnostic = report / "native-diagnostic.v"
-source = netlist.read_text()
-# Only the main primitive network is under investigation. NetGen appends a
-# simulation-only glbl test harness (tri1/JTAG startup drivers), not hardware.
-source = source[:source.index("endmodule") + len("endmodule")] + "\n"
-source = re.sub(r"// synthesis translate_(?:off|on)", "", source)
-source = source.replace("/* synthesis syn_black_box syn_noprune=1 */", "")
-diagnostic.write_text(source)
-run("read", ["read_verilog -lib +/xilinx/cells_sim.v +/xilinx/cells_xtra.v",
-             "read_verilog -lib " + " ".join(map(quote, wrappers + [extra])),
-             "read_verilog " + quote(diagnostic), "hierarchy -top main",
-             "blackbox =A:whitebox",
-             "write_json " + quote(report / "native.json")])
-native = json.loads((report / "native.json").read_text())["modules"]["main"]
+network = None
+if netlist.suffix.lower() in (".edf", ".edif"):
+    network = Network(netlist.read_text())
+    native, native_ids = network.logic_model()
+    (report / "native.json").write_text(json.dumps({"modules": {"main": native}}))
+else:
+    wrappers = [root / "verilog/sd2snes_sgb/ip/mk2" / (n + ".v")
+                for n in ("vram", "snescmd_buf", "oam")]
+    # The NetGen path is diagnostic only. Its simulation primitives must never
+    # become the fixed implementation structure of an exported EDIF candidate.
+    extra = report / "legacy.v"
+    extra.write_text("(* blackbox *) module BUFGP(input I, output O); endmodule\n")
+    diagnostic = report / "native-diagnostic.v"
+    source = netlist.read_text()
+    source = source[:source.index("endmodule") + len("endmodule")] + "\n"
+    source = re.sub(r"// synthesis translate_(?:off|on)", "", source)
+    source = source.replace("/* synthesis syn_black_box syn_noprune=1 */", "")
+    diagnostic.write_text(source)
+    run("read", ["read_verilog -lib +/xilinx/cells_sim.v +/xilinx/cells_xtra.v",
+                 "read_verilog -lib " + " ".join(map(quote, wrappers + [extra])),
+                 "read_verilog " + quote(diagnostic), "hierarchy -top main",
+                 "blackbox =A:whitebox",
+                 "write_json " + quote(report / "native.json")])
+    native = json.loads((report / "native.json").read_text())["modules"]["main"]
+
+
+def render_logic(model, logic_types, inputs, outputs, module_name):
+    logic = [c for c in model["cells"].values() if c["type"] in logic_types]
+    bits = {b for c in logic for values in c["connections"].values()
+            for b in values if isinstance(b, int)} | set(inputs) | set(outputs)
+    constants = {bit: str(int(c["type"] == "VCC")) for c in model["cells"].values()
+                 if c["type"] in ("VCC", "GND") for values in c["connections"].values()
+                 for bit in values if isinstance(bit, int)}
+
+    def signal(bit):
+        if isinstance(bit, str) and bit not in ("0", "1"):
+            raise ValueError("Unknown/X constant in logic network")
+        return "n" + str(bit) if isinstance(bit, int) else "1'b" + bit
+
+    lines = [f"module {module_name}(input [{len(inputs)-1}:0] i, output [{len(outputs)-1}:0] o);"]
+    lines += ["wire " + ",".join(signal(b) for b in sorted(bits)) + ";"]
+    lines += [f"assign {signal(bit)}=i[{idx}];" for idx, bit in enumerate(inputs)]
+    lines += [f"assign o[{idx}]={signal(bit)};" for idx, bit in enumerate(outputs)]
+    lines += [f"assign {signal(bit)}=1'b{value};" for bit, value in constants.items() if bit in bits]
+    for c in logic:
+        if not all(len(values) == 1 for values in c["connections"].values()):
+            raise ValueError("Non-scalar logic connection")
+        ports = {p: signal(values[0]) for p, values in c["connections"].items()}
+        if c["type"].startswith("LUT"):
+            width = int(c["type"][3:])
+            init = c["parameters"]["INIT"]
+            address = "{" + ",".join(ports["I" + str(n)] for n in reversed(range(width))) + "}"
+            expression = f"({len(init)}'b{init} >> {address})"
+        elif c["type"] == "INV":
+            expression = "~" + ports["I"]
+        else:
+            expression = f"{ports['S']} ? {ports['I1']} : {ports['I0']}"
+        lines.append(f"assign {ports['O']}={expression};")
+    lines.append("endmodule")
+    return "\n".join(lines) + "\n"
 native_counts = Counter(c["type"] for c in native["cells"].values())
 if sum(native_counts[t] for t in ("LUT1", "LUT2", "LUT3", "LUT4")) < 5000:
     raise RuntimeError("native diagnostic did not retain the expected LUT primitives")
@@ -65,6 +102,11 @@ profiles = (("fixed-mux", False, None),
             ("fixed-mux-area2", False, abc_prefix + "if -K 4 -a; mfs2; mfs2; lutpack -S 1"),
             ("lut4", True, None),
             ("lut4-area", True, abc_prefix + "if -K 4 -a; mfs2; lutpack -S 1"))
+if len(sys.argv) > 3:
+    selected = set(sys.argv[3:])
+    if not selected <= {p[0] for p in profiles}:
+        raise ValueError("Unknown mapping profile")
+    profiles = tuple(p for p in profiles if p[0] in selected)
 for profile, remap_mux, abc_script in profiles:
     logic_types = {"LUT1", "LUT2", "LUT3", "LUT4", "INV"}
     if remap_mux:
@@ -83,31 +125,8 @@ for profile, remap_mux, abc_script in profiles:
     inputs, outputs = sorted(used - driven - constants.keys()), sorted(driven & boundary)
     if not inputs or not outputs:
         raise RuntimeError("empty native logic boundary")
-    all_bits = sorted(driven | used)
-
-    def signal(bit):
-        return "n" + str(bit) if isinstance(bit, int) else "1'b" + bit
-
-    lines = [f"module gbc_logic(input [{len(inputs)-1}:0] i, output [{len(outputs)-1}:0] o);"]
-    lines += ["wire " + ",".join(signal(b) for b in all_bits) + ";"]
-    lines += [f"assign {signal(bit)}=i[{idx}];" for idx, bit in enumerate(inputs)]
-    lines += [f"assign o[{idx}]={signal(bit)};" for idx, bit in enumerate(outputs)]
-    lines += [f"assign {signal(bit)}=1'b{value};" for bit, value in constants.items() if bit in used]
-    for c in logic:
-        ports = {p: signal(bits[0]) for p, bits in c["connections"].items()}
-        if c["type"].startswith("LUT"):
-            width = int(c["type"][3:])
-            init = c["parameters"]["INIT"]
-            address = "{" + ",".join(ports["I" + str(n)] for n in reversed(range(width))) + "}"
-            expression = f"({len(init)}'b{init} >> {address})"
-        elif c["type"] == "INV":
-            expression = "~" + ports["I"]
-        else:
-            expression = f"{ports['S']} ? {ports['I1']} : {ports['I0']}"
-        lines.append(f"assign {ports['O']}={expression};")
-    lines.append("endmodule")
     source = report / (profile + ".v")
-    source.write_text("\n".join(lines) + "\n")
+    source.write_text(render_logic(native, logic_types, inputs, outputs, "gbc_logic"))
     (report / (profile + "-boundary.json")).write_text(json.dumps({
         "inputs": inputs, "outputs": outputs, "logic_types": sorted(logic_types),
     }, indent=2) + "\n")
@@ -146,5 +165,21 @@ for profile, remap_mux, abc_script in profiles:
         "combinational_equivalence": "proved at every fixed-macro input and top-level output",
         "limitations": "Diagnostic only; fixed macro boundaries, no native placement/timing or console validation.",
     }
+    if network is not None:
+        rebuilt = network.splice(result, inputs, outputs, logic_types, native_ids)
+        # Prove the parsed output EDIF as well as ABC's in-memory mapping. This
+        # catches connection, INIT, output-alias and constant reconstruction bugs.
+        rebuilt_model, _ = rebuilt.logic_model(native_ids)
+        merged = report / (profile + "-merged.v")
+        merged.write_text(render_logic(rebuilt_model, logic_types, inputs, outputs, "gbc_merged"))
+        run(profile + "-merged", ["read_verilog " + quote(source) + " " + quote(merged),
+                                  "proc", "opt",
+                                  "miter -equiv -flatten gbc_logic gbc_merged miter",
+                                  "hierarchy -top miter",
+                                  "sat -verify -prove trigger 0 -show-inputs -show-outputs"])
+        (report / (profile + ".edf")).write_text(emit(rebuilt.tree) + "\n")
+        summaries[profile]["edif_equivalence"] = "proved after serializing and reparsing the merged native EDIF"
+        summaries[profile]["fixed_structure"] = "all fixed instance definitions, pin nets, net properties and top-level interface unchanged"
+        summaries[profile]["merged_cells"] = dict(sorted(Counter(c["type"] for c in rebuilt_model["cells"].values()).items()))
     (report / "summary.json").write_text(json.dumps(summaries, indent=2) + "\n")
 print(json.dumps(summaries, indent=2))

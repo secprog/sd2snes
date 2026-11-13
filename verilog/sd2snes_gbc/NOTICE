@@ -67,6 +67,10 @@ fails the existing version check. No additional image quantisation is used.
 The optional gbc_mcu_check input builds a real Mk.II bootstrap, then compiles
 and links production and experimental MCU firmware in separate object trees.
 These checks do not qualify a GBC bitstream or replace console validation.
+The optional gbc_yosys_check input runs an independent Spartan-3 synthesis
+mapping diagnostic. Combine it with gbc_rtl_only=all to avoid a native build.
+Its resource estimate includes ten RAMB16s inside the unchanged CoreGen
+wrappers. It does not enable production routing or publish a bitstream.
 
 
 Block RAM rules
@@ -94,4 +98,4 @@ compatible with the GPLv2:
   its hardware test ROMs)                end of mode 3) and the hwtests suite
   mooneye-test-suite          MIT        hardware-verified timing test ROMs
 
-No code or documentation from GPL-3.0 projects was used, read or adapted.
+No GPL-3.0 source code has been incorporated or adapted.

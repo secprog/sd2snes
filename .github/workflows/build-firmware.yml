@@ -32,6 +32,10 @@ on:
         description: Also compile normal and experimental MkII GBC firmware with a freshly built bootstrap
         type: boolean
         default: false
+      gbc_yosys_check:
+        description: Diagnose alternative Spartan-3 synthesis mapping; reports only, no bitstream
+        type: boolean
+        default: false
       placement_seeds:
         description: For MkII fpga mode only, optional comma-separated placer seeds (1..100)
         type: string
@@ -104,6 +108,27 @@ jobs:
             ${{ runner.temp }}/gbc-*.log
             misc/gbc_snes.bin
             misc/gbc_snes_mk2.bin
+          retention-days: 14
+
+  gbc-yosys:
+    if: inputs.build == 'fpga' && inputs.fpga_cores == 'mk2:gbc' && inputs.gbc_yosys_check
+    needs: gbc-checks
+    name: Diagnose GBC Spartan-3 logic mapping
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install hosted synthesis tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends yosys
+      - name: Map the unchanged MkII RTL with Yosys
+        run: python3 .github/scripts/check-gbc-yosys.py "$RUNNER_TEMP/gbc-yosys"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gbc-yosys-mapping-diagnostic
+          path: ${{ runner.temp }}/gbc-yosys/
           retention-days: 14
 
   package-contract:

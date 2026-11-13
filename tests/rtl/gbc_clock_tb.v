@@ -14,7 +14,7 @@ module gbc_clock_tb;
   task tick;
     begin
       #2; CLK=1; #1;
-      if({ce1,ce2,bus_edge,locked,err} !== {ref_ce1,ref_ce2,ref_bus,ref_locked}
+      if({ce1,ce2,bus_edge,locked,err} !== {ref_ce1,ref_ce2,ref_bus,ref_locked,ref_err}
          || dut.k2_r !== reference.k2_r || $signed(dut.ki_r) !== $signed(reference.ki_r))
         begin
           $display("error dut/ref=%h/%h enables=%b/%b ki=%0d/%0d diff=%0d/%0d err_w=%0d/%0d err_q=%0d/%0d",

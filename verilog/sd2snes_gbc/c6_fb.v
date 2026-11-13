@@ -556,6 +556,9 @@ generate
 endgenerate
 wire [5:0]  didx  = STAT_OFF[7] ? {2'b10, STAT_OFF[3:0]} : {1'b0, STAT_OFF[4:0]};
 wire        dhit  = (STAT_OFF >= 8'h60) & (STAT_OFF <= 8'h8C);
+// XST's @* expansion cannot name an unpacked array. Select outside the
+// procedural mux, retaining the byte-array decode instead of a wide shifter.
+wire [7:0] dirty_byte = dbytes[didx];
 
 `ifdef GBC_EXTERNAL_FB
 assign      STAT_HIT = (STAT_OFF >= 8'h58) & (STAT_OFF <= 8'h93);
@@ -580,7 +583,7 @@ always @(*) begin
     8'h92:   STAT_BYTE = cache_ready_row; // $ff until requested row is complete
     8'h93:   STAT_BYTE = {7'd0,fb_overflow}; // sticky: never silently serve a torn row
 `endif
-    default: STAT_BYTE = dhit ? dbytes[didx] : 8'h00;
+    default: STAT_BYTE = dhit ? dirty_byte : 8'h00;
   endcase
 end
 

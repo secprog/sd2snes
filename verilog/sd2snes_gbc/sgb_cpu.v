@@ -4792,6 +4792,7 @@ end
 // be removed entirely or integrated into the MCU pipe (with some
 // concurrency limitations).
 
+`ifdef SGB_MCU_ACCESS
 parameter
   ST_DBG_IDLE     = 8'b00000001,
   ST_DBG_DEC      = 8'b00000010,
@@ -5273,6 +5274,29 @@ always @(posedge CLK) begin
 `endif
 
 end
+`else
+// Mk.II does not expose the optional state-debug window. Cut the controller
+// and its register-read muxes explicitly, rather than leaving a reset-only
+// state machine for the legacy optimizer to discover as unreachable.
+assign MCU_RSP = 1'b0;
+assign MCU_DATA_OUT = 8'd0;
+assign DBG_ADDR = 12'd0;
+assign dbg_vram_wren = 1'b0;
+assign dbg_vram_address = 13'd0;
+assign dbg_vram_bank = 1'b0;
+assign dbg_vram_wrdata = 8'd0;
+assign dbg_oam_wren = 1'b0;
+assign dbg_oam_address = 8'd0;
+assign dbg_oam_wrdata = 8'd0;
+assign dbg_hram_wren = 1'b0;
+assign dbg_hram_address = 7'd0;
+assign dbg_hram_wrdata = 8'd0;
+assign DBG_REG_req_val = 1'b0;
+assign DBG_REG_wren = 1'b0;
+assign DBG_REG_address = 8'd0;
+assign DBG_REG_data = 8'd0;
+assign cram_dbg_addr = 7'd0;
+`endif
 
 reg         step_r;
 assign      DBG_EXE_step = step_r;

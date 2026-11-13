@@ -505,6 +505,62 @@ always @(posedge CLK) begin
   end
 end
 
+`ifdef MK2
+`ifdef DSP_COMP
+wire dr_late_cpu_selected;
+reg [15:0] dr_cpu_data, dr_internal_data;
+wire [15:0] dr_late_data;
+dspx_dr_request_permit dr_request(
+  .enable(enable), .strobe(reg_we_rising), .a0(A0), .selected(dr_late_cpu_selected)
+);
+// Prepare both complete words before the late CPU request selects one.
+// A CPU access suppresses every internal write, including the held byte.
+always @* begin
+  dr_cpu_data = regs_dr;
+  if(!regs_sr[SR_DRC]) begin
+    if(regs_sr[SR_DRS] == 1'b0) begin
+      dr_cpu_data[7:0] = DI;
+    end else begin
+      dr_cpu_data[15:8] = DI;
+    end
+  end else begin
+    dr_cpu_data[7:0] = DI;
+  end
+  dr_internal_data = regs_dr;
+  if(ld_dst == 4'b0110 && insn_state == STATE_STORE) begin
+    if (op == I_OP || op == I_RT) dr_internal_data = idb;
+    else if (op == I_LD) dr_internal_data = ld_id;
+  end
+end
+dspx_dr_late_select dr_late_join_0(.cpu_data(dr_cpu_data[0]), .internal_data(dr_internal_data[0]), .selected(dr_late_cpu_selected), .value(dr_late_data[0]));
+dspx_dr_late_select dr_late_join_1(.cpu_data(dr_cpu_data[1]), .internal_data(dr_internal_data[1]), .selected(dr_late_cpu_selected), .value(dr_late_data[1]));
+dspx_dr_late_select dr_late_join_2(.cpu_data(dr_cpu_data[2]), .internal_data(dr_internal_data[2]), .selected(dr_late_cpu_selected), .value(dr_late_data[2]));
+dspx_dr_late_select dr_late_join_3(.cpu_data(dr_cpu_data[3]), .internal_data(dr_internal_data[3]), .selected(dr_late_cpu_selected), .value(dr_late_data[3]));
+dspx_dr_late_select dr_late_join_4(.cpu_data(dr_cpu_data[4]), .internal_data(dr_internal_data[4]), .selected(dr_late_cpu_selected), .value(dr_late_data[4]));
+dspx_dr_late_select dr_late_join_5(.cpu_data(dr_cpu_data[5]), .internal_data(dr_internal_data[5]), .selected(dr_late_cpu_selected), .value(dr_late_data[5]));
+dspx_dr_late_select dr_late_join_6(.cpu_data(dr_cpu_data[6]), .internal_data(dr_internal_data[6]), .selected(dr_late_cpu_selected), .value(dr_late_data[6]));
+dspx_dr_late_select dr_late_join_7(.cpu_data(dr_cpu_data[7]), .internal_data(dr_internal_data[7]), .selected(dr_late_cpu_selected), .value(dr_late_data[7]));
+dspx_dr_late_select dr_late_join_8(.cpu_data(dr_cpu_data[8]), .internal_data(dr_internal_data[8]), .selected(dr_late_cpu_selected), .value(dr_late_data[8]));
+dspx_dr_late_select dr_late_join_9(.cpu_data(dr_cpu_data[9]), .internal_data(dr_internal_data[9]), .selected(dr_late_cpu_selected), .value(dr_late_data[9]));
+dspx_dr_late_select dr_late_join_10(.cpu_data(dr_cpu_data[10]), .internal_data(dr_internal_data[10]), .selected(dr_late_cpu_selected), .value(dr_late_data[10]));
+dspx_dr_late_select dr_late_join_11(.cpu_data(dr_cpu_data[11]), .internal_data(dr_internal_data[11]), .selected(dr_late_cpu_selected), .value(dr_late_data[11]));
+dspx_dr_late_select dr_late_join_12(.cpu_data(dr_cpu_data[12]), .internal_data(dr_internal_data[12]), .selected(dr_late_cpu_selected), .value(dr_late_data[12]));
+dspx_dr_late_select dr_late_join_13(.cpu_data(dr_cpu_data[13]), .internal_data(dr_internal_data[13]), .selected(dr_late_cpu_selected), .value(dr_late_data[13]));
+dspx_dr_late_select dr_late_join_14(.cpu_data(dr_cpu_data[14]), .internal_data(dr_internal_data[14]), .selected(dr_late_cpu_selected), .value(dr_late_data[14]));
+dspx_dr_late_select dr_late_join_15(.cpu_data(dr_cpu_data[15]), .internal_data(dr_internal_data[15]), .selected(dr_late_cpu_selected), .value(dr_late_data[15]));
+always @(posedge CLK) begin
+  if(RST & ~ss_frozen) begin
+    regs_dr <= dr_late_data;
+  end else if(RST & ss_frozen) begin
+    if(ss_wr) begin
+      if(ss_wa == 8'h0a) regs_dr[7:0]  <= ss_wd; // restore low byte
+      if(ss_wa == 8'h0b) regs_dr[15:8] <= ss_wd; // restore high byte
+    end
+  end else begin
+    regs_dr <= 16'h0000;
+  end
+end
+`else
 always @(posedge CLK) begin
   if(RST & ~ss_frozen) begin
     if(enable & reg_we_rising & (A0 == 1'b0)) begin
@@ -530,6 +586,34 @@ always @(posedge CLK) begin
     regs_dr <= 16'h0000;
   end
 end
+`endif
+`else
+always @(posedge CLK) begin
+  if(RST & ~ss_frozen) begin
+    if(enable & reg_we_rising & (A0 == 1'b0)) begin
+      if(!regs_sr[SR_DRC]) begin
+        if(regs_sr[SR_DRS] == 1'b0) begin
+          regs_dr[7:0] <= DI;
+        end else begin
+          regs_dr[15:8] <= DI;
+        end
+      end else begin
+        regs_dr[7:0] <= DI;
+      end
+    end else if(ld_dst == 4'b0110 && insn_state == STATE_STORE) begin
+      if (op == I_OP || op == I_RT) regs_dr <= idb;
+      else if (op == I_LD) regs_dr <= ld_id;
+    end
+  end else if(RST & ss_frozen) begin
+    if(ss_wr) begin
+      if(ss_wa == 8'h0a) regs_dr[7:0]  <= ss_wd; // restore low byte
+      if(ss_wa == 8'h0b) regs_dr[15:8] <= ss_wd; // restore high byte
+    end
+  end else begin
+    regs_dr <= 16'h0000;
+  end
+end
+`endif
 
 assign UPD_DO = (A0 ? regs_sr[15:8] : (regs_sr[SR_DRC] ? regs_dr[7:0] : (regs_sr[SR_DRS] ? regs_dr[15:8] : regs_dr[7:0])));
 assign DO = ss_ctrl ? {7'b0, ss_halted}
@@ -950,3 +1034,22 @@ always @(posedge CLK) begin
 end
 
 endmodule
+
+`ifdef MK2
+`ifdef DSP_COMP
+// Preserve the original procedural request test, including unknown controls.
+(* LUT_MAP="yes" *)
+module dspx_dr_request_permit(input enable, strobe, a0, output reg selected);
+always @* begin
+  selected = 1'b0;
+  if(enable & strobe & (a0 == 1'b0)) selected = 1'b1;
+end
+endmodule
+
+// Three real inputs keep the late request at the final data selection.
+(* LUT_MAP="yes" *)
+module dspx_dr_late_select(input cpu_data, internal_data, selected, output value);
+assign value = selected ? cpu_data : internal_data;
+endmodule
+`endif
+`endif

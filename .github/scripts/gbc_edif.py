@@ -5,6 +5,7 @@ properties, ports and library definitions remain opaque EDIF expressions.
 Unsupported structures fail explicitly instead of being approximated.
 """
 import copy
+from datetime import datetime, timezone
 import re
 
 
@@ -98,6 +99,30 @@ class Network:
                 pin_id = (inst_id, emit(pin[1]))
                 require(pin_id not in self.pin_net, "Pin joined to multiple nets")
                 self.pin_net[pin_id] = net_id
+
+    def implementation_text(self):
+        """Serialize our reconstructed netlist with its own, truthful producer.
+
+        ISE rejects NGC2EDIF's timing-estimate producer tag (NgdBuild:766).
+        This is a custom third-party reconstruction, not a supported NGC2EDIF
+        implementation export. Keep the original file and SHA256 separately;
+        only a successful native reference round trip can qualify this path.
+        No structural expression may change when replacing the file metadata.
+        """
+        structure = [copy.deepcopy(x) for x in self.tree if key(x) != "status"]
+        now = datetime.now(timezone.utc)
+        status = ["status", ["written",
+                  ["timeStamp", *(str(x) for x in (now.year, now.month, now.day,
+                                                 now.hour, now.minute, now.second))],
+                  ["program", '"sd2snes gbc_edif reconstruction"', ["version", '"1"']],
+                  ["comment", '"Experimental reconstruction; requires native round-trip qualification."']]]
+        position = structure.index(one(structure, "keywordMap")) + 1
+        tree = structure[:position] + [status] + structure[position:]
+        text = emit(tree) + "\n"
+        parsed = Network(text)
+        require([x for x in parsed.tree if key(x) != "status"] == structure,
+                "Implementation serialization changed structural EDIF")
+        return text
 
     def logic_model(self, known_ids=None):
         """Use Yosys-shaped JSON as a data interchange, without interpreting FFs."""

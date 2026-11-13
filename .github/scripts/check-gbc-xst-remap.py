@@ -10,7 +10,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
-from gbc_edif import Network, emit
+from gbc_edif import Network
 
 root = Path(__file__).resolve().parents[2]
 netlist = Path(sys.argv[1]).resolve()
@@ -38,6 +38,7 @@ def quote(path):
 network = None
 if netlist.suffix.lower() in (".edf", ".edif"):
     network = Network(netlist.read_text())
+    (report / "native-reconstructed.edf").write_text(network.implementation_text())
     native, native_ids = network.logic_model()
     (report / "native.json").write_text(json.dumps({"modules": {"main": native}}))
 else:
@@ -226,7 +227,7 @@ for profile, remap_mux, abc_script in profiles:
                                   "miter -equiv -flatten gbc_logic gbc_merged miter",
                                   "hierarchy -top miter",
                                   "sat -verify -prove trigger 0 -show-inputs -show-outputs"])
-        (report / (profile + ".edf")).write_text(emit(rebuilt.tree) + "\n")
+        (report / (profile + ".edf")).write_text(rebuilt.implementation_text())
         summaries[profile]["edif_equivalence"] = "proved after serializing and reparsing the merged native EDIF"
         summaries[profile]["fixed_structure"] = "all fixed instance definitions, pin nets, net properties and top-level interface unchanged"
         summaries[profile]["merged_cells"] = dict(sorted(Counter(c["type"] for c in rebuilt_model["cells"].values()).items()))

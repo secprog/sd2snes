@@ -14,34 +14,47 @@ read -r -a map_args <<< "$map_options"
 read -r -a par_args <<< "$par_options"
 
 mkdir -p "$experiment/baseline" "$experiment/candidate"
-cp "$native" "$experiment/baseline/main.edf"
+cp "$experiment/reports/native-reconstructed.edf" "$experiment/baseline/main.edf"
 cp "$experiment/reports/$PROFILE.edf" "$experiment/candidate/main.edf"
 for variant in baseline candidate; do
   cd "$experiment/$variant"
   cp "$root/verilog/sd2snes_sgb/main.ucf" main.ucf
-  ngdbuild -dd _ngo -sd "$ip" -nt timestamp -uc main.ucf -p xc3s400-4pq208 main.edf main.ngd
+  # Our EDIF contains top-level ports and I/O buffers, but no explicit PAD
+  # instances. UG628 requires -a for this third-party EDIF representation.
+  ngdbuild -a -dd _ngo -sd "$ip" -nt timestamp -uc main.ucf -p xc3s400-4pq208 main.edf main.ngd
   map_status=0
   map -p xc3s400-4pq208 "${map_args[@]}" -o main_map.ncd main.ngd main.pcf || map_status=$?
   if [[ "$variant" == baseline ]]; then
     # The unchanged exported EDIF must reproduce the source NGC's resource
     # report. The current reference is over capacity, so Map:237 is expected.
-    python3 - "$native_dir/main_map.mrp" main_map.mrp <<'PY'
-import json, re, sys
-from pathlib import Path
-def counts(path):
-    text = Path(path).read_text()
-    result = {}
-    for label in ('Number of Slice Flip Flops', 'Number of 4 input LUTs',
-                  'Total Number of 4 input LUTs', 'Number of bonded IOBs',
-                  'Number of RAMB16s', 'Number of MULT18X18s', 'Number of DCMs'):
-        values = re.findall(r'^\s*'+re.escape(label)+r':\s*([\d,]+)', text, re.M)
-        assert len(values) == 1, (path, label, values)
-        result[label] = int(values[0].replace(',', ''))
-    return result
-reference, exported = map(counts, sys.argv[1:])
-assert reference == exported, (reference, exported)
-print('Native EDIF round-trip resource identity:', json.dumps(exported))
-PY
+    # Use the tools actually installed in the ISE image (gawk, not Python).
+    resource_counts() {
+      gawk -F: '
+        BEGIN {
+          n=split("Number of Slice Flip Flops|Number of 4 input LUTs|Total Number of 4 input LUTs|Number of bonded IOBs|Number of RAMB16s|Number of MULT18X18s|Number of DCMs", labels, "\\|")
+          for(i=1;i<=n;i++) required[labels[i]]=1
+        }
+        {
+          label=$1; gsub(/^[[:space:]]+|[[:space:]]+$/, "", label)
+          if(label in required) {
+            value=$2; sub(/^[[:space:]]+/, "", value)
+            if(value !~ /^[0-9][0-9,]*([[:space:]]|$)/) exit 2
+            sub(/[[:space:]].*$/, "", value); gsub(/,/, "", value)
+            seen[label]++; counts[label]=value
+          }
+        }
+        END {
+          for(i=1;i<=n;i++) {
+            if(seen[labels[i]] != 1) exit 2
+            print labels[i] ": " counts[labels[i]]
+          }
+        }' "$1"
+    }
+    resource_counts "$native_dir/main_map.mrp" > reference-counts.txt
+    resource_counts main_map.mrp > reconstructed-counts.txt
+    diff -u reference-counts.txt reconstructed-counts.txt
+    echo 'Native EDIF round-trip resource identity:'
+    cat reconstructed-counts.txt
     if [[ "$map_status" != 0 ]]; then
       grep -q 'ERROR:Map:237' main_map.mrp
     fi

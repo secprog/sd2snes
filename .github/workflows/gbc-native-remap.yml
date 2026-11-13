@@ -98,6 +98,7 @@ jobs:
             .ci-tools/gbc-remap/reports/
             .ci-tools/gbc-remap/baseline/*.mrp
             .ci-tools/gbc-remap/baseline/*.bld
+            .ci-tools/gbc-remap/baseline/*-counts.txt
             .ci-tools/gbc-remap/candidate/*.mrp
             .ci-tools/gbc-remap/candidate/*.bld
             .ci-tools/gbc-remap/candidate/*.par

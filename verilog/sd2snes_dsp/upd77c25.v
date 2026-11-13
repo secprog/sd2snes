@@ -356,6 +356,449 @@ wire [7:0] ss_wa = DP_ADDR[7:0];
 wire [7:0] ss_wd = DI;
 `endif
 wire [3:0] ss_wstk_idx = (ss_wa - 8'h34) >> 1;
+`ifdef MK2
+`ifdef DSP_COMP
+(* KEEP="TRUE" *) wire stack_late_run, stack_restore_write;
+(* KEEP="TRUE" *) wire [15:0] stack_sp_match, stack_cpu_word, stack_addr_low;
+(* KEEP="TRUE" *) wire [2:0] stack_addr_high;
+wire [15:0] stack_late_low, stack_late_high;
+wire [10:0] stack_late_push_data = pc + 1;
+wire [10:0] stack_late_data = stack_late_run ? stack_late_push_data : {ss_wd[2:0], ss_wd};
+dsp_stack_run_permit run_permit(.reset_n(RST), .frozen(ss_frozen), .permit(stack_late_run));
+dsp_stack_restore_write_permit restore_write_permit(
+  .reset_n(RST), .frozen(ss_frozen), .ss_wr(ss_wr), .permit(stack_restore_write)
+);
+dsp_stack_nibble_match #(.VALUE(4'd3)) restore_high_0(
+  .addr(ss_wa[7:4]),
+  .selected(stack_addr_high[0])
+);
+dsp_stack_nibble_match #(.VALUE(4'd4)) restore_high_1(
+  .addr(ss_wa[7:4]),
+  .selected(stack_addr_high[1])
+);
+dsp_stack_nibble_match #(.VALUE(4'd5)) restore_high_2(
+  .addr(ss_wa[7:4]),
+  .selected(stack_addr_high[2])
+);
+dsp_stack_nibble_match #(.VALUE(4'd0)) restore_low_0(
+  .addr(ss_wa[3:0]),
+  .selected(stack_addr_low[0])
+);
+dsp_stack_nibble_match #(.VALUE(4'd1)) restore_low_1(
+  .addr(ss_wa[3:0]),
+  .selected(stack_addr_low[1])
+);
+dsp_stack_nibble_match #(.VALUE(4'd2)) restore_low_2(
+  .addr(ss_wa[3:0]),
+  .selected(stack_addr_low[2])
+);
+dsp_stack_nibble_match #(.VALUE(4'd3)) restore_low_3(
+  .addr(ss_wa[3:0]),
+  .selected(stack_addr_low[3])
+);
+dsp_stack_nibble_match #(.VALUE(4'd4)) restore_low_4(
+  .addr(ss_wa[3:0]),
+  .selected(stack_addr_low[4])
+);
+dsp_stack_nibble_match #(.VALUE(4'd5)) restore_low_5(
+  .addr(ss_wa[3:0]),
+  .selected(stack_addr_low[5])
+);
+dsp_stack_nibble_match #(.VALUE(4'd6)) restore_low_6(
+  .addr(ss_wa[3:0]),
+  .selected(stack_addr_low[6])
+);
+dsp_stack_nibble_match #(.VALUE(4'd7)) restore_low_7(
+  .addr(ss_wa[3:0]),
+  .selected(stack_addr_low[7])
+);
+dsp_stack_nibble_match #(.VALUE(4'd8)) restore_low_8(
+  .addr(ss_wa[3:0]),
+  .selected(stack_addr_low[8])
+);
+dsp_stack_nibble_match #(.VALUE(4'd9)) restore_low_9(
+  .addr(ss_wa[3:0]),
+  .selected(stack_addr_low[9])
+);
+dsp_stack_nibble_match #(.VALUE(4'd10)) restore_low_10(
+  .addr(ss_wa[3:0]),
+  .selected(stack_addr_low[10])
+);
+dsp_stack_nibble_match #(.VALUE(4'd11)) restore_low_11(
+  .addr(ss_wa[3:0]),
+  .selected(stack_addr_low[11])
+);
+dsp_stack_nibble_match #(.VALUE(4'd12)) restore_low_12(
+  .addr(ss_wa[3:0]),
+  .selected(stack_addr_low[12])
+);
+dsp_stack_nibble_match #(.VALUE(4'd13)) restore_low_13(
+  .addr(ss_wa[3:0]),
+  .selected(stack_addr_low[13])
+);
+dsp_stack_nibble_match #(.VALUE(4'd14)) restore_low_14(
+  .addr(ss_wa[3:0]),
+  .selected(stack_addr_low[14])
+);
+dsp_stack_nibble_match #(.VALUE(4'd15)) restore_low_15(
+  .addr(ss_wa[3:0]),
+  .selected(stack_addr_low[15])
+);
+dsp_stack_nibble_match #(.VALUE(4'd0)) stack_pointer_0(
+  .addr(regs_sp),
+  .selected(stack_sp_match[0])
+);
+dsp_stack_cpu_word_select cpu_word_0(
+  .reset_n(RST), .frozen(ss_frozen), .push_now(push_now),
+  .sp_selected(stack_sp_match[0]), .selected(stack_cpu_word[0])
+);
+dsp_stack_parallel_join late_low_0(
+  .cpu_selected(stack_cpu_word[0]), .restore_permit(stack_restore_write),
+  .addr_high(stack_addr_high[0]), .addr_low(stack_addr_low[4]),
+  .write(stack_late_low[0])
+);
+dsp_stack_parallel_join late_high_0(
+  .cpu_selected(stack_cpu_word[0]), .restore_permit(stack_restore_write),
+  .addr_high(stack_addr_high[0]), .addr_low(stack_addr_low[5]),
+  .write(stack_late_high[0])
+);
+always @(posedge CLK) begin
+  if (stack_late_low[0]) stack[0][7:0] <= stack_late_data[7:0];
+  if (stack_late_high[0]) stack[0][10:8] <= stack_late_data[10:8];
+end
+dsp_stack_nibble_match #(.VALUE(4'd1)) stack_pointer_1(
+  .addr(regs_sp),
+  .selected(stack_sp_match[1])
+);
+dsp_stack_cpu_word_select cpu_word_1(
+  .reset_n(RST), .frozen(ss_frozen), .push_now(push_now),
+  .sp_selected(stack_sp_match[1]), .selected(stack_cpu_word[1])
+);
+dsp_stack_parallel_join late_low_1(
+  .cpu_selected(stack_cpu_word[1]), .restore_permit(stack_restore_write),
+  .addr_high(stack_addr_high[0]), .addr_low(stack_addr_low[6]),
+  .write(stack_late_low[1])
+);
+dsp_stack_parallel_join late_high_1(
+  .cpu_selected(stack_cpu_word[1]), .restore_permit(stack_restore_write),
+  .addr_high(stack_addr_high[0]), .addr_low(stack_addr_low[7]),
+  .write(stack_late_high[1])
+);
+always @(posedge CLK) begin
+  if (stack_late_low[1]) stack[1][7:0] <= stack_late_data[7:0];
+  if (stack_late_high[1]) stack[1][10:8] <= stack_late_data[10:8];
+end
+dsp_stack_nibble_match #(.VALUE(4'd2)) stack_pointer_2(
+  .addr(regs_sp),
+  .selected(stack_sp_match[2])
+);
+dsp_stack_cpu_word_select cpu_word_2(
+  .reset_n(RST), .frozen(ss_frozen), .push_now(push_now),
+  .sp_selected(stack_sp_match[2]), .selected(stack_cpu_word[2])
+);
+dsp_stack_parallel_join late_low_2(
+  .cpu_selected(stack_cpu_word[2]), .restore_permit(stack_restore_write),
+  .addr_high(stack_addr_high[0]), .addr_low(stack_addr_low[8]),
+  .write(stack_late_low[2])
+);
+dsp_stack_parallel_join late_high_2(
+  .cpu_selected(stack_cpu_word[2]), .restore_permit(stack_restore_write),
+  .addr_high(stack_addr_high[0]), .addr_low(stack_addr_low[9]),
+  .write(stack_late_high[2])
+);
+always @(posedge CLK) begin
+  if (stack_late_low[2]) stack[2][7:0] <= stack_late_data[7:0];
+  if (stack_late_high[2]) stack[2][10:8] <= stack_late_data[10:8];
+end
+dsp_stack_nibble_match #(.VALUE(4'd3)) stack_pointer_3(
+  .addr(regs_sp),
+  .selected(stack_sp_match[3])
+);
+dsp_stack_cpu_word_select cpu_word_3(
+  .reset_n(RST), .frozen(ss_frozen), .push_now(push_now),
+  .sp_selected(stack_sp_match[3]), .selected(stack_cpu_word[3])
+);
+dsp_stack_parallel_join late_low_3(
+  .cpu_selected(stack_cpu_word[3]), .restore_permit(stack_restore_write),
+  .addr_high(stack_addr_high[0]), .addr_low(stack_addr_low[10]),
+  .write(stack_late_low[3])
+);
+dsp_stack_parallel_join late_high_3(
+  .cpu_selected(stack_cpu_word[3]), .restore_permit(stack_restore_write),
+  .addr_high(stack_addr_high[0]), .addr_low(stack_addr_low[11]),
+  .write(stack_late_high[3])
+);
+always @(posedge CLK) begin
+  if (stack_late_low[3]) stack[3][7:0] <= stack_late_data[7:0];
+  if (stack_late_high[3]) stack[3][10:8] <= stack_late_data[10:8];
+end
+dsp_stack_nibble_match #(.VALUE(4'd4)) stack_pointer_4(
+  .addr(regs_sp),
+  .selected(stack_sp_match[4])
+);
+dsp_stack_cpu_word_select cpu_word_4(
+  .reset_n(RST), .frozen(ss_frozen), .push_now(push_now),
+  .sp_selected(stack_sp_match[4]), .selected(stack_cpu_word[4])
+);
+dsp_stack_parallel_join late_low_4(
+  .cpu_selected(stack_cpu_word[4]), .restore_permit(stack_restore_write),
+  .addr_high(stack_addr_high[0]), .addr_low(stack_addr_low[12]),
+  .write(stack_late_low[4])
+);
+dsp_stack_parallel_join late_high_4(
+  .cpu_selected(stack_cpu_word[4]), .restore_permit(stack_restore_write),
+  .addr_high(stack_addr_high[0]), .addr_low(stack_addr_low[13]),
+  .write(stack_late_high[4])
+);
+always @(posedge CLK) begin
+  if (stack_late_low[4]) stack[4][7:0] <= stack_late_data[7:0];
+  if (stack_late_high[4]) stack[4][10:8] <= stack_late_data[10:8];
+end
+dsp_stack_nibble_match #(.VALUE(4'd5)) stack_pointer_5(
+  .addr(regs_sp),
+  .selected(stack_sp_match[5])
+);
+dsp_stack_cpu_word_select cpu_word_5(
+  .reset_n(RST), .frozen(ss_frozen), .push_now(push_now),
+  .sp_selected(stack_sp_match[5]), .selected(stack_cpu_word[5])
+);
+dsp_stack_parallel_join late_low_5(
+  .cpu_selected(stack_cpu_word[5]), .restore_permit(stack_restore_write),
+  .addr_high(stack_addr_high[0]), .addr_low(stack_addr_low[14]),
+  .write(stack_late_low[5])
+);
+dsp_stack_parallel_join late_high_5(
+  .cpu_selected(stack_cpu_word[5]), .restore_permit(stack_restore_write),
+  .addr_high(stack_addr_high[0]), .addr_low(stack_addr_low[15]),
+  .write(stack_late_high[5])
+);
+always @(posedge CLK) begin
+  if (stack_late_low[5]) stack[5][7:0] <= stack_late_data[7:0];
+  if (stack_late_high[5]) stack[5][10:8] <= stack_late_data[10:8];
+end
+dsp_stack_nibble_match #(.VALUE(4'd6)) stack_pointer_6(
+  .addr(regs_sp),
+  .selected(stack_sp_match[6])
+);
+dsp_stack_cpu_word_select cpu_word_6(
+  .reset_n(RST), .frozen(ss_frozen), .push_now(push_now),
+  .sp_selected(stack_sp_match[6]), .selected(stack_cpu_word[6])
+);
+dsp_stack_parallel_join late_low_6(
+  .cpu_selected(stack_cpu_word[6]), .restore_permit(stack_restore_write),
+  .addr_high(stack_addr_high[1]), .addr_low(stack_addr_low[0]),
+  .write(stack_late_low[6])
+);
+dsp_stack_parallel_join late_high_6(
+  .cpu_selected(stack_cpu_word[6]), .restore_permit(stack_restore_write),
+  .addr_high(stack_addr_high[1]), .addr_low(stack_addr_low[1]),
+  .write(stack_late_high[6])
+);
+always @(posedge CLK) begin
+  if (stack_late_low[6]) stack[6][7:0] <= stack_late_data[7:0];
+  if (stack_late_high[6]) stack[6][10:8] <= stack_late_data[10:8];
+end
+dsp_stack_nibble_match #(.VALUE(4'd7)) stack_pointer_7(
+  .addr(regs_sp),
+  .selected(stack_sp_match[7])
+);
+dsp_stack_cpu_word_select cpu_word_7(
+  .reset_n(RST), .frozen(ss_frozen), .push_now(push_now),
+  .sp_selected(stack_sp_match[7]), .selected(stack_cpu_word[7])
+);
+dsp_stack_parallel_join late_low_7(
+  .cpu_selected(stack_cpu_word[7]), .restore_permit(stack_restore_write),
+  .addr_high(stack_addr_high[1]), .addr_low(stack_addr_low[2]),
+  .write(stack_late_low[7])
+);
+dsp_stack_parallel_join late_high_7(
+  .cpu_selected(stack_cpu_word[7]), .restore_permit(stack_restore_write),
+  .addr_high(stack_addr_high[1]), .addr_low(stack_addr_low[3]),
+  .write(stack_late_high[7])
+);
+always @(posedge CLK) begin
+  if (stack_late_low[7]) stack[7][7:0] <= stack_late_data[7:0];
+  if (stack_late_high[7]) stack[7][10:8] <= stack_late_data[10:8];
+end
+dsp_stack_nibble_match #(.VALUE(4'd8)) stack_pointer_8(
+  .addr(regs_sp),
+  .selected(stack_sp_match[8])
+);
+dsp_stack_cpu_word_select cpu_word_8(
+  .reset_n(RST), .frozen(ss_frozen), .push_now(push_now),
+  .sp_selected(stack_sp_match[8]), .selected(stack_cpu_word[8])
+);
+dsp_stack_parallel_join late_low_8(
+  .cpu_selected(stack_cpu_word[8]), .restore_permit(stack_restore_write),
+  .addr_high(stack_addr_high[1]), .addr_low(stack_addr_low[4]),
+  .write(stack_late_low[8])
+);
+dsp_stack_parallel_join late_high_8(
+  .cpu_selected(stack_cpu_word[8]), .restore_permit(stack_restore_write),
+  .addr_high(stack_addr_high[1]), .addr_low(stack_addr_low[5]),
+  .write(stack_late_high[8])
+);
+always @(posedge CLK) begin
+  if (stack_late_low[8]) stack[8][7:0] <= stack_late_data[7:0];
+  if (stack_late_high[8]) stack[8][10:8] <= stack_late_data[10:8];
+end
+dsp_stack_nibble_match #(.VALUE(4'd9)) stack_pointer_9(
+  .addr(regs_sp),
+  .selected(stack_sp_match[9])
+);
+dsp_stack_cpu_word_select cpu_word_9(
+  .reset_n(RST), .frozen(ss_frozen), .push_now(push_now),
+  .sp_selected(stack_sp_match[9]), .selected(stack_cpu_word[9])
+);
+dsp_stack_parallel_join late_low_9(
+  .cpu_selected(stack_cpu_word[9]), .restore_permit(stack_restore_write),
+  .addr_high(stack_addr_high[1]), .addr_low(stack_addr_low[6]),
+  .write(stack_late_low[9])
+);
+dsp_stack_parallel_join late_high_9(
+  .cpu_selected(stack_cpu_word[9]), .restore_permit(stack_restore_write),
+  .addr_high(stack_addr_high[1]), .addr_low(stack_addr_low[7]),
+  .write(stack_late_high[9])
+);
+always @(posedge CLK) begin
+  if (stack_late_low[9]) stack[9][7:0] <= stack_late_data[7:0];
+  if (stack_late_high[9]) stack[9][10:8] <= stack_late_data[10:8];
+end
+dsp_stack_nibble_match #(.VALUE(4'd10)) stack_pointer_10(
+  .addr(regs_sp),
+  .selected(stack_sp_match[10])
+);
+dsp_stack_cpu_word_select cpu_word_10(
+  .reset_n(RST), .frozen(ss_frozen), .push_now(push_now),
+  .sp_selected(stack_sp_match[10]), .selected(stack_cpu_word[10])
+);
+dsp_stack_parallel_join late_low_10(
+  .cpu_selected(stack_cpu_word[10]), .restore_permit(stack_restore_write),
+  .addr_high(stack_addr_high[1]), .addr_low(stack_addr_low[8]),
+  .write(stack_late_low[10])
+);
+dsp_stack_parallel_join late_high_10(
+  .cpu_selected(stack_cpu_word[10]), .restore_permit(stack_restore_write),
+  .addr_high(stack_addr_high[1]), .addr_low(stack_addr_low[9]),
+  .write(stack_late_high[10])
+);
+always @(posedge CLK) begin
+  if (stack_late_low[10]) stack[10][7:0] <= stack_late_data[7:0];
+  if (stack_late_high[10]) stack[10][10:8] <= stack_late_data[10:8];
+end
+dsp_stack_nibble_match #(.VALUE(4'd11)) stack_pointer_11(
+  .addr(regs_sp),
+  .selected(stack_sp_match[11])
+);
+dsp_stack_cpu_word_select cpu_word_11(
+  .reset_n(RST), .frozen(ss_frozen), .push_now(push_now),
+  .sp_selected(stack_sp_match[11]), .selected(stack_cpu_word[11])
+);
+dsp_stack_parallel_join late_low_11(
+  .cpu_selected(stack_cpu_word[11]), .restore_permit(stack_restore_write),
+  .addr_high(stack_addr_high[1]), .addr_low(stack_addr_low[10]),
+  .write(stack_late_low[11])
+);
+dsp_stack_parallel_join late_high_11(
+  .cpu_selected(stack_cpu_word[11]), .restore_permit(stack_restore_write),
+  .addr_high(stack_addr_high[1]), .addr_low(stack_addr_low[11]),
+  .write(stack_late_high[11])
+);
+always @(posedge CLK) begin
+  if (stack_late_low[11]) stack[11][7:0] <= stack_late_data[7:0];
+  if (stack_late_high[11]) stack[11][10:8] <= stack_late_data[10:8];
+end
+dsp_stack_nibble_match #(.VALUE(4'd12)) stack_pointer_12(
+  .addr(regs_sp),
+  .selected(stack_sp_match[12])
+);
+dsp_stack_cpu_word_select cpu_word_12(
+  .reset_n(RST), .frozen(ss_frozen), .push_now(push_now),
+  .sp_selected(stack_sp_match[12]), .selected(stack_cpu_word[12])
+);
+dsp_stack_parallel_join late_low_12(
+  .cpu_selected(stack_cpu_word[12]), .restore_permit(stack_restore_write),
+  .addr_high(stack_addr_high[1]), .addr_low(stack_addr_low[12]),
+  .write(stack_late_low[12])
+);
+dsp_stack_parallel_join late_high_12(
+  .cpu_selected(stack_cpu_word[12]), .restore_permit(stack_restore_write),
+  .addr_high(stack_addr_high[1]), .addr_low(stack_addr_low[13]),
+  .write(stack_late_high[12])
+);
+always @(posedge CLK) begin
+  if (stack_late_low[12]) stack[12][7:0] <= stack_late_data[7:0];
+  if (stack_late_high[12]) stack[12][10:8] <= stack_late_data[10:8];
+end
+dsp_stack_nibble_match #(.VALUE(4'd13)) stack_pointer_13(
+  .addr(regs_sp),
+  .selected(stack_sp_match[13])
+);
+dsp_stack_cpu_word_select cpu_word_13(
+  .reset_n(RST), .frozen(ss_frozen), .push_now(push_now),
+  .sp_selected(stack_sp_match[13]), .selected(stack_cpu_word[13])
+);
+dsp_stack_parallel_join late_low_13(
+  .cpu_selected(stack_cpu_word[13]), .restore_permit(stack_restore_write),
+  .addr_high(stack_addr_high[1]), .addr_low(stack_addr_low[14]),
+  .write(stack_late_low[13])
+);
+dsp_stack_parallel_join late_high_13(
+  .cpu_selected(stack_cpu_word[13]), .restore_permit(stack_restore_write),
+  .addr_high(stack_addr_high[1]), .addr_low(stack_addr_low[15]),
+  .write(stack_late_high[13])
+);
+always @(posedge CLK) begin
+  if (stack_late_low[13]) stack[13][7:0] <= stack_late_data[7:0];
+  if (stack_late_high[13]) stack[13][10:8] <= stack_late_data[10:8];
+end
+dsp_stack_nibble_match #(.VALUE(4'd14)) stack_pointer_14(
+  .addr(regs_sp),
+  .selected(stack_sp_match[14])
+);
+dsp_stack_cpu_word_select cpu_word_14(
+  .reset_n(RST), .frozen(ss_frozen), .push_now(push_now),
+  .sp_selected(stack_sp_match[14]), .selected(stack_cpu_word[14])
+);
+dsp_stack_parallel_join late_low_14(
+  .cpu_selected(stack_cpu_word[14]), .restore_permit(stack_restore_write),
+  .addr_high(stack_addr_high[2]), .addr_low(stack_addr_low[0]),
+  .write(stack_late_low[14])
+);
+dsp_stack_parallel_join late_high_14(
+  .cpu_selected(stack_cpu_word[14]), .restore_permit(stack_restore_write),
+  .addr_high(stack_addr_high[2]), .addr_low(stack_addr_low[1]),
+  .write(stack_late_high[14])
+);
+always @(posedge CLK) begin
+  if (stack_late_low[14]) stack[14][7:0] <= stack_late_data[7:0];
+  if (stack_late_high[14]) stack[14][10:8] <= stack_late_data[10:8];
+end
+dsp_stack_nibble_match #(.VALUE(4'd15)) stack_pointer_15(
+  .addr(regs_sp),
+  .selected(stack_sp_match[15])
+);
+dsp_stack_cpu_word_select cpu_word_15(
+  .reset_n(RST), .frozen(ss_frozen), .push_now(push_now),
+  .sp_selected(stack_sp_match[15]), .selected(stack_cpu_word[15])
+);
+dsp_stack_parallel_join late_low_15(
+  .cpu_selected(stack_cpu_word[15]), .restore_permit(stack_restore_write),
+  .addr_high(stack_addr_high[2]), .addr_low(stack_addr_low[2]),
+  .write(stack_late_low[15])
+);
+dsp_stack_parallel_join late_high_15(
+  .cpu_selected(stack_cpu_word[15]), .restore_permit(stack_restore_write),
+  .addr_high(stack_addr_high[2]), .addr_low(stack_addr_low[3]),
+  .write(stack_late_high[15])
+);
+always @(posedge CLK) begin
+  if (stack_late_low[15]) stack[15][7:0] <= stack_late_data[7:0];
+  if (stack_late_high[15]) stack[15][10:8] <= stack_late_data[10:8];
+end
+
+`endif
+`endif
 always @(*) begin
   if (DP_ADDR[7:0] >= 8'h34 && DP_ADDR[7:0] <= 8'h53)
     ss_reg_do = DP_ADDR[0] ? {5'b0, ss_stk[10:8]}
@@ -540,7 +983,11 @@ always @(posedge CLK) begin
   if(RST & ~ss_frozen) begin
 `ifdef MK2
     push_now <= 1'b0;
+`ifdef DSP_COMP
+    // DSPX stack writes use the parallel word/lane decoder above.
+`else
     if(push_now) stack[regs_sp] <= pc + 1;
+`endif
 `endif
     case(insn_state)
       STATE_FETCH: begin
@@ -842,8 +1289,17 @@ always @(posedge CLK) begin
     // everything else is here. Mirrors the read mux offset map exactly.
     if(ss_wr) begin
       if(ss_wa >= 8'h34 && ss_wa <= 8'h53) begin
+`ifdef MK2
+`ifdef DSP_COMP
+        // DSPX stack writes use the parallel word/lane decoder above.
+`else
         if(ss_wa[0]) stack[ss_wstk_idx][10:8] <= ss_wd[2:0];
         else         stack[ss_wstk_idx][7:0]  <= ss_wd;
+`endif
+`else
+        if(ss_wa[0]) stack[ss_wstk_idx][10:8] <= ss_wd[2:0];
+        else         stack[ss_wstk_idx][7:0]  <= ss_wd;
+`endif
       end else case(ss_wa)
         8'h00: pc[7:0]          <= ss_wd;
         8'h01: pc[10:8]         <= ss_wd[2:0];
@@ -950,3 +1406,63 @@ always @(posedge CLK) begin
 end
 
 endmodule
+
+`ifdef MK2
+`ifdef DSP_COMP
+// Preserve both original procedural ancestor guards, including X handling.
+(* LUT_MAP="yes" *)
+module dsp_stack_run_permit(input reset_n, frozen, output reg permit);
+always @* begin
+  permit = 1'b0;
+  if (reset_n & ~frozen) permit = 1'b1;
+end
+endmodule
+
+// The restore strobe joins the unchanged procedural reset/freeze ancestors.
+(* LUT_MAP="yes" *)
+module dsp_stack_restore_write_permit(input reset_n, frozen, ss_wr, output reg permit);
+always @* begin
+  permit = 1'b0;
+  if (reset_n & ~frozen) begin
+  end else if (reset_n & frozen) begin
+    if (ss_wr) permit = 1'b1;
+  end
+end
+endmodule
+
+// Four address inputs are compared in parallel before the final word gate.
+(* LUT_MAP="yes" *)
+module dsp_stack_nibble_match #(parameter [3:0] VALUE = 4'd0)(
+  input [3:0] addr, output reg selected
+);
+always @* begin
+  selected = 1'b0;
+  if (addr == VALUE) selected = 1'b1;
+end
+endmodule
+
+// Four real inputs; retain the original run, CALL and word priorities.
+(* LUT_MAP="yes" *)
+module dsp_stack_cpu_word_select(
+  input reset_n, frozen, push_now, sp_selected, output reg selected
+);
+always @* begin
+  selected = 1'b0;
+  if (reset_n & ~frozen) begin
+    if (push_now) begin
+      if (sp_selected) selected = 1'b1;
+    end
+  end
+end
+endmodule
+
+// Four real inputs; both restore address halves enter this final LUT directly.
+(* LUT_MAP="yes" *)
+module dsp_stack_parallel_join(
+  input cpu_selected, restore_permit, addr_high, addr_low, output write
+);
+assign write = cpu_selected | (restore_permit & addr_high & addr_low);
+endmodule
+
+`endif
+`endif

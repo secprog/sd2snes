@@ -1,4 +1,41 @@
 `timescale 1ns/1ps
+// Double-buffered page dirt. COMMIT swaps the published/live banks, and a
+// simultaneous write belongs to the new live bank. Per-byte validity clears
+// a bank immediately without clearing RAM; ALL supplies an all-one default.
+// Only the requested published byte is read, so this remains a two-port RAM.
+module gbc_dirty_pages #(parameter PAGES=8)(input CLK, RST, SWAP, ALL, SET,
+  input [2:0] WPAGE, BIT, RPAGE, output [7:0] Q);
+  reg live=0;
+  reg [1:0] defaults=0;
+  reg [15:0] valid=0;
+  (* ram_style="distributed" *) reg [7:0] bytes [0:15];
+  wire write_bank=live ^ SWAP;
+  wire [3:0] wa={write_bank,WPAGE}, ra={~live,RPAGE};
+  wire set_ok=SET && WPAGE<PAGES;
+  wire old_valid=!SWAP && valid[{live,WPAGE}];
+  wire [7:0] base=old_valid ? bytes[wa] : {8{!SWAP && defaults[live]}};
+  always @(posedge CLK) begin
+    if(!RST && !ALL && set_ok) bytes[wa]<=base | (8'b1 << BIT);
+    if(RST) begin live<=0; defaults<=0; end
+    else begin
+      if(SWAP) live<=~live;
+      if(SWAP || ALL) defaults[write_bank]<=ALL;
+    end
+  end
+  genvar bank,page;
+  generate for(bank=0;bank<2;bank=bank+1) begin : g_bank
+    for(page=0;page<PAGES;page=page+1) begin : g_page
+      wire selected=write_bank==bank;
+      wire clear_here=selected && (SWAP || ALL);
+      wire set_here=selected && set_ok && WPAGE==page && !ALL;
+      always @(posedge CLK)
+        valid[bank*8+page]<=!RST && (set_here || (!clear_here && valid[bank*8+page]));
+    end
+  end endgenerate
+  assign Q=RPAGE>=PAGES ? 8'd0 : valid[ra]
+          ? bytes[ra] : {8{defaults[~live & 1'b1]}};
+endmodule
+
 // Sprite positions are inserted once and invalidated after use. Keep the
 // original $f0 sentinel using a validity bit, instead of writing eight bits
 // on every clear/consume. Lookup order and combinational latency are unchanged.

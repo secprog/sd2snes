@@ -1005,9 +1005,11 @@ wire       view_sel_d1 = s1_bgch_r | s1_obch_r | s1_map_r | s1_cgram_r | s1_oam_
 // Dirty accumulator (contract section 6)
 //-------------------------------------------------------------------
 
+`ifndef MK2
 reg  [47:0] dirty_chr_acc_r,  dirty_chr_pub_r;
 reg  [31:0] dirty_obj_acc_r,  dirty_obj_pub_r;
 reg  [63:0] dirty_map_acc_r,  dirty_map_pub_r;
+`endif
 reg  [7:0]  dirty_misc_acc_r, dirty_misc_pub_r;
 
 // One decoder per class rather than a 48/32/64-bit variable shift: the bank is
@@ -1078,6 +1080,27 @@ wire [7:0]  set_misc = {3'b000, snap_msel, 1'b0, snap_regs, snap_cram, snap_oam}
 // counting it in GBDG turns a lost tile into a number somebody can read.
 wire        commit_swap = wr_commit & ~busy_r;
 
+`ifdef MK2
+wire [7:0] dirty_chr_byte, dirty_obj_byte, dirty_map_byte;
+wire [7:0] dirty_chr_offset=SNES_ADDR[7:0]-8'h10;
+wire [7:0] dirty_obj_offset=SNES_ADDR[7:0]-8'h16;
+wire [7:0] dirty_map_offset=SNES_ADDR[7:0]-8'h1a;
+wire [2:0] dirty_chr_page={1'b0,TAP_VRAM_ADDR[12:11]} + (TAP_VRAM_BANK ? 3'd3 : 3'd0);
+gbc_dirty_pages #(.PAGES(6)) chr_dirty(.CLK(CLK),.RST(RST),.SWAP(commit_swap),
+  .ALL(1'b0),.SET(d_chr_hit),.WPAGE(dirty_chr_page),.BIT(TAP_VRAM_ADDR[10:8]),
+  .RPAGE(dirty_chr_offset[2:0]),.Q(dirty_chr_byte));
+gbc_dirty_pages #(.PAGES(4)) obj_dirty(.CLK(CLK),.RST(RST),.SWAP(commit_swap),
+  .ALL(1'b0),.SET(d_obj_hit),.WPAGE({1'b0,TAP_VRAM_BANK,TAP_VRAM_ADDR[11]}),
+  .BIT(TAP_VRAM_ADDR[10:8]),.RPAGE(dirty_obj_offset[2:0]),.Q(dirty_obj_byte));
+gbc_dirty_pages #(.PAGES(8)) map_dirty(.CLK(CLK),.RST(RST),.SWAP(commit_swap),
+  .ALL(snap_msel),.SET(d_map_hit),.WPAGE(TAP_VRAM_ADDR[10:8]),
+  .BIT(TAP_VRAM_ADDR[7:5]),.RPAGE(dirty_map_offset[2:0]),.Q(dirty_map_byte));
+always @(posedge CLK) begin
+  if(RST) begin dirty_misc_acc_r<=0; dirty_misc_pub_r<=0; end
+  else if(commit_swap) begin dirty_misc_pub_r<=dirty_misc_acc_r; dirty_misc_acc_r<=set_misc; end
+  else dirty_misc_acc_r<=dirty_misc_acc_r | set_misc;
+end
+`else
 always @(posedge CLK) begin
   if (RST) begin
     dirty_chr_acc_r  <= 48'd0;  dirty_chr_pub_r  <= 48'd0;
@@ -1098,6 +1121,8 @@ always @(posedge CLK) begin
     dirty_misc_acc_r <= dirty_misc_acc_r | set_misc;
   end
 end
+
+`endif
 
 //-------------------------------------------------------------------
 // Snapshot engine (contract section 7)
@@ -1449,6 +1474,11 @@ always @(*) begin
     8'h0D:   status_byte = frame_ctr_r;
     8'h0E:   status_byte = seq_r[7:0];
     8'h0F:   status_byte = seq_r[15:8];
+`ifdef MK2
+    8'h10,8'h11,8'h12,8'h13,8'h14,8'h15: status_byte=dirty_chr_byte;
+    8'h16,8'h17,8'h18,8'h19: status_byte=dirty_obj_byte;
+    8'h1a,8'h1b,8'h1c,8'h1d,8'h1e,8'h1f,8'h20,8'h21: status_byte=dirty_map_byte;
+`else
     8'h10:   status_byte = dirty_chr_pub_r[7:0];
     8'h11:   status_byte = dirty_chr_pub_r[15:8];
     8'h12:   status_byte = dirty_chr_pub_r[23:16];
@@ -1467,6 +1497,7 @@ always @(*) begin
     8'h1F:   status_byte = dirty_map_pub_r[47:40];
     8'h20:   status_byte = dirty_map_pub_r[55:48];
     8'h21:   status_byte = dirty_map_pub_r[63:56];
+`endif
     // RASTER (bit 3) is NOT an accumulator bit.  Contract section 5 lists
     // OAM/CRAM/REGS/MSEL as snapshot differences and RASTER separately as "the
     // log is not empty", which is a property of the log the player is reading

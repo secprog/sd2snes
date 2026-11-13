@@ -123,7 +123,13 @@ profiles = (("fixed-mux", False, None),
             ("fixed-mux-resub", False, "strash; " + resub + area_tail),
             ("lut4-resub", True, "strash; " + resub + area_tail),
             ("widegate-area", False, abc_prefix + "if -K 4 -a; mfs2; lutpack -S 1"),
-            ("widegate-resub", False, "strash; " + resub + area_tail))
+            ("widegate-resub", False, "strash; " + resub + area_tail),
+            ("fixed-mux-cuts", False, "strash; " + resub +
+             "dch -f; if -K 4 -C 32 -F 3 -A 4 -a; mfs2 -e; lutpack -S 1"),
+            ("fixed-mux-sat", False, "strash; " + resub + area_tail +
+             "; &get -m; &mfs2 -K 4; &put; lutpack -S 1"),
+            ("fixed-mux-sat-area", False, "strash; " + resub + area_tail +
+             "; &get -m; &mfs2 -K 4 -a; &put; lutpack -S 1"))
 if len(sys.argv) > 3:
     selected = set(sys.argv[3:])
     if not selected <= {p[0] for p in profiles}:

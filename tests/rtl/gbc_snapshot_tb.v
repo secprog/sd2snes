@@ -69,6 +69,19 @@ module gbc_snapshot_tb;
   task tick;
     begin #4; CLK=1; #1; CLK=0; #5; end
   endtask
+  // Check the optimized view mux against the original priority expression on
+  // every clock, including transitions between unrelated address windows.
+  wire [7:0] view_reference=dut.s1_bgch_r ? dut.bgch_byte
+                            : dut.s1_obch_r ? dut.obch_byte
+                            : dut.s1_map_r ? dut.map_byte
+                            : dut.s1_cgram_r ? dut.cgram_byte
+                            : dut.s1_oam_r ? dut.oam_byte
+                            : dut.s1_log_r ? dut.log_byte
+                            : dut.s1_craw_r ? dut.craw_byte
+                            : dut.s1_fb_r ? dut.c6_view_byte : 8'h00;
+  always @(negedge CLK)
+    if(!RST && dut.view_byte !== view_reference)
+      $fatal(1,"view selection changed at address %h",ADDR);
   task read_status(input [23:0] a, input [7:0] expected);
     begin
       // Wire $04 permits up to three clocks for the full view window.

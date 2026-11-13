@@ -1005,6 +1005,18 @@ wire [7:0] log_byte  = s1_log_oor_r ? 8'h00 : log_ebyte;
 // whatever the game left in palette RAM.
 wire [7:0] craw_byte = s1_craw_hi_r ? {1'b0, cram_snap_q_r[6:0]} : cram_snap_q_r;
 
+`ifdef MK2
+// The address windows above are disjoint and their selects share a register
+// stage. Express the selection as a parallel mask, without a priority chain.
+wire [7:0] view_byte = ({8{s1_bgch_r}} & bgch_byte)
+                    | ({8{s1_obch_r}} & obch_byte)
+                    | ({8{s1_map_r}} & map_byte)
+                    | ({8{s1_cgram_r}} & cgram_byte)
+                    | ({8{s1_oam_r}} & oam_byte)
+                    | ({8{s1_log_r}} & log_byte)
+                    | ({8{s1_craw_r}} & craw_byte)
+                    | ({8{s1_fb_r}} & c6_view_byte);
+`else
 wire [7:0] view_byte = s1_bgch_r  ? bgch_byte
                      : s1_obch_r  ? obch_byte
                      : s1_map_r   ? map_byte
@@ -1014,6 +1026,7 @@ wire [7:0] view_byte = s1_bgch_r  ? bgch_byte
                      : s1_craw_r  ? craw_byte
                      : s1_fb_r    ? c6_view_byte
                      :              8'h00;
+`endif
 wire       view_sel_d1 = s1_bgch_r | s1_obch_r | s1_map_r | s1_cgram_r | s1_oam_r
                        | s1_log_r | s1_craw_r
                        | s1_fb_r

@@ -205,10 +205,9 @@ module c6_dirty_ram(input CLK, RST, ALL, SET, input [4:0] ROW, COL,
   wire set_ok = SET && ROW < 18 && COL < 20;
   wire [17:0] set_rows = set_ok ? (18'd1 << ROW) : 18'd0;
   wire [19:0] col_mask = 20'd1 << COL;
-  wire [39:0] write_q, read_q;
-  wire [19:0] old_word = write_q[ROW[0]*20 +: 20];
-  wire [19:0] base_word = clear_rows[ROW] ? 20'd0
-                       : valid[ROW] ? old_word : {20{default_one[ROW]}};
+  wire [39:0] read_q;
+  wire preserve_old = valid[ROW] && !clear_rows[ROW];
+  wire fill_default = !valid[ROW] && default_one[ROW] && !clear_rows[ROW];
 
   // Five status bytes contain exactly two 20-cell rows. A small constant
   // lookup avoids a divider and reads one even/odd pair in parallel.
@@ -258,8 +257,11 @@ module c6_dirty_ram(input CLK, RST, ALL, SET, input [4:0] ROW, COL,
       (* ram_style = "distributed" *) reg [19:0] rows [0:8];
       always @(posedge CLK)
         if(set_ok && !ALL && ROW[0] == parity)
-          rows[ROW[4:1]] <= base_word | col_mask;
-      assign write_q[parity*20 +: 20] = rows[ROW[4:1]];
+          // Each bank reads its own old word. Its write enable already
+          // selects parity, so a wide old-word mux before both banks is
+          // redundant. This is one four-input function per stored bit.
+          rows[ROW[4:1]] <= (rows[ROW[4:1]] & {20{preserve_old}})
+                         | {20{fill_default}} | col_mask;
       assign read_q[parity*20 +: 20] = rows[pair_index];
     end
   endgenerate

@@ -1276,6 +1276,9 @@ always @(posedge CLK) begin
           default: reg_mdr_r <= 8'hFF;
         endcase
 
+`ifdef MK2
+        reg_mdr_r <= mmio_read;
+`endif
         reg_state_r <= ST_REG_END;
       end
       ST_REG_END: begin
@@ -1284,6 +1287,132 @@ always @(posedge CLK) begin
     endcase
   end
 end
+
+`ifdef MK2
+// GBC_MK2_MMIO_BEGIN
+// Decode the low address nibble once per register group. The kept group
+// outputs prevent XST from expanding this into a flat byte-wide priority mux.
+(* keep="true" *) reg [7:0] mmio_read_0;
+always @(*) begin
+  case(reg_addr_r[3:0])
+    4'h0: mmio_read_0={2'b11, REG_P1_r[5:0]};
+    4'h1: mmio_read_0=REG_SB_r;
+    4'h2: mmio_read_0={REG_SC_r[7],6'h3F,REG_SC_r[0]};
+    4'h4: mmio_read_0=REG_DIV_r[15:8];
+    4'h5: mmio_read_0=REG_TIMA_r;
+    4'h6: mmio_read_0=REG_TMA_r;
+    4'h7: mmio_read_0={5'h1F,REG_TAC_r[2:0]};
+    4'hf: mmio_read_0=REG_IF_r;
+    default: mmio_read_0=8'hff;
+  endcase
+end
+(* keep="true" *) reg [7:0] mmio_read_1;
+always @(*) begin
+  case(reg_addr_r[3:0])
+    4'h0: mmio_read_1={1'h1,REG_NR10_r[6:0]};
+    4'h1: mmio_read_1={REG_NR11_r[7:6],6'h3F};
+    4'h2: mmio_read_1=REG_NR12_r[7:0];
+    4'h4: mmio_read_1={1'h1,REG_NR14_r[6],6'h3F};
+    4'h6: mmio_read_1={REG_NR21_r[7:6],6'h3F};
+    4'h7: mmio_read_1=REG_NR22_r[7:0];
+    4'h9: mmio_read_1={1'h1,REG_NR24_r[6],6'h3F};
+    4'ha: mmio_read_1={REG_NR30_r[7:7],7'h7F};
+    4'hc: mmio_read_1={1'h1,REG_NR32_r[6:5],5'h1F};
+    4'he: mmio_read_1={1'h1,REG_NR34_r[6],6'h3F};
+    default: mmio_read_1=8'hff;
+  endcase
+end
+(* keep="true" *) reg [7:0] mmio_read_2;
+always @(*) begin
+  case(reg_addr_r[3:0])
+    4'h1: mmio_read_2=REG_NR42_r;
+    4'h2: mmio_read_2=REG_NR43_r;
+    4'h3: mmio_read_2={1'h1,REG_NR44_r[6],6'h3F};
+    4'h4: mmio_read_2=REG_NR50_r;
+    4'h5: mmio_read_2=REG_NR51_r;
+    4'h6: mmio_read_2={REG_NR52_r[7:7],3'h7,({4{REG_NR52_r[7]}} & {APU_REG_enable})};
+    default: mmio_read_2=8'hff;
+  endcase
+end
+wire [7:0] mmio_read_3 = (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : REG_WAV_r[reg_addr_r[3:0]][7:0];
+(* keep="true" *) reg [7:0] mmio_read_4;
+always @(*) begin
+  case(reg_addr_r[3:0])
+    4'h0: mmio_read_4=REG_LCDC_r;
+    4'h1: mmio_read_4={1'b1,REG_STAT_r[6:0]};
+    4'h2: mmio_read_4=REG_SCY_r;
+    4'h3: mmio_read_4=REG_SCX_r;
+    4'h4: mmio_read_4=PPU_LY_read;
+    4'h5: mmio_read_4=REG_LYC_r;
+    4'h6: mmio_read_4=REG_DMA_r;
+    4'h7: mmio_read_4=REG_BGP_r;
+    4'h8: mmio_read_4=REG_OBP0_r;
+    4'h9: mmio_read_4=REG_OBP1_r;
+    4'ha: mmio_read_4=REG_WY_r;
+    4'hb: mmio_read_4=REG_WX_r;
+    4'hc: mmio_read_4=REG_KEY0_r;
+    4'hd: mmio_read_4=cgb_mode ? {cpu_speed_r,6'h3F,REG_KEY1_r[0]} : 8'hFF;
+    4'hf: mmio_read_4={7'h7F,REG_VBK_r};
+    default: mmio_read_4=8'hff;
+  endcase
+end
+(* keep="true" *) reg [7:0] mmio_read_5;
+always @(*) begin
+  case(reg_addr_r[3:0])
+    4'h0: mmio_read_5={7'h7F,REG_BOOT_r[`BOOT_ROM_DI]};
+    4'h5: mmio_read_5=cgb_mode ? {~hdma_running,hdma_left} : 8'hFF;
+    4'h6: mmio_read_5=cgb_mode ? {REG_RP_r[2:1],5'h1F,REG_RP_r[0]} : 8'hFF;
+    default: mmio_read_5=8'hff;
+  endcase
+end
+(* keep="true" *) reg [7:0] mmio_read_6;
+always @(*) begin
+  case(reg_addr_r[3:0])
+    4'h8: mmio_read_6={REG_BCPS_ai_r,1'b1,REG_BCPS_r};
+    4'h9: mmio_read_6=(cram_cpu_ok & ~cram_blocked) ? cram_q_a_r : 8'hFF;
+    4'ha: mmio_read_6={REG_OCPS_ai_r,1'b1,REG_OCPS_r};
+    4'hb: mmio_read_6=(cram_cpu_ok & ~cram_blocked) ? cram_q_a_r : 8'hFF;
+    4'hc: mmio_read_6={7'h7F,REG_OPRI_r};
+    default: mmio_read_6=8'hff;
+  endcase
+end
+(* keep="true" *) reg [7:0] mmio_read_7;
+always @(*) begin
+  case(reg_addr_r[3:0])
+    4'h0: mmio_read_7=cgb_mode ? {5'h1F,REG_SVBK_r} : 8'hFF;
+    4'h2: mmio_read_7=REG_PSWX_r;
+    4'h3: mmio_read_7=REG_PSWY_r;
+    4'h4: mmio_read_7=cgb_mode ? REG_PSW_r : 8'hFF;
+    4'h5: mmio_read_7={1'b1,REG_PGB_r,4'hF};
+    4'h6: mmio_read_7=8'h00;
+    4'h7: mmio_read_7=8'h00;
+    default: mmio_read_7=8'hff;
+  endcase
+end
+(* keep="true" *) reg [7:0] mmio_read_f;
+always @(*) begin
+  case(reg_addr_r[3:0])
+    4'hf: mmio_read_f={3'h0,REG_IE_r[4:0]};
+    default: mmio_read_f=8'hff;
+  endcase
+end
+reg [7:0] mmio_read;
+always @(*) begin
+  case(reg_addr_r[7:4])
+    4'h0: mmio_read=mmio_read_0;
+    4'h1: mmio_read=mmio_read_1;
+    4'h2: mmio_read=mmio_read_2;
+    4'h3: mmio_read=mmio_read_3;
+    4'h4: mmio_read=mmio_read_4;
+    4'h5: mmio_read=mmio_read_5;
+    4'h6: mmio_read=mmio_read_6;
+    4'h7: mmio_read=mmio_read_7;
+    4'hf: mmio_read=mmio_read_f;
+    default: mmio_read=8'hff;
+  endcase
+end
+// GBC_MK2_MMIO_END
+`endif
 
 //-------------------------------------------------------------------
 // IFD

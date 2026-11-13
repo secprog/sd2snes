@@ -4,6 +4,7 @@ from pathlib import Path
 import re
 import subprocess
 import tempfile
+from gbc_mmio_check import check_mmio
 
 
 def main():
@@ -38,6 +39,7 @@ def main():
         subprocess.run([args.vvp, str(clock)], check=True, timeout=60)
         if args.clock_only:
             return
+        check_mmio(root, tmp, args)
         out = Path(tmp) / "sram.vvp"
         cmd = [args.iverilog, "-g2012", "-s", "gbc_mk2_sram_tb", "-o", str(out)]
         if args.ivl_base:

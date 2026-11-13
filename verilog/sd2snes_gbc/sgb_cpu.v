@@ -432,7 +432,7 @@ end
 //  1 - MCT decode              ReqPendr
 //  2 - MCT mct_req_r/SYS_REQ
 //  3 - ReqPendr
-reg  [5:0]  cpu_free_slot_r;
+(* shreg_extract = "no" *) reg [5:0] cpu_free_slot_r;
 always @(posedge CLK) begin
   // MCU needs more bandwidth so now we only block the last empty CPU clock cycle shifted by a value greater than the MCT delay
   cpu_free_slot_r <= {cpu_free_slot_r[4:0],(~&clk_bus_ctr_r)};
@@ -2962,7 +2962,7 @@ wire [3:0]  c6_bga = c6_bg_attr_fifo_r[ppu_pix_ctr_r[4:0]];
 wire [8:0]  c6_obm = c6_obj_meta_fifo_r[ppu_pix_ctr_r[4:0]];
 
 reg         c6_s0_r, c6_s1_r, c6_s2_r, c6_out_v_r;
-reg  [7:0]  c6_s0_x_r, c6_s0_y_r, c6_s1_x_r, c6_s1_y_r, c6_s2_x_r, c6_s2_y_r, c6_out_x_r, c6_out_y_r;
+(* shreg_extract = "no" *) reg [7:0] c6_s0_x_r, c6_s0_y_r, c6_s1_x_r, c6_s1_y_r, c6_s2_x_r, c6_s2_y_r, c6_out_x_r, c6_out_y_r;
 reg  [1:0]  c6_s0_bgi_r, c6_s0_obi_r;
 reg  [3:0]  c6_s0_bga_r;
 reg  [2:0]  c6_s0_obp_r;

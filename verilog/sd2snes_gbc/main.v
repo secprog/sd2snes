@@ -172,20 +172,22 @@ wire [7:0] reg_read;
 // unit level configuration output
 wire [7:0] sgb_config_data;
 
-reg [7:0] SNES_PARDr = 8'b11111111;
+// Mk.II has spare flip-flops but no spare LUTs. These short, fixed delays
+// retain every sampling stage without consuming an SRL16 LUT per signal.
+(* shreg_extract = "no" *) reg [7:0] SNES_PARDr = 8'b11111111;
 reg [7:0] SNES_PAWRr = 8'b11111111;
-reg [7:0] SNES_READr = 8'b11111111;
-reg [7:0] SNES_WRITEr = 8'b11111111;
-reg [7:0] SNES_CPU_CLKr = 8'b00000000;
-reg [7:0] SNES_ROMSELr = 8'b11111111;
+(* shreg_extract = "no" *) reg [7:0] SNES_READr = 8'b11111111;
+(* shreg_extract = "no" *) reg [7:0] SNES_WRITEr = 8'b11111111;
+(* shreg_extract = "no" *) reg [7:0] SNES_CPU_CLKr = 8'b00000000;
+(* shreg_extract = "no" *) reg [7:0] SNES_ROMSELr = 8'b11111111;
 reg [7:0] SNES_PULSEr = 8'b11111111;
 // The two 7-deep address deglitchers stay in flip-flops.  Left to itself the
 // fitter infers them as altshift_taps and spends one M9K on them, and M9K is
 // the resource this core runs out of (the C6 framebuffer takes it to 53 of
 // 56).  Per-instance so nothing else in the chip changes.
-(* altera_attribute = "-name AUTO_SHIFT_REGISTER_RECOGNITION OFF" *) reg [23:0] SNES_ADDRr [6:0];
-(* altera_attribute = "-name AUTO_SHIFT_REGISTER_RECOGNITION OFF" *) reg [7:0] SNES_PAr [6:0];
-reg [7:0] SNES_DATAr [4:0];
+(* shreg_extract = "no", altera_attribute = "-name AUTO_SHIFT_REGISTER_RECOGNITION OFF" *) reg [23:0] SNES_ADDRr [6:0];
+(* shreg_extract = "no", altera_attribute = "-name AUTO_SHIFT_REGISTER_RECOGNITION OFF" *) reg [7:0] SNES_PAr [6:0];
+(* shreg_extract = "no" *) reg [7:0] SNES_DATAr [4:0];
 
 reg SNES_DEADr = 1;
 reg SNES_reset_strobe = 0;

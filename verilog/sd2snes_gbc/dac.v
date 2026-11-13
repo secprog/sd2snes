@@ -7,7 +7,7 @@ module dac(input clkin, reset, input [19:0] sgb_apu_dat,
            output sdout, mclk_out, lrck_out, sclk_out);
 integer i;
 reg [10:0] cnt = 11'h100;
-reg [2:0] mclk_sreg = 0, lrck_sreg = 0;
+(* shreg_extract = "no" *) reg [2:0] mclk_sreg = 0, lrck_sreg = 0;
 reg [1:0] sclk_sreg = 0;
 wire mclk = cnt[2], lrck = cnt[8], sclk = cnt[3];
 assign mclk_out = ~mclk_sreg[2];

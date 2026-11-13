@@ -1695,6 +1695,18 @@ reg         exe_res_c15_r;
 reg         exe_res_c11_r;
 reg         exe_res_c7_r;
 reg         exe_res_c3_r;
+`ifdef MK2
+// CP uses the same subtraction as SUB; only its destination and flags differ.
+// Share the two nibble adders without changing their registered carry timing.
+wire mk2_alu_cin = IFD_EXE_op[5] ? 1'b1
+                  : ((IFD_EXE_op[3] & exe_cc_r[4]) ^ IFD_EXE_op[4]);
+wire [4:0] mk2_alu_low = {1'b0,exe_dst_r[3:0]}
+                      + {1'b0,exe_src_alu_r[3:0] ^ {4{IFD_EXE_op[4]}}}
+                      + mk2_alu_cin;
+wire [4:0] mk2_alu_high = {1'b0,exe_dst_r[7:4]}
+                       + {1'b0,exe_src_alu_r[7:4] ^ {4{IFD_EXE_op[4]}}}
+                       + exe_res_c3_r;
+`endif
 
 reg         exe_res_int_enable_r;
 reg         exe_res_int_disable_r;
@@ -2037,8 +2049,13 @@ always @(posedge CLK) begin
         // ALU
         case (IFD_EXE_op[5:3])
           3'h0,3'h1,3'h2,3'h3: begin // ADD,ADC,SUB,SBC
+`ifdef MK2
+            {exe_res_c3_r,exe_res_r[3:0]} <= mk2_alu_low;
+            {exe_res_c7_r,exe_res_r[7:4]} <= mk2_alu_high;
+`else
             {exe_res_c3_r,exe_res_r[3:0]} <= exe_dst_r[3:0] + ({4{IFD_EXE_op[4]}} ^ exe_src_alu_r[3:0]) + ((IFD_EXE_op[3] & exe_cc_r[4]) ^ (IFD_EXE_op[4]));
             {exe_res_c7_r,exe_res_r[7:4]} <= exe_dst_r[7:4] + ({4{IFD_EXE_op[4]}} ^ exe_src_alu_r[7:4]) + exe_res_c3_r;
+`endif
             exe_res_cc_r              <= {~|exe_res_r[7:0],IFD_EXE_op[4],IFD_EXE_op[4]^exe_res_c3_r,IFD_EXE_op[4]^exe_res_c7_r,exe_cc_r[3:0]};
           end
           3'h4: begin // AND
@@ -2054,8 +2071,13 @@ always @(posedge CLK) begin
             exe_res_cc_r   <= {~|exe_res_r[7:0],1'b0,1'b0,1'b0,exe_cc_r[3:0]};
           end
           3'h7: begin // CP
+`ifdef MK2
+            {exe_res_c3_r,exe_res_cp_r[3:0]} <= mk2_alu_low;
+            {exe_res_c7_r,exe_res_cp_r[7:4]} <= mk2_alu_high;
+`else
             {exe_res_c3_r,exe_res_cp_r[3:0]} <= exe_dst_r[3:0] + ({4{1'b1}} ^ exe_src_alu_r[3:0]) + 1'b1;
             {exe_res_c7_r,exe_res_cp_r[7:4]} <= exe_dst_r[7:4] + ({4{1'b1}} ^ exe_src_alu_r[7:4]) + exe_res_c3_r;
+`endif
             exe_res_cc_r                 <= {~|exe_res_cp_r[7:0],1'b1,~exe_res_c3_r,~exe_res_c7_r,exe_cc_r[3:0]};
           end
         endcase

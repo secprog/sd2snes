@@ -75,6 +75,29 @@ module gbc_command_actual(input CLK2, input [23:0] SNES_ADDR_IN,
         # Compile the production read function AND its actual sequential call
         # sites, including OPR_I holds. The test oracle is the old flat table.
         cpu = (root / "verilog/sd2snes_gbc/sgb_cpu.v").read_text()
+        alu_start = cpu.index("wire mk2_alu_cin =")
+        alu_end = cpu.index("`endif", alu_start)
+        alu_case = cpu.index("        case (IFD_EXE_op[5:3])")
+        alu_case_end = cpu.index("        endcase", alu_case) + len("        endcase")
+        alu_source = Path(tmp) / "alu_actual.v"
+        alu_source.write_text('''
+module gbc_alu_actual(input CLK, input [23:0] IFD_EXE_op,
+ input [15:0] exe_dst_r, input [7:0] exe_src_alu_r,exe_cc_r,
+ output [7:0] result,compare_result,flags, output c3,c7);
+ reg [15:0] exe_res_r=0;
+ reg [7:0] exe_res_cp_r=0,exe_res_cc_r=0;
+ reg exe_res_c3_r=0,exe_res_c7_r=0;
+ assign result=exe_res_r[7:0]; assign compare_result=exe_res_cp_r;
+ assign flags=exe_res_cc_r; assign c3=exe_res_c3_r; assign c7=exe_res_c7_r;
+''' + cpu[alu_start:alu_end] + "\nalways @(posedge CLK) begin\n"
+            + cpu[alu_case:alu_case_end] + "\nend\nendmodule\n")
+        alu = Path(tmp) / "alu.vvp"
+        compile_alu = [args.iverilog, "-g2012", "-DMK2", "-s", "gbc_alu_tb",
+                       "-o", str(alu), str(alu_source), str(root / "tests/rtl/gbc_alu_tb.v")]
+        if args.ivl_base:
+            compile_alu += ["-B", args.ivl_base]
+        subprocess.run(compile_alu, check=True)
+        subprocess.run([args.vvp, str(alu)], check=True, timeout=60)
         # Exercise the production wave-memory gate/instance and sample latch.
         # The independent oracle retains the old register-array reset/write
         # behavior, including simultaneous reset, write and APU sample reads.

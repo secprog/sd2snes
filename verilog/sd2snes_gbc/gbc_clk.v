@@ -271,41 +271,15 @@ reg  [15:0]       err_last_r;
 // is a correct-looking loop that takes twice as long to acquire.  The subtract
 // and the reduction are one state apart because together they are two chained
 // 19-bit chains.
+wire signed [18:0] diff_w = $signed({2'b00, dot_q}) - $signed({2'b00, ALVO});
 `ifdef MK2
-// These five states each need one add/subtract and never overlap. Share that
-// arithmetic without moving any state transition, register update or enable.
-// The 18-bit modular result covers every stored destination (the largest is
-// diff_r); sign extension is explicit at each signed source.
-reg [17:0] loop_a, loop_b;
-reg loop_sub;
-always @(*) begin
-  loop_a=0; loop_b=0; loop_sub=0;
-  case(st_r)
-    ST_ERR1: begin loop_a={1'b0,dot_q}; loop_b={1'b0,ALVO}; loop_sub=1; end
-    ST_ERR2: begin loop_a=diff_r; loop_b=DOT_MOD[17:0]; loop_sub=1; end
-    ST_INT1: begin
-      loop_a={{4{ki_r[13]}},ki_r};
-      loop_b={11'd0,err_abs_q[8:2]};
-      loop_sub=!err_q[16];
-    end
-    ST_TGT1: begin
-      loop_a={2'b00,K2_NOM[15:0]}; loop_b={{4{ki_r[13]}},ki_r};
-    end
-    ST_TGT2: begin
-      loop_a={2'b00,tgt_sum_r}; loop_b={{2{p_term_r[15]}},p_term_r}; loop_sub=1;
-    end
-  endcase
-end
-wire [17:0] loop_sum = loop_a + (loop_b ^ {18{loop_sub}}) + loop_sub;
-wire signed [18:0] diff_w = {loop_sum[17],loop_sum};
 // Even an out-of-range 17-bit dot sample gives diff in [-11525,119546].
 // Therefore the negative-wrap arm is unreachable. After the positive wrap
 // err fits signed 17 bits. KI is clamped to +/-4096; the INT2 gate allows
 // only a step up to 127, so every committed pre-clamp sum fits signed 14 bits.
-wire signed [18:0] err_w = (diff_r >= $signed(DOT_HALF)) ? $signed({loop_sum[17],loop_sum})
+wire signed [18:0] err_w = (diff_r >= $signed(DOT_HALF)) ? diff_r - $signed(DOT_MOD)
                                                       : diff_r;
 `else
-wire signed [18:0] diff_w = $signed({2'b00, dot_q}) - $signed({2'b00, ALVO});
 wire signed [18:0] err_w  = (diff_r >=  $signed(DOT_HALF)) ? diff_r - $signed(DOT_MOD)
                           : (diff_r <  -$signed(DOT_HALF)) ? diff_r + $signed(DOT_MOD)
                                                            : diff_r;
@@ -320,12 +294,11 @@ wire signed [18:0] err_w  = (diff_r >=  $signed(DOT_HALF)) ? diff_r - $signed(DO
 wire [6:0] ki_step_w = err_abs_q[8:2];
 wire abs_large = err_q[16:9] != {8{err_q[9]}};
 wire [9:0] abs_small = err_q[16] ? -err_q[9:0] : err_q[9:0];
-wire signed [17:0] ki_next_w = loop_sum;
 `else
 wire [16:0]        ki_step_w = err_abs_q >> KI_SHIFT;
+`endif
 wire signed [17:0] ki_next_w = err_q[ERR_BITS-1] ? ki_r + $signed({1'b0, ki_step_w})
                                          : ki_r - $signed({1'b0, ki_step_w});
-`endif
 
 // Slew limit, against the K2 that is live right now.  The limit follows the
 // lock state SAMPLED WITH THE ERROR, not the one the same update has just
@@ -473,7 +446,7 @@ always @(posedge CLK) begin
 
       ST_TGT1: begin
 `ifdef MK2
-        tgt_sum_r <= loop_sum[15:0];
+        tgt_sum_r <= $signed({1'b0, K2_NOM[15:0]}) + $signed(ki_r);
 `else
         tgt_r <= $signed({1'b0, K2_NOM[22:0]}) + $signed(ki_r);
 `endif
@@ -482,7 +455,7 @@ always @(posedge CLK) begin
 
       ST_TGT2: begin
 `ifdef MK2
-        tgt_diff_r <= loop_sum[16:0];
+        tgt_diff_r <= $signed({1'b0,tgt_sum_r}) - $signed(p_term_r);
 `else
         tgt_r <= tgt_r - $signed(p_term_r);
 `endif

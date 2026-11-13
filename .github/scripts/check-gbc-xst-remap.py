@@ -40,6 +40,9 @@ extra.write_text("(* blackbox *) module BUFGP(input I, output O); endmodule\n")
 # implementation netlist or a replacement for native MAP/PAR qualification.
 diagnostic = report / "native-diagnostic.v"
 source = netlist.read_text()
+# Only the main primitive network is under investigation. NetGen appends a
+# simulation-only glbl test harness (tri1/JTAG startup drivers), not hardware.
+source = source[:source.index("endmodule") + len("endmodule")] + "\n"
 source = re.sub(r"// synthesis translate_(?:off|on)", "", source)
 source = source.replace("/* synthesis syn_black_box syn_noprune=1 */", "")
 diagnostic.write_text(source)

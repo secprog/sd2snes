@@ -20,7 +20,7 @@ report.mkdir(parents=True, exist_ok=True)
 def run(name, commands):
     script = report / (name + ".ys")
     script.write_text("\n".join(commands) + "\n")
-    subprocess.run(["yosys", "-l", str(report / (name + ".log")), "-s", str(script)],
+    subprocess.run(["yosys", "-Q", "-q", "-l", str(report / (name + ".log")), "-s", str(script)],
                    check=True, timeout=300)
 
 
@@ -112,8 +112,11 @@ for profile, remap_mux, abc_width in (("fixed-mux", False, "4"),
                   "design -save reference", "abc -lut " + abc_width, "clean",
                   "design -save mapped", "rename gbc_logic gate",
                   "design -copy-from reference -as gold gbc_logic",
-                  "equiv_make gold gate equiv", "hierarchy -top equiv",
-                  "equiv_simple", "equiv_status -assert",
+                  # Some boundary outputs also feed other output cones (for
+                  # example CLK_CPU_EDGE/CLK_BUS_EDGE). A whole-cone miter
+                  # keeps those relationships; per-output cutpoints do not.
+                  "miter -equiv -flatten gold gate miter", "hierarchy -top miter",
+                  "sat -verify -prove trigger 0 -show-inputs -show-outputs",
                   "design -load mapped",
                   "techmap -map +/xilinx/lut_map.v -D LUT_WIDTH=4", "clean",
                   "write_json " + quote(report / (profile + ".json"))])

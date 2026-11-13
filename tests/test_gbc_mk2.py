@@ -115,6 +115,27 @@ module gbc_sram_arb_model(
             compile_flags += ["-B", args.ivl_base]
         subprocess.run(compile_flags, check=True)
         subprocess.run([args.vvp, str(row_flags)], check=True, timeout=60)
+        # The unchanged Mk.III arithmetic is a separate compiled reference.
+        clock_ref = Path(tmp) / "clock_ref.v"
+        preprocess_clock = [args.iverilog, "-E", "-DMK3", "-I",
+                            str(root / "verilog/sd2snes_gbc"), "-o", str(clock_ref),
+                            str(root / "verilog/sd2snes_gbc/gbc_clk.v")]
+        if args.ivl_base:
+            preprocess_clock += ["-B", args.ivl_base]
+        subprocess.run(preprocess_clock, check=True)
+        source, count = re.subn(r"\bmodule gbc_clk\(", "module gbc_clk_ref(", clock_ref.read_text())
+        if count != 1:
+            raise RuntimeError("GBC clock reference interface changed")
+        clock_ref.write_text(source)
+        clock = Path(tmp) / "clock.vvp"
+        compile_clock = [args.iverilog, "-g2012", "-DMK2", "-s", "gbc_clock_tb", "-o", str(clock),
+                         "-I", str(root / "verilog/sd2snes_gbc"),
+                         str(root / "tests/rtl/gbc_clock_tb.v"), str(clock_ref),
+                         str(root / "verilog/sd2snes_gbc/gbc_clk.v")]
+        if args.ivl_base:
+            compile_clock += ["-B", args.ivl_base]
+        subprocess.run(compile_clock, check=True)
+        subprocess.run([args.vvp, str(clock)], check=True, timeout=60)
         # Compile the existing, independent SGB audio implementation with zero
         # PCM data, then compare every cartridge output against the GBC DAC.
         reference = Path(tmp) / "dac_ref.v"

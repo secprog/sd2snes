@@ -161,7 +161,7 @@ for profile, remap_mux, abc_script in profiles:
             f"wire [{len(outputs)-1}:0] raw; gbc_logic original(i,raw);\n"
             f"assign o = raw ^ {len(outputs)}'d1; endmodule\n")
         run("negative-control", ["read_verilog " + quote(source) + " " + quote(corrupt),
-                                 "proc", "opt",
+                                 "proc", "opt", "techmap", "opt",
                                  "miter -equiv -flatten gbc_logic gbc_corrupt miter",
                                  "hierarchy -top miter", "sat -verify -prove trigger 0"],
             expect_counterexample=True)
@@ -213,7 +213,10 @@ for profile, remap_mux, abc_script in profiles:
         merged = report / (profile + "-merged.v")
         merged.write_text(render_logic(rebuilt_model, logic_types, inputs, outputs, "gbc_merged", logic_names))
         run(profile + "-merged", ["read_verilog " + quote(source) + " " + quote(merged),
-                                  "proc", "opt",
+                                  # Lower constant LUT tables before SAT, as in
+                                  # the first proof. Unlowered word shifts add
+                                  # over a million irrelevant SAT variables.
+                                  "proc", "opt", "techmap", "opt",
                                   "miter -equiv -flatten gbc_logic gbc_merged miter",
                                   "hierarchy -top miter",
                                   "sat -verify -prove trigger 0 -show-inputs -show-outputs"])

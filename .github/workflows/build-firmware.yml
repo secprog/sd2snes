@@ -227,6 +227,23 @@ jobs:
               -c 'netgen -w -sim -ofmt verilog main.ngc main_synth.v'
           fi
 
+      - name: Verify MkII byte-wide log against the installed Xilinx RAM model
+        if: always() && matrix.board == 'mk2' && matrix.core == 'gbc'
+        run: |
+          set -euo pipefail
+          if ! command -v iverilog >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends iverilog
+          fi
+          # Use the licensed tool image in place; do not redistribute its model.
+          docker run --rm --entrypoint /bin/bash sd2snes-ci:mk2 \
+            -c 'cat "$XILINX/verilog/src/unisims/RAMB16_S9_S36.v" "$XILINX/verilog/src/glbl.v"' \
+            > "$RUNNER_TEMP/gbc-vendor-bram.v"
+          iverilog -g2012 -s gbc_log_ram_tb -s glbl -o "$RUNNER_TEMP/gbc-vendor-bram.vvp" \
+            tests/rtl/gbc_log_ram_tb.v verilog/sd2snes_gbc/mk2_memory.v \
+            "$RUNNER_TEMP/gbc-vendor-bram.v"
+          vvp "$RUNNER_TEMP/gbc-vendor-bram.vvp" | tee "$RUNNER_TEMP/gbc-log-vendor.log"
+
       - name: Collect FPGA image
         env:
           FPGA_EXT: ${{ matrix.extension }}
@@ -251,6 +268,7 @@ jobs:
           name: fpga-reports-${{ matrix.board }}-${{ matrix.core }}${{ matrix.seed && format('-seed-{0}', matrix.seed) || '' }}
           path: |
             ${{ runner.temp }}/fpga-build.log
+            ${{ runner.temp }}/gbc-log-vendor.log
             verilog/*/*.syr
             verilog/*/*.par
             verilog/*/*.mrp

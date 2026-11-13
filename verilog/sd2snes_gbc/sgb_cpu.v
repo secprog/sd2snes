@@ -684,6 +684,9 @@ reg         reg_src_r;
 reg         reg_wr_r;
 reg [7:0]   reg_wr_data_r;
 reg [7:0]   reg_mdr_r;
+`ifdef MK2
+reg [7:0]   mmio_read;
+`endif
 
 reg         tmr_apu_step_r;
 reg         tmr_ovf_1024_r;
@@ -1396,7 +1399,6 @@ always @(*) begin
     default: mmio_read_f=8'hff;
   endcase
 end
-reg [7:0] mmio_read;
 always @(*) begin
   case(reg_addr_r[7:4])
     4'h0: mmio_read=mmio_read_0;

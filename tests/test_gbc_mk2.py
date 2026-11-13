@@ -87,6 +87,7 @@ module gbc_sram_arb_model(
         log_ram = Path(tmp) / "log-ram.vvp"
         compile_log = [args.iverilog, "-g2012", "-s", "gbc_log_ram_tb", "-o", str(log_ram),
                        str(root / "tests/rtl/gbc_log_ram_tb.v"),
+                       str(root / "tests/rtl/gbc_log_bram_model.v"),
                        str(root / "verilog/sd2snes_gbc/mk2_memory.v")]
         if args.ivl_base:
             compile_log += ["-B", args.ivl_base]
@@ -114,6 +115,7 @@ module gbc_sram_arb_model(
                              str(root / "tests/rtl/gbc_snapshot_tb.v")]
         compile_snapshots += [str(root / "verilog/sd2snes_gbc" / name) for name in
                               ("gbc_bridge.v", "c6_fb.v", "c6_sram.v", "mk2_memory.v")]
+        compile_snapshots.append(str(root / "tests/rtl/gbc_log_bram_model.v"))
         if args.ivl_base:
             compile_snapshots += ["-B", args.ivl_base]
         subprocess.run(compile_snapshots, check=True)

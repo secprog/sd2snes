@@ -436,8 +436,8 @@ end
 // up to 2048 and asks for eight, which is one more than the device has left.
 `ifdef MK2
 // XST rounds a 1536-word array up to four RAMB16s. Three explicit 512-word
-// banks preserve the one-cycle read and use three, leaving one for CRAM.
-wire [31:0] log_q_r;
+// banks preserve the one-cycle read; each native read port selects a byte.
+wire [7:0] log_q_r;
 `else
 (* ramstyle = "no_rw_check", max_depth = 256 *) reg  [31:0] log_ram_r[0:1535];
 reg  [31:0] log_q_r;
@@ -794,7 +794,7 @@ end
 // it the bypass).
 `ifdef MK2
 gbc_log_ram log_ram(.CLK(CLK), .WE(log_take), .WADDR(log_wa),
-                    .DATA(log_word), .RADDR(log_ra), .Q(log_q_r));
+                    .DATA(log_word), .RADDR({log_ra,vaddr[1:0]}), .Q(log_q_r));
 `else
 always @(posedge CLK) begin
   if (log_take) log_ram_r[log_wa] <= log_word;
@@ -977,10 +977,14 @@ wire [7:0] oam_byte = ~o_vis                    ? ((s1_oam_byte_r == 2'd1) ? 8'h
 // ---- log (contract section 8) ---------------------------------------------
 // The entry came out of the RAM as one word; which of its four bytes the SNES
 // asked for is the low two address bits, registered alongside it.
+`ifdef MK2
+wire [7:0] log_ebyte = log_q_r;
+`else
 wire [7:0] log_ebyte = (s1_log_byte_r == 2'd0) ? log_q_r[7:0]
                      : (s1_log_byte_r == 2'd1) ? log_q_r[15:8]
                      : (s1_log_byte_r == 2'd2) ? log_q_r[23:16]
                      :                           log_q_r[31:24];
+`endif
 wire [7:0] log_byte  = s1_log_oor_r ? 8'h00 : log_ebyte;
 
 // ---- COMPAT_RAW (contract section 5, +$40..+$57) --------------------------

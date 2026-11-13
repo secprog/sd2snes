@@ -270,32 +270,26 @@ module c6_dirty_ram(input CLK, RST, ALL, SET, input [4:0] ROW, COL,
     endcase
   end
 endmodule
-// Three 512x32 RAMB16s rather than a power-of-two-rounded 2048x32 array.
-// All banks read in parallel; the registered bank select belongs to the same
-// request as their registered data. Read-during-write is READ_FIRST, as in
-// the original simple dual-port log. The published and live banks differ.
+// Three physical 512x32 / 2048x8 blocks. The hardware's narrow read port
+// selects the byte, so only eight bits need the three-bank output mux.
+// READ_FIRST also preserves the old data on a same-clock same-word write.
 module gbc_log_ram(input CLK, WE, input [10:0] WADDR,
-                   input [31:0] DATA, input [10:0] RADDR, output [31:0] Q);
-  wire [95:0] bank_q;
+                   input [31:0] DATA, input [12:0] RADDR, output [7:0] Q);
+  wire [23:0] bank_q;
   reg [1:0] read_bank;
   genvar bank;
   generate
     for (bank=0; bank<3; bank=bank+1) begin : g_bank
-      (* ram_style = "block" *) reg [31:0] words [0:511];
-      reg [31:0] q;
-      integer init_i;
-      initial begin
-        for (init_i=0; init_i<512; init_i=init_i+1) words[init_i]=0;
-      end
-      always @(posedge CLK) begin
-        if (WE && WADDR[10:9] == bank) words[WADDR[8:0]] <= DATA;
-        q <= words[RADDR[8:0]];
-      end
-      assign bank_q[32*bank +: 32] = q;
+      RAMB16_S9_S36 #(.WRITE_MODE_A("READ_FIRST"), .WRITE_MODE_B("READ_FIRST")) words(
+        .CLKA(CLK), .ENA(1'b1), .SSRA(1'b0), .WEA(1'b0),
+        .ADDRA(RADDR[10:0]), .DIA(8'd0), .DIPA(1'b0),
+        .DOA(bank_q[8*bank +: 8]), .DOPA(),
+        .CLKB(CLK), .ENB(1'b1), .SSRB(1'b0), .WEB(WE && WADDR[10:9]==bank),
+        .ADDRB(WADDR[8:0]), .DIB(DATA), .DIPB(4'd0), .DOB(), .DOPB());
     end
   endgenerate
-  always @(posedge CLK) read_bank <= RADDR[10:9];
-  assign Q = read_bank == 0 ? bank_q[31:0]
-           : read_bank == 1 ? bank_q[63:32]
-           : read_bank == 2 ? bank_q[95:64] : 32'd0;
+  always @(posedge CLK) read_bank <= RADDR[12:11];
+  assign Q = read_bank == 0 ? bank_q[7:0]
+           : read_bank == 1 ? bank_q[15:8]
+           : read_bank == 2 ? bank_q[23:16] : 8'd0;
 endmodule

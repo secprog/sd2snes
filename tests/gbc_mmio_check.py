@@ -29,6 +29,9 @@ def check_mmio(root, tmp, args):
 
     production = sources["MK2"]
     mux = production.split("// GBC_MK2_MMIO_BEGIN\n", 1)[1].split("// GBC_MK2_MMIO_END", 1)[0]
+    if len(re.findall(r"reg\s+\[7:0\]\s+mmio_read\s*;", production)) != 1:
+        raise RuntimeError("Production MMIO result declaration changed")
+    mux = "reg [7:0] mmio_read;\n" + mux
     expressions = " ".join(expression for _, expression in rows)
     expressions = re.sub(r"\d*'[sS]?[bBoOdDhH][0-9a-fA-FxXzZ_]+", " ", expressions)
     signals = sorted(set(re.findall(r"\b[A-Za-z_]\w*\b", expressions)) | {"reg_addr_r"})

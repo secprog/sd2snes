@@ -1,361 +1,54 @@
-name: Validate DSPX DR CPU control LUTs and timing progress
+name: Inspect retained improved DSPX DR mapping
+
 on:
   workflow_dispatch:
+
 permissions:
   contents: read
+  actions: read
+
 concurrency:
-  group: dspx-stack-timing-${{ github.ref }}
+  group: dspx-retained-dr-mapping-${{ github.ref }}
   cancel-in-progress: false
 
-env:
-  PYTHONDONTWRITEBYTECODE: '1'
-  IGNORE_TIMING: '0'
-  BASELINE: 274d52c8aa9c1970df2f04e39da1b5ddca8e6e25
-
 jobs:
-  proof:
-    name: Prove complete DR priority, state and reads
+  inspect:
+    name: Inspect one retained implementation without rebuilding
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - name: Authenticate exact scoped DR source boundary
+      - name: Authenticate unchanged improved RTL
+        shell: bash
         run: |
           set -euo pipefail
-          report="$RUNNER_TEMP/dspx-dr-control-luts-proof"
-          mkdir -p "$report"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test "$(git rev-parse "$BASELINE:verilog")" = c2e332a461e38c60b144e08ece1d62b949bb8db2
-          git diff --name-only "$BASELINE" HEAD > "$report/changed-paths.txt"
-          printf '%s\n' .github/scripts/validate-dspx-dr-control-luts.py .github/workflows/validate-dspx-stack-timing.yml verilog/sd2snes_dsp/main.v verilog/sd2snes_dsp/upd77c25.v | LC_ALL=C sort > "$report/expected-changed-paths.txt"
-          cmp "$report/expected-changed-paths.txt" "$report/changed-paths.txt"
-          test "$(git hash-object --no-filters verilog/sd2snes_dsp/main.v)" = 82c29e4d6a6b3a3f894d810bbc69e3fd9915b019
-          test "$(git hash-object --no-filters verilog/sd2snes_dsp/upd77c25.v)" = 0374661e4196db07b7206ff31b691004cfb53f74
-          test "$(git hash-object --no-filters .github/scripts/post-sync-evidence.py)" = fdb60667eb015c3769b2adc452864396ff64e9e7
-          python3 .github/scripts/post-sync-evidence.py snapshot "$GITHUB_WORKSPACE" "$report/source-before"
-          git diff "$BASELINE" HEAD -- verilog > "$report/production-change.diff"
-          printf 'Source head: %s\nBaseline: %s\n' "$GITHUB_SHA" "$BASELINE" > "$report/identity.txt"
-      - name: Exercise timing and physical evidence controls
+          test "$(git rev-parse HEAD:verilog)" = 893e807029df25af8263fd63fa71dadabf02b0d0
+          test -z "$(git diff f4bcfe872f4c10f067fd1d6eca72882fa23b5b26 HEAD -- verilog)"
+          git diff --exit-code
+      - name: Inspect exact original retained mapping on GitHub only
+        shell: bash
         run: |
           set -euo pipefail
-          report="$RUNNER_TEMP/dspx-dr-control-luts-proof"
-          python3 .github/scripts/check-dspx-strict-timing.py --self-test "$report/strict-parser-controls.json"
-          python3 .github/scripts/validate-dspx-dr-control-luts.py analysis-controls "$report/progress-controls.json"
-          python3 .github/scripts/validate-dspx-dr-control-luts.py collect-controls "$report/physical-controls"
-      - name: Install and identify hosted proof tools
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends yosys iverilog
-          report="$RUNNER_TEMP/dspx-dr-control-luts-proof"
-          yosys -V | tee "$report/tool-version.txt"
-          grep -F 'Yosys 0.33 (git sha1 2584903a060)' "$report/tool-version.txt"
-          iverilog -V > "$report/iverilog-version.txt" 2>&1
-          grep -F 'Icarus Verilog version 12.0' "$report/iverilog-version.txt"
-      - name: Bind complete original and candidate DR writer and reads
-        run: |
-          set -euo pipefail
-          python3 .github/scripts/validate-dspx-dr-control-luts.py prepare "$RUNNER_TEMP/dspx-dr-control-luts-proof"
-      - name: Audit all initialized state and observation ordering
-        run: |
-          set -euo pipefail
-          cd "$RUNNER_TEMP/dspx-dr-control-luts-proof"
-          sha256sum --check SHA256SUMS
-          variants=(gold gate bad-enable bad-dp-isolation bad-strobe bad-a0 bad-word-priority bad-drc-lane bad-drs-lane bad-store-phase bad-opcode bad-restore-lane bad-final-reset bad-cpu-data bad-hold bad-x-request bad-x-drc bad-x-drs)
-          for variant in "${variants[@]}"; do
-            mkdir "$variant"
-            cp "$variant.v" "$variant/model.v"
-            (
-              cd "$variant"
-              yosys -l preparation.log -p 'read_verilog -sv -formal model.v; hierarchy -check -top dr_model; flatten; proc -ifx -noopt; dffunmap; setundef -undriven -undef; opt_clean; check -assert; write_json state.json'
-              model_name=gate
-              if [[ "$variant" == gold ]]; then model_name=gold; fi
-              python3 "$GITHUB_WORKSPACE/.github/scripts/validate-dspx-dr-control-luts.py" cut state.json transition.json "$model_name" | tee state-audit.log
-              yosys -l state-view.log -p "read_json transition.json; hierarchy -check -top $model_name; sat -verify -enable_undef -prove state_view_ok 1 -show-inputs -show state_view_ok -timeout 180"
-              grep -F 'SAT proof finished - no model found: SUCCESS!' state-view.log
-              if [[ "$variant" == gold ]]; then
-                result=0
-                yosys -l state-view-mutant.log -p 'read_json state-view-mutant.json; hierarchy -check -top gold; sat -verify -enable_undef -set-def-inputs -prove state_view_ok 1 -show-inputs -show state_view_ok -dump_json state-view-mutant-counterexample.json -timeout 180' || result=$?
-                test "$result" -ne 0
-                grep -F 'SAT proof finished - model found: FAIL!' state-view-mutant.log
-                test -s state-view-mutant-counterexample.json
-              fi
-            )
-          done
-      - name: Prove strict full-state transitions and require real counterexamples
-        run: |
-          set -euo pipefail
-          cd "$RUNNER_TEMP/dspx-dr-control-luts-proof"
-          for mode in binary xstate; do
-            if [[ "$mode" == binary ]]; then
-              variants=(gate bad-enable bad-dp-isolation bad-strobe bad-a0 bad-word-priority bad-drc-lane bad-drs-lane bad-store-phase bad-opcode bad-restore-lane bad-final-reset bad-cpu-data bad-hold bad-x-request bad-x-drc bad-x-drs)
-              input_flags='-set-def-inputs'
-            else
-              variants=(gate bad-x-request bad-x-drc bad-x-drs)
-              input_flags=''
-            fi
-            for variant in "${variants[@]}"; do
-              cat > "$variant/prove-$mode.ys" <<YOSYS
-          read_json ../gold/transition.json
-          read_json transition.json
-          miter -equiv -make_assert -make_outputs -make_outcmp gold gate miter
-          hierarchy -check -top miter
-          flatten -wb
-          hierarchy -check -top miter
-          opt_clean
-          check -assert
-          write_json miter-$mode.json
-          sat -verify -enable_undef $input_flags -prove-asserts -show-inputs -show-outputs -dump_json counterexample-$mode.json -timeout 300
-          YOSYS
-              result=0
-              (cd "$variant" && yosys -l "proof-$mode.log" -s "prove-$mode.ys") || result=$?
-              test -s "$variant/miter-$mode.json"
-              if [[ "$variant" == gate || ( "$variant" == bad-x-* && "$mode" == binary ) ]]; then
-                test "$result" -eq 0
-                grep -F 'SAT proof finished - no model found: SUCCESS!' "$variant/proof-$mode.log"
-              else
-                test "$result" -ne 0
-                grep -F 'SAT proof finished - model found: FAIL!' "$variant/proof-$mode.log"
-                test -s "$variant/counterexample-$mode.json"
-              fi
-            done
-          done
-          sha256sum --check SHA256SUMS
-          printf 'Full scoped UPD/main inverses,64 actual preprocess outputs and actual CPU/DP binding, all16 initialized DR bits and CPU/scan reads match under strict binary/X transition proofs;13 binary and3 binary-equivalent X mutations plus state-view mutation produced actual counterexamples. Component/source proof only; native mapping/timing and external I/O qualification remain separate.\n' | tee verified.txt >> "$GITHUB_STEP_SUMMARY"
-      - name: Require unchanged full proof checkout and index
-        if: always()
-        run: |
-          set -euo pipefail
-          report="$RUNNER_TEMP/dspx-dr-control-luts-proof"
-          python3 .github/scripts/post-sync-evidence.py snapshot "$GITHUB_WORKSPACE" "$report/source-after"
-          cmp "$report/source-before.json" "$report/source-after.json"
-          cmp "$report/source-before-index.txt" "$report/source-after-index.txt"
-      - name: Retain complete proof and control evidence
+          mkdir "$RUNNER_TEMP/dr-mapping-api"
+          gh api repos/secprog/sd2snes/actions/artifacts/14062690690 > "$RUNNER_TEMP/dr-mapping-api/artifact.json"
+          gh api 'repos/secprog/sd2snes/actions/runs/43467561223/jobs?per_page=100' > "$RUNNER_TEMP/dr-mapping-api/jobs.json"
+          gh api repos/secprog/sd2snes/actions/artifacts/14062690690/zip > "$RUNNER_TEMP/dr-mapping-design.zip"
+          python3 .github/scripts/inspect-dspx-dr-control-native.py "$RUNNER_TEMP/dr-mapping-design.zip" "$RUNNER_TEMP/dr-mapping-api" "$RUNNER_TEMP/dr-mapping-text"
+          cp "$RUNNER_TEMP/dr-mapping-api/"*.json "$RUNNER_TEMP/dr-mapping-text/"
+          cat "$RUNNER_TEMP/dr-mapping-text/controls.json"
+          cat "$RUNNER_TEMP/dr-mapping-text/inspection-result.json"
+          git diff --exit-code
+          test -z "$(git status --porcelain)"
+      - name: Retain bounded text and unchanged original failures
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: dspx-dr-control-luts-proof
-          path: ${{ runner.temp }}/dspx-dr-control-luts-proof/
+          name: dspx-dr-retained-mapping-${{ github.run_id }}
+          path: ${{ runner.temp }}/dr-mapping-text/
           if-no-files-found: error
           retention-days: 14
-
-  native:
-    name: Build one strict DSPX implementation with unchanged constraints
-    needs: proof
-    runs-on: ubuntu-22.04
-    timeout-minutes: 360
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-      - uses: actions/download-artifact@v4
-        with:
-          name: dspx-dr-control-luts-proof
-          path: ${{ runner.temp }}/accepted-proof/
-      - name: Bind native checkout to this run's successful proof
-        run: |
-          set -euo pipefail
-          report="$RUNNER_TEMP/dspx-native"
-          mkdir -p "$report"
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test "$(git hash-object --no-filters verilog/sd2snes_dsp/main.v)" = 82c29e4d6a6b3a3f894d810bbc69e3fd9915b019
-          test "$(git hash-object --no-filters verilog/sd2snes_dsp/upd77c25.v)" = 0374661e4196db07b7206ff31b691004cfb53f74
-          test -s "$RUNNER_TEMP/accepted-proof/verified.txt"
-          (cd "$RUNNER_TEMP/accepted-proof" && sha256sum --check SHA256SUMS)
-          python3 .github/scripts/post-sync-evidence.py snapshot "$GITHUB_WORKSPACE" "$report/source-before"
-          cmp "$report/source-before.json" "$RUNNER_TEMP/accepted-proof/source-before.json"
-          cmp "$report/source-before-index.txt" "$RUNNER_TEMP/accepted-proof/source-before-index.txt"
-          printf 'Source head: %s\nIGNORE_TIMING=0\nDefault DSPX MAP/PAR cost table=68\n' "$GITHUB_SHA" > "$report/identity.txt"
-      - name: Download exact original production timing reports
-        uses: actions/download-artifact@v4
-        with:
-          name: fpga-reports-mk2-dspx
-          run-id: 42507318034
-          github-token: ${{ github.token }}
-          path: ${{ runner.temp }}/dspx-baseline
-      - name: Exercise existing hosted source and owned-container evidence controls
-        run: |
-          set -euo pipefail
-          python3 .github/scripts/post-sync-evidence.py --self-test "$RUNNER_TEMP/dspx-evidence-controls"
-      - uses: ./.github/actions/prepare-build-image
-        with:
-          target: mk2
-      - name: Generate all six isolated DSP IPs and verify both consumers reuse them
-        run: |
-          set -euo pipefail
-          python3 .github/scripts/post-sync-evidence.py coregen \
-            "$GITHUB_WORKSPACE" "$RUNNER_TEMP/dspx-native/ip" dsp "dspx-ip-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
-          python3 .github/scripts/post-sync-evidence.py snapshot "$GITHUB_WORKSPACE" "$RUNNER_TEMP/dspx-native/source-after-ip"
-          cmp "$RUNNER_TEMP/dspx-native/source-before.json" "$RUNNER_TEMP/dspx-native/source-after-ip.json"
-          cmp "$RUNNER_TEMP/dspx-native/source-before-index.txt" "$RUNNER_TEMP/dspx-native/source-after-ip-index.txt"
-      - name: Run the original strict DSPX build once and retain its real exit
-        id: native
-        run: |
-          set -euo pipefail
-          report="$RUNNER_TEMP/dspx-native"
-          name="dspx-native-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
-          image=sha256:5e3bbb00649997abca8843b1d82d8529eda99a0f2868d37ad9777e0ad5fd50e8
-          docker image inspect "$image" > "$report/native-image.json"
-          docker create --name "$name" --user 0:0 --network bridge --mac-address 08:00:27:68:c9:35 \
-            --volume "$GITHUB_WORKSPACE:/work" --workdir /work --env ISE_CTABLE= --env IGNORE_TIMING=0 \
-            --entrypoint /bin/bash "$image" .github/scripts/build.sh mk2 dspx > "$report/native-container-id.txt"
-          docker inspect "$name" > "$report/native-container-created.json"
-          docker start "$name" > "$report/native-start.txt"
-          docker inspect "$name" > "$report/native-container-started.json"
-          set +e
-          docker logs --follow "$name" 2>&1 | tee "$report/native-build.log"
-          log_status=("${PIPESTATUS[@]}")
-          docker wait "$name" > "$report/native-exit.txt"
-          wait_status=$?
-          docker inspect "$name" > "$report/native-container-finished.json"
-          inspect_status=$?
-          set -e
-          printf 'log=%s tee=%s wait=%s inspect=%s\n' "${log_status[0]}" "${log_status[1]}" "$wait_status" "$inspect_status" > "$report/collection-exits.txt"
-          python3 - "$report/native-container-started.json" "$image" <<'PY'
-          import json, sys
-          x, = json.load(open(sys.argv[1]))
-          assert x['Image'] == sys.argv[2]
-          assert x['Config']['Entrypoint'] == ['/bin/bash']
-          assert x['Config']['Cmd'] == ['.github/scripts/build.sh', 'mk2', 'dspx']
-          assert x['Config']['User'] == '0:0' and x['Config']['WorkingDir'] == '/work'
-          assert x['HostConfig']['NetworkMode'] == 'bridge'
-          assert x['NetworkSettings']['Networks']['bridge']['MacAddress'] == '08:00:27:68:c9:35'
-          env = dict(v.split('=',1) for v in x['Config']['Env'])
-          assert env['IGNORE_TIMING'] == '0' and env['ISE_CTABLE'] == ''
-          assert not any(k.startswith('MAKE') for k in env)
-          assert x['State']['Running'] is True
-          PY
-          test "${log_status[0]}" = 0 && test "${log_status[1]}" = 0
-          test "$wait_status" = 0 && test "$inspect_status" = 0
-          test "$(cat "$report/native-exit.txt")" = 0
-      - name: Preserve source, isolated IP products and all native text reports
-        if: always()
-        run: |
-          set -euo pipefail
-          report="$RUNNER_TEMP/dspx-native"
-          mkdir -p "$report/native-reports"
-          python3 - "$report/native-reports" <<'PY'
-          import hashlib, json, shutil, sys
-          from pathlib import Path
-          root, output = Path('verilog/sd2snes_dspx'), Path(sys.argv[1])
-          rows = []
-          for path in sorted(root.iterdir()):
-              if path.is_file() and path.suffix in ('.syr','.par','.mrp','.psr','.bld','.bgn','.twr','.unroutes','.pcf','.xst','.prj','.ut','.tsi'):
-                  assert not path.is_symlink()
-                  raw = path.read_bytes()
-                  raw.decode('utf-8')
-                  assert b'\0' not in raw
-                  shutil.copyfile(path,output/path.name)
-                  rows.append(dict(path=path.as_posix(),bytes=len(raw),sha256=hashlib.sha256(raw).hexdigest()))
-          (output/'report-index.json').write_text(json.dumps(rows,indent=2)+'\n')
-          products = []
-          for path in sorted(root.glob('*.ncd')):
-              products.append(dict(path=path.as_posix(),bytes=path.stat().st_size,sha256=hashlib.sha256(path.read_bytes()).hexdigest()))
-          (output/'native-product-identities.json').write_text(json.dumps(products,indent=2)+'\n')
-          PY
-          python3 .github/scripts/post-sync-evidence.py snapshot "$GITHUB_WORKSPACE" "$report/source-after"
-          cmp "$report/source-before.json" "$report/source-after.json"
-          cmp "$report/source-before-index.txt" "$report/source-after-index.txt"
-          test -s "$report/ip/generated-products.sha256"
-          sha256sum --check "$report/ip/generated-products.sha256" > "$report/ip-final-check.txt"
-          find verilog/sd2snes_dsp/ip/mk2/build -type f -print0 | sort -z | xargs -0 sha256sum > "$report/ip-final-products.sha256"
-          cmp "$report/ip/generated-products.sha256" "$report/ip-final-products.sha256"
-          printf 'Full source/index/IP immutability verified\n' > "$report/integrity-verified.txt"
-      - name: Collect bounded mapped DR state and two control LUTs
-        if: always() && steps.native.outcome != 'skipped'
-        run: |
-          set -euo pipefail
-          report="$RUNNER_TEMP/dspx-native"
-          physical="$RUNNER_TEMP/dspx-dr-control-physical-raw"
-          mkdir -p "$physical" "$report/physical"
-          test -s verilog/sd2snes_dspx/main_map.ncd
-          export_status=0
-          docker run --rm --user 0:0 --network bridge --mac-address 08:00:27:68:c9:35 \
-            --volume "$GITHUB_WORKSPACE:/work:ro" --volume "$physical:/physical" --volume "$report:/report" \
-            --workdir /work/verilog/sd2snes_dspx --env GITHUB_ACTIONS=true --entrypoint /bin/bash \
-            sha256:5e3bbb00649997abca8843b1d82d8529eda99a0f2868d37ad9777e0ad5fd50e8 \
-            -c 'set -euo pipefail; sha256sum main_map.ncd main.pcf > /report/physical/input-identities.txt; xdl -ncd2xdl main_map.ncd /physical/map.xdl' \
-            > "$report/physical/export-and-collection.log" 2>&1 || export_status=$?
-          collection_status=125
-          if [[ "$export_status" == 0 ]]; then
-            collection_status=0
-            python3 .github/scripts/validate-dspx-dr-control-luts.py collect "$physical/map.xdl" "$report/physical" > "$report/physical/collection.log" 2>&1 || collection_status=$?
-          fi
-          python3 .github/scripts/post-sync-evidence.py snapshot "$GITHUB_WORKSPACE" "$report/source-after-physical"
-          cmp "$report/source-before.json" "$report/source-after-physical.json"
-          cmp "$report/source-before-index.txt" "$report/source-after-physical-index.txt"
-          sha256sum --check "$report/ip/generated-products.sha256" > "$report/physical/ip-final-check.txt"
-          printf 'export=%s collection=%s\n' "$export_status" "$collection_status" > "$report/physical/collection-exits.txt"
-          test "$export_status" = 0 && test "$collection_status" = 0
-      - name: Measure improvement while retaining actual strict timing failures
-        if: always() && steps.native.outcome != 'skipped'
-        run: |
-          set -euo pipefail
-          python3 .github/scripts/validate-dspx-dr-control-luts.py analyze "$RUNNER_TEMP/dspx-native" "$RUNNER_TEMP/dspx-baseline"
-      - name: Require routed zero-score setup and hold with exact native options and PCF
-        run: |
-          set -euo pipefail
-          python3 .github/scripts/check-dspx-strict-timing.py "$RUNNER_TEMP/dspx-native"
-          python3 - "$RUNNER_TEMP/dspx-native" <<'PY'
-          import json, sys
-          from pathlib import Path
-          report=Path(sys.argv[1])
-          result=json.loads((report/'report-timing-validation.json').read_text())
-          finished,=json.loads((report/'native-container-finished.json').read_text())
-          assert finished['State']['ExitCode'] == 0 and not finished['State']['OOMKilled']
-          assert (report/'native-exit.txt').read_text().strip() == '0'
-          result['nativeExitPassed'] = True
-          (report/'strict-timing-result.json').write_text(json.dumps(result,indent=2)+'\n')
-          print(json.dumps(result,indent=2))
-          PY
-      - name: Upload complete proof-bound native text evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: dspx-strict-native-reports
-          path: ${{ runner.temp }}/dspx-native/
-          if-no-files-found: error
-          retention-days: 14
-      - name: Retain hosted evidence-control receipt
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: dspx-evidence-controls-result
-          path: ${{ runner.temp }}/dspx-evidence-controls/self-test-results.json
-          if-no-files-found: warn
-          retention-days: 14
-      - name: Upload candidate FPGA only after all strict gates pass
-        uses: actions/upload-artifact@v4
-        with:
-          name: dspx-strict-timing-candidate
-          path: |
-            verilog/sd2snes_dspx/fpga_dspx.bit
-            ${{ runner.temp }}/dspx-native/strict-timing-result.json
-          if-no-files-found: error
-          retention-days: 14
-      - name: Retain implementation for future read-only hosted inspection
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: dspx-native-design-github-only
-          path: |
-            verilog/sd2snes_dspx/main_map.ncd
-            verilog/sd2snes_dspx/main.ncd
-            verilog/sd2snes_dspx/main.ngd
-            verilog/sd2snes_dspx/main.ngc
-            verilog/sd2snes_dspx/main.pcf
-            verilog/sd2snes_dsp/ip/mk2/build/*.ngc
-            verilog/sd2snes_dsp/ip/mk2/build/*.v
-            ${{ runner.temp }}/dspx-dr-control-physical-raw/map.xdl
-          if-no-files-found: error
-          retention-days: 14
-      - name: Remove only this job's completed container
-        if: always()
-        run: |
-          name="dspx-native-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
-          if docker container inspect "$name" >/dev/null 2>&1; then
-            running=$(docker inspect --format '{{.State.Running}}' "$name")
-            if [[ "$running" == false ]]; then docker rm "$name"; fi
-          fi

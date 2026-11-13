@@ -599,6 +599,52 @@ assign DO = ss_ctrl ? {7'b0, ss_halted}
           : ss_regwin ? ss_reg_do
           : (DP_enable ? DP_DO : UPD_DO);
 
+`ifdef MK2
+`ifdef DSP_COMP
+// DSPX_ALUP_WRITER_BEGIN
+wire alu_p_state_low, alu_p_state_high, alu_p_op_allowed, alu_p_run, alu_p_normal_write;
+dspx_alup_nibble #(.VALUE(4'h4)) alu_p_state_low_lut(
+  .value(insn_state[3:0]), .selected(alu_p_state_low)
+);
+dspx_alup_nibble #(.VALUE(4'h0)) alu_p_state_high_lut(
+  .value(insn_state[7:4]), .selected(alu_p_state_high)
+);
+dspx_alup_opcode alu_p_opcode_lut(.op(op), .selected(alu_p_op_allowed));
+dspx_alup_run alu_p_run_lut(.reset_n(RST), .frozen(ss_frozen), .selected(alu_p_run));
+dspx_alup_join alu_p_join_lut(
+  .lo(alu_p_state_low), .hi(alu_p_state_high),
+  .arithmetic(alu_p_op_allowed), .running(alu_p_run), .selected(alu_p_normal_write)
+);
+always @(posedge CLK) begin
+  if(alu_p_normal_write) begin
+    if(op_alu[3:1] == 3'b100) begin
+      alu_p <= 16'h0001;
+    end else begin
+      case(op_pselect)
+        2'b00:
+          alu_p <= ram_douta;
+        2'b01:
+          alu_p <= idb;
+        2'b10:
+          alu_p <= regs_m;
+        2'b11:
+          alu_p <= regs_n;
+      endcase
+    end
+  end else if(RST & ss_frozen) begin
+    if(ss_wr) begin
+      if(ss_wa >= 8'h34 && ss_wa <= 8'h53) begin
+      end else case(ss_wa)
+        8'h20: alu_p[7:0]  <= ss_wd;
+        8'h21: alu_p[15:8] <= ss_wd;
+      endcase
+    end
+  end
+end
+// DSPX_ALUP_WRITER_END
+`endif
+`endif
+
 always @(posedge CLK) begin
   if(RST & ~ss_frozen) begin
 `ifdef MK2
@@ -695,6 +741,10 @@ always @(posedge CLK) begin
         case(op)
           I_OP, I_RT: begin
             alu_q <= regs_ab[op_asl];
+`ifdef MK2
+`ifdef DSP_COMP
+            // ALU_P has its own equivalent writer below the bounded decode.
+`else
             if(op_alu[3:1] == 3'b100) begin
               alu_p <= 16'h0001;
             end else begin
@@ -709,6 +759,23 @@ always @(posedge CLK) begin
                   alu_p <= regs_n;
               endcase
             end
+`endif
+`else
+            if(op_alu[3:1] == 3'b100) begin
+              alu_p <= 16'h0001;
+            end else begin
+              case(op_pselect)
+                2'b00:
+                  alu_p <= ram_douta;
+                2'b01:
+                  alu_p <= idb;
+                2'b10:
+                  alu_p <= regs_m;
+                2'b11:
+                  alu_p <= regs_n;
+              endcase
+            end
+`endif
           end
           I_JP: begin
             case(jp_brch)
@@ -942,8 +1009,17 @@ always @(posedge CLK) begin
                      flags_z[1] <= ss_wd[2]; flags_ov1[1] <= ss_wd[1]; flags_ov0[1] <= ss_wd[0]; end
         8'h1e: idb[7:0]    <= ss_wd;
         8'h1f: idb[15:8]   <= ss_wd;
+`ifdef MK2
+`ifdef DSP_COMP
+        // ALU_P restore remains in its separate complete writer.
+`else
         8'h20: alu_p[7:0]  <= ss_wd;
         8'h21: alu_p[15:8] <= ss_wd;
+`endif
+`else
+        8'h20: alu_p[7:0]  <= ss_wd;
+        8'h21: alu_p[15:8] <= ss_wd;
+`endif
         8'h22: alu_q[7:0]  <= ss_wd;
         8'h23: alu_q[15:8] <= ss_wd;
         8'h24: alu_r[7:0]  <= ss_wd;
@@ -1033,5 +1109,45 @@ always @* begin
   end
 end
 endmodule
+`endif
+`endif
+
+`ifdef MK2
+`ifdef DSP_COMP
+// DSPX_ALUP_HELPERS_BEGIN
+// Procedural qualification keeps the original unknown-condition behavior.
+(* LUT_MAP="yes" *)
+module dspx_alup_nibble #(parameter [3:0] VALUE = 4'h0)(
+  input [3:0] value, output reg selected
+);
+always @* begin
+  selected = 1'b0;
+  if(value == VALUE) selected = 1'b1;
+end
+endmodule
+
+(* LUT_MAP="yes" *)
+module dspx_alup_opcode(input [1:0] op, output reg selected);
+always @* begin
+  selected = 1'b0;
+  case(op)
+    2'b00, 2'b01: selected = 1'b1;
+  endcase
+end
+endmodule
+
+(* LUT_MAP="yes" *)
+module dspx_alup_run(input reset_n, frozen, output reg selected);
+always @* begin
+  selected = 1'b0;
+  if(reset_n & ~frozen) selected = 1'b1;
+end
+endmodule
+
+(* LUT_MAP="yes" *)
+module dspx_alup_join(input lo, hi, arithmetic, running, output selected);
+assign selected = lo & hi & arithmetic & running;
+endmodule
+// DSPX_ALUP_HELPERS_END
 `endif
 `endif

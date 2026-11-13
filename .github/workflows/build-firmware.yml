@@ -23,6 +23,11 @@ on:
       fpga_cores:
         description: For fpga mode only, optional comma-separated targets (e.g. mk2:sgb,mk2:gsu)
         type: string
+      gbc_rtl_only:
+        description: For explicit GBC FPGA targets, optionally run RTL checks without native FPGA builds
+        type: choice
+        options: [none, all, clock]
+        default: none
       placement_seeds:
         description: For MkII fpga mode only, optional comma-separated placer seeds (1..100)
         type: string
@@ -54,23 +59,33 @@ jobs:
         with:
           fetch-depth: 0
       - uses: actions/checkout@v6
+        if: inputs.gbc_rtl_only != 'all' && inputs.gbc_rtl_only != 'clock'
         with:
           repository: RPGHacker/asar
           ref: 6a6dbdaed8cb773e583052ce4f66375bd896c3a1
           path: .ci-tools/asar-src
       - name: Prepare hosted simulation and assembly tools
+        env:
+          RTL_ONLY: ${{ inputs.gbc_rtl_only }}
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends iverilog cmake g++
+          sudo apt-get install -y --no-install-recommends iverilog
+          if [[ "$RTL_ONLY" == all || "$RTL_ONLY" == clock ]]; then exit 0; fi
+          sudo apt-get install -y --no-install-recommends cmake g++
           cmake -S .ci-tools/asar-src/src -B .ci-tools/asar-build -DCMAKE_BUILD_TYPE=Release \
             -DASAR_GEN_EXE=ON -DASAR_GEN_DLL=OFF -DASAR_GEN_LIB=OFF \
             -DASAR_GEN_EXE_TEST=OFF -DASAR_GEN_DLL_TEST=OFF
           cmake --build .ci-tools/asar-build --target asar-standalone --parallel 2
       - name: Execute pixel, SRAM backpressure, reset and GB audio comparisons
+        env:
+          RTL_ONLY: ${{ inputs.gbc_rtl_only }}
         run: |
           set -o pipefail
-          python3 tests/test_gbc_mk2.py | tee "$RUNNER_TEMP/gbc-rtl.log"
+          args=()
+          if [[ "$RTL_ONLY" == clock ]]; then args+=(--clock-only); fi
+          python3 tests/test_gbc_mk2.py "${args[@]}" | tee "$RUNNER_TEMP/gbc-rtl.log"
       - name: Assemble and validate both wire protocols and existing player behavior
+        if: inputs.gbc_rtl_only != 'all' && inputs.gbc_rtl_only != 'clock'
         run: |
           set -o pipefail
           export ASAR="$GITHUB_WORKSPACE/.ci-tools/asar-build/asar/bin/asar"
@@ -113,7 +128,7 @@ jobs:
           target: software
 
   fpga-plan:
-    if: inputs.build != 'software' && inputs.build != 'menus'
+    if: inputs.build != 'software' && inputs.build != 'menus' && !(inputs.build == 'fpga' && contains(inputs.fpga_cores, 'gbc') && (inputs.gbc_rtl_only == 'all' || inputs.gbc_rtl_only == 'clock'))
     name: Check complete FPGA core coverage
     runs-on: ubuntu-22.04
     timeout-minutes: 5

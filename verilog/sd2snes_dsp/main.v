@@ -684,6 +684,12 @@ reg [7:0] CC_DR = 8'h00;
 reg [7:0] CC_SR = 8'h00;
 reg cc_tm_on = 1'b0;
 reg [4:0] cc_tm_min = 5'd0;
+`ifdef MK2
+`ifdef DSP_COMP
+// Keep the existing synchronous reset function on the data input.
+(* use_sync_reset = "no" *)
+`endif
+`endif
 reg [5:0] cc_tm_sec = 6'd0;
 reg [26:0] cc_tm_div = 27'd0;
 localparam [26:0] CC_ONE_SECOND = 27'd95999999; // CLK2 = 96 MHz on both boards

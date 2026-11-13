@@ -19,6 +19,9 @@ module gbc_snapshot_tb;
   reg shown_compat;
   integer frame, i, j, checks=0, seq_expected=0, seed=32'h4319eb7;
   reg [15:0] starvation=0;
+  reg mf_valid=0;
+  reg [3:0] mf_kind=0;
+  integer palette_writes, published_writes;
 
   gbc_bridge dut(.CLK(CLK),.RST(RST),.SNES_WR_end(WR),.SNES_ADDR(ADDR),
     .DATA_IN(DIN),.VIEW_ENABLE(VIEW),.EF_ENABLE(EF),.DATA_OUT(DOUT),
@@ -32,7 +35,7 @@ module gbc_snapshot_tb;
     .TAP_SCX(8'd0),.TAP_SCY(8'd0),.TAP_WX(8'd0),.TAP_WY(8'd0),
     .TAP_BGP(8'h1b),.TAP_OBP0(8'h6c),.TAP_OBP1(8'h93),.TAP_OPRI(8'd0),
     .TAP_KEY0(8'd0),.TAP_KEY1(8'd0),.TAP_VBK(8'd0),.TAP_SVBK(8'd0),
-    .TAP_SPEED_REQ(1'b0),.TAP_MF_VALID(1'b0),.TAP_MF_KIND(4'd0),
+    .TAP_SPEED_REQ(1'b0),.TAP_MF_VALID(mf_valid),.TAP_MF_KIND(mf_kind),
     .TAP_MF_IDX(6'd0),.TAP_MF_VALUE(8'd0),.TAP_MF_LY(8'd0),
     .TAP_MF_BEFORE_MODE3(1'b0),.VRAM0_B_DATA(8'd0),.VRAM1_B_DATA(8'd0),
     .OAM_RD_REQ(OREQ),.OAM_RD_ADDR(OADDR),.OAM_RD_DATA(ODATA),
@@ -259,6 +262,38 @@ module gbc_snapshot_tb;
     end
     VWE=0;
     $display("PASS: shared CHR/OBJ dirt matches independent published vectors across all blocks and commit collisions");
+    // The renderer consumes only the >=96 and >=256 pressure predicates.
+    // Exercise both boundary pairs, the log cap, and the former 16-bit cap,
+    // including publication deferred by COMMIT/CONSUMED.
+    for(frame=0;frame<8;frame=frame+1) begin
+      RST=1; tick; RST=0;
+      case(frame)
+        0: palette_writes=0;
+        1: palette_writes=95;
+        2: palette_writes=96;
+        3: palette_writes=255;
+        4: palette_writes=256;
+        5: palette_writes=257;
+        6: palette_writes=512;
+        7: palette_writes=65535;
+      endcase
+      mf_valid=1;
+      for(j=0;j<palette_writes;j=j+1) begin mf_kind=j%2 ? 8 : 9; tick; end
+      mf_kind=2; repeat(5) tick; mf_valid=0;
+      if(frame%2) command(2);
+      LY0=1; tick; LY0=0;
+      if(frame%2) begin
+        read_status(24'he20290,0); read_status(24'he20291,0);
+        command(5);
+      end
+      published_writes=palette_writes>256 ? 256 : palette_writes;
+      read_status(24'he20290,published_writes);
+      read_status(24'he20291,published_writes>>8);
+      if((dut.colw_status>=96)!=(palette_writes>=96)
+         || (dut.colw_status>=256)!=(palette_writes>=256))
+        $fatal(1,"palette pressure predicates changed");
+    end
+    $display("PASS: bounded palette-write count preserves renderer thresholds and coherent publication");
     $finish;
   end
 endmodule

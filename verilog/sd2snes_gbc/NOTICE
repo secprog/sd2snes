@@ -57,6 +57,8 @@ Wire $04 also omits status counters unused by the SNES player: +$0D, +$59,
 +$5E, and the +$30..+$3F debug mirror read zero, except +$3C/+$3D retain
 the bus-starvation counter for board validation. The functional SEQ,
 LOG_OVF, row-freeze, dirty, palette and cache-ready/overflow fields remain.
+COLW_N saturates at 256 on Mk.II: the player tests only >=96 and >=256,
+so additional count precision cannot change its rendering-mode policy.
 The player image must remain below SRAM $70000, reserved for video storage.
 
 Build and verify on GitHub Actions (Build firmware, FPGA mode):

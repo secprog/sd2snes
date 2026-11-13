@@ -449,7 +449,14 @@ reg  [1:0]  log_pend_r;       // a finished frame waiting for its publish
 reg         log_pend_v_r;     // ... and whether there is one
 reg  [9:0]  log_n_pend_r;     // its LOG_N, LOG_OVF and COLW_N
 reg         log_ovf_pend_r;
-reg  [15:0] colw_pend_r;
+`ifdef MK2
+// The player's only COLW_N decisions are >=96 and >=256. Retaining counts
+// above 256 adds no display information; the wire-$04 counter saturates there.
+localparam COLW_BITS=9;
+`else
+localparam COLW_BITS=16;
+`endif
+reg  [COLW_BITS-1:0] colw_pend_r;
 reg  [9:0]  log_wr_idx_r;     // 0..512, saturates at 512 (= overflow)
 reg         log_ovf_live_r;   // the live buffer dropped at least one entry
 reg  [9:0]  log_n_pub_r;      // published LOG_N, status +23..24
@@ -459,8 +466,9 @@ reg  [15:0] log_ovf_ctr_r;    // GBDG +0E: frames whose log overflowed
 // that the log WOULD take -- counted before the 512 cap, so it keeps counting
 // where LOG_N saturates.  Same publication rule as LOG_N: it turns over with
 // the log flip at LY=0 and restarts with the live buffer.  Saturating.
-reg  [15:0] colw_live_r;
-reg  [15:0] colw_pub_r;       // status +90..91
+reg  [COLW_BITS-1:0] colw_live_r;
+reg  [COLW_BITS-1:0] colw_pub_r;       // status +90..91
+wire [15:0] colw_status = colw_pub_r;
 
 `ifndef MK2
 integer log_i;
@@ -569,7 +577,11 @@ always @(posedge CLK) begin
     end
   end
   else if (log_wr) begin
+`ifdef MK2
+    if (colw_wr & ~colw_live_r[8]) colw_live_r <= colw_live_r + 9'd1;
+`else
     if (colw_wr & ~(&colw_live_r)) colw_live_r <= colw_live_r + 16'd1;
+`endif
     if (log_full) begin
       log_ovf_live_r <= 1'b1;
       // GBDG +0E counts FRAMES whose log overflowed, not entries dropped: the
@@ -824,7 +836,7 @@ c6_fb c6fb (
   .CTL_WR(wr_c6ctl), .ROWDONE_WR(wr_c6rowdn), .WR_DATA(DATA_IN),
   .SEL(sel_fb), .VADDR(vaddr), .VIEW_BYTE(c6_view_byte),
   .STAT_OFF(SNES_ADDR[7:0]), .STAT_BYTE(c6_stat_byte), .STAT_HIT(c6_stat_hit),
-  .COLW_N(colw_pub_r),
+  .COLW_N(colw_status),
 `ifdef GBC_EXTERNAL_FB
   .PREPARE_WR(ef_wr && SNES_ADDR[7:0] == 8'h08 && DATA_IN < 8'd18),
   .FB_MEM_REQ(FB_MEM_REQ), .FB_MEM_WR(FB_MEM_WR), .FB_MEM_ADDR(FB_MEM_ADDR),

@@ -14,6 +14,11 @@ def main():
     parser.add_argument("--clock-only", action="store_true", help="run only the clock equivalence check")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
+    player = (root / "snes/gbc/gbc_snes.asm").read_text()
+    for threshold in ("IN", "OUT"):
+        value = re.search(rf"^!GBC_FB_COLW_{threshold}\s*=\s*(\d+)\s*;", player, re.M)
+        if value is None or not 0 < int(value[1]) <= 256:
+            raise RuntimeError("MkII palette-count saturation no longer covers the player's thresholds")
     with tempfile.TemporaryDirectory(prefix="gbc-mk2-") as tmp:
         # The unchanged Mk.III arithmetic is a separate compiled reference.
         clock_ref = Path(tmp) / "clock_ref.v"

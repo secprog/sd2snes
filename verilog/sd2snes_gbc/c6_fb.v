@@ -232,6 +232,7 @@ wire        wr_en    = en_eff_r & (~row_is_frozen | thaw_now);
 // CLK) away, while the write and its compare are over two cycles later.
 reg  [63:0] acc_r;
 wire [63:0] acc_nx = {acc_r[55:0], px8};
+wire [17:0] rd_mask;
 
 `ifdef GBC_EXTERNAL_FB
 reg         wr0_r, wr_last0_r;
@@ -314,7 +315,7 @@ wire        rd_one     = rowdone_wr_r & (wr_data_r < 8'd18);
 wire [4:0]  rd_row     = wr_data_r[4:0];
 wire        rd_hit_one = rd_one & row_frozen_r[rd_row];
 wire        rd_bad     = rowdone_wr_r & ~rd_all & ~rd_hit_one;
-wire [17:0] rd_mask    = rd_all ? row_frozen_r : (rd_hit_one ? (18'd1 << rd_row) : 18'd0);
+assign rd_mask = rd_all ? row_frozen_r : (rd_hit_one ? (18'd1 << rd_row) : 18'd0);
 
 //-------------------------------------------------------------------
 // rows, dirty, CL, counters

@@ -134,6 +134,9 @@ jobs:
           python3 .github/scripts/check-fpga-manifest.py matrix >> "$GITHUB_OUTPUT"
 
   prepare-fpga:
+    # Explicit GBC experiments have one core per board; each core job already
+    # restores/builds the same image. Avoid loading those images twice per run.
+    if: inputs.build != 'fpga' || !contains(inputs.fpga_cores, 'gbc')
     name: Prepare cached ${{ matrix.board }} FPGA tools
     needs: fpga-plan
     runs-on: ubuntu-22.04
@@ -149,6 +152,7 @@ jobs:
           target: ${{ matrix.board }}
 
   fpga-core:
+    if: ${{ !cancelled() && needs.fpga-plan.result == 'success' && (needs.prepare-fpga.result == 'success' || (inputs.build == 'fpga' && contains(inputs.fpga_cores, 'gbc'))) }}
     name: Build ${{ matrix.board }} core ${{ matrix.core }}${{ matrix.seed && format(' seed {0}', matrix.seed) || '' }}
     needs: [fpga-plan, prepare-fpga]
     runs-on: ubuntu-22.04

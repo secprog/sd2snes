@@ -121,6 +121,7 @@ wire [7:0] SGB_SNES_DATA_IN;
 wire [7:0] SGB_SNES_DATA_OUT;
 wire [19:0] SGB_APU_DAT;
 wire        SGB_APU_CLK_EDGE;
+wire        SGB_reset;
 `ifdef GBC_AUDIO_PROBE
 // Debug-only audio probe (config.vh): a square wave at ce1/2048 (~1.02 kHz),
 // +-255 in the DAC's signed 10-bit {L, R} format, in place of the APU.
@@ -386,8 +387,6 @@ end
 // state (two VRAM banks, eight WRAM banks, CRAM, KEY1/HDMA).  Save states are
 // out of scope for this core, so nothing ever halts the GB and the halt
 // request is tied low.
-
-wire        SGB_reset;
 
 wire        mcu_rdy_int;
 wire        mcu_rrq_int;
@@ -944,6 +943,7 @@ parameter ST_RAM_MCU_RD_ADDR     = 8'b00000010;
 parameter ST_RAM_MCU_RD_END      = 8'b00000100;
 parameter ST_RAM_MCU_WR_ADDR     = 8'b00001000;
 parameter ST_RAM_MCU_WR_END      = 8'b00010000;
+reg [7:0] RAM_STATE; initial RAM_STATE = ST_RAM_IDLE;
 `ifdef GBC_EXTERNAL_FB
 parameter ST_RAM_FB_RD_ADDR      = 8'b00100000;
 parameter ST_RAM_FB_WR_ADDR      = 8'b01000000;
@@ -957,7 +957,6 @@ assign FB_MEM_ACK = |(RAM_STATE & ST_RAM_FB_END);
 
 parameter RAM_CYCLE_LEN = 4'd5;
 
-reg [7:0] RAM_STATE; initial RAM_STATE = ST_RAM_IDLE;
 reg [3:0] ST_RAM_DELAYr;
 
 assign ram_free_slot = SNES_PULSE_end | ram_free_strobe;

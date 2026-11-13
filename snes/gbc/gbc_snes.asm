@@ -8663,8 +8663,15 @@ GbcFbCacheWait:
     lda.l !GBC_STAT_LONG+$92
     cmp.b $42
     beq GbcFbCacheReady
+    phx
+    jsr GbcCapacity           ; a stalled cache must not delay the next NMI
+    cmp.w #!GBC_FB_SPANEQ+64 ; enough live time for at least one tile
+    sep #$20
+    plx
+    bcc GbcFbCacheLate
     dex
     bne GbcFbCacheWait
+GbcFbCacheLate:
     clc
     rts
 GbcFbCacheReady:

@@ -16,7 +16,13 @@ module gbc_clock_tb;
       #2; CLK=1; #1;
       if({ce1,ce2,bus_edge,locked,err} !== {ref_ce1,ref_ce2,ref_bus,ref_locked}
          || dut.k2_r !== reference.k2_r || $signed(dut.ki_r) !== $signed(reference.ki_r))
-        $fatal(1,"clock mismatch cycle=%0d dots=%0d rate=%0d reference=%0d",cycles,dots,dut.k2_r,reference.k2_r);
+        begin
+          $display("error dut/ref=%h/%h enables=%b/%b ki=%0d/%0d diff=%0d/%0d err_w=%0d/%0d err_q=%0d/%0d",
+            err,ref_err,{ce1,ce2,bus_edge,locked},{ref_ce1,ref_ce2,ref_bus,ref_locked},
+            $signed(dut.ki_r),$signed(reference.ki_r),$signed(dut.diff_r),$signed(reference.diff_r),
+            $signed(dut.err_w),$signed(reference.err_w),$signed(dut.err_q),$signed(reference.err_q));
+          $fatal(1,"clock mismatch cycle=%0d dots=%0d rate=%0d reference=%0d",cycles,dots,dut.k2_r,reference.k2_r);
+        end
       cycles=cycles+1; CLK=0;
     end
   endtask

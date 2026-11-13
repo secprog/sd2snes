@@ -40,13 +40,33 @@ module c6_sram(
   input MEM_ACK,
   input [7:0] MEM_Q
 );
-  // No reset on the arrays: RAM contents have no validity without their tags.
-  (* ram_style = "distributed" *) reg [77:0] fifo [0:15];
-  reg [4:0] wp, rp;
-  wire empty = wp == rp;
-  wire full = (wp[4] != rp[4]) && (wp[3:0] == rp[3:0]);
+  // A dynamic 16-tap shift register uses one SRL16E LUT per payload bit,
+  // whereas a dual-port 16-word RAM uses two. Only occupancy needs reset.
+  // The oldest word is tap count-1; simultaneous push/pop keeps that tap.
+  reg [4:0] fifo_count;
+  wire empty = fifo_count == 0;
+  wire full = fifo_count == 16;
+  wire fifo_push = WR && !full && !RST;
+  wire fifo_pop;
+  wire [3:0] fifo_tap = fifo_count[3:0] - 1'b1;
   // {last, row, col, line, eight pixels}, oldest pixel in bits 63:56.
-  wire [77:0] head = fifo[rp[3:0]];
+  wire [77:0] fifo_data = {WR_LAST,WR_ROW,WR_COL,WR_LINE,WR_PIXELS};
+  wire [77:0] head;
+  genvar fifo_bit;
+  generate for (fifo_bit=0; fifo_bit<78; fifo_bit=fifo_bit+1) begin : g_fifo
+    (* shreg_extract = "yes" *) reg [15:0] bits;
+    always @(posedge CLK)
+      if (fifo_push) bits <= {bits[14:0],fifo_data[fifo_bit]};
+    assign head[fifo_bit] = bits[fifo_tap];
+  end endgenerate
+  always @(posedge CLK) begin
+    if (RST) fifo_count <= 0;
+    else case ({fifo_push,fifo_pop})
+      2'b10: fifo_count <= fifo_count + 1'b1;
+      2'b01: fifo_count <= fifo_count - 1'b1;
+      default: ;
+    endcase
+  end
   reg [77:0] work;
   reg [2:0] byte_index;
   reg different;
@@ -99,11 +119,12 @@ module c6_sram(
 
   localparam IDLE=0, WRITE_READ=1, WRITE_STORE=2, CACHE_READ=3, CACHE_PLANES=4;
   reg [2:0] state;
+  assign fifo_pop = state == WRITE_STORE && MEM_REQ && MEM_ACK && byte_index == 7;
   always @(posedge CLK) begin
     COMMIT <= 0;
     cache_we <= 0;
     if (RST) begin
-      wp <= 0; rp <= 0; OVERFLOW <= 0;
+      OVERFLOW <= 0;
       MEM_REQ <= 0; MEM_WR <= 0; MEM_ADDR <= 0; MEM_DATA <= 0;
       cache_valid <= 0; cache_row <= 0; cache_stretch <= 0;
       cache_active <= 0; cache_discard <= 0;
@@ -113,13 +134,7 @@ module c6_sram(
       work <= 0; COMMIT_ROW <= 0; COMMIT_COL <= 0;
       COMMIT_LAST <= 0; COMMIT_DIFF <= 0;
     end else begin
-      if (WR) begin
-        if (full) OVERFLOW <= 1;
-        else begin
-          fifo[wp[3:0]] <= {WR_LAST,WR_ROW,WR_COL,WR_LINE,WR_PIXELS};
-          wp <= wp + 1'b1;
-        end
-      end
+      if (WR && full) OVERFLOW <= 1;
       if (invalidating || STRETCH != cache_stretch) begin
         cache_valid <= 0;
         cache_discard <= 1;
@@ -159,7 +174,6 @@ module c6_sram(
           end else if (MEM_ACK) begin
             MEM_REQ <= 0;
             if (byte_index == 7) begin
-              rp <= rp + 1'b1;
               COMMIT <= 1; COMMIT_ROW <= work[76:72];
               COMMIT_COL <= work[71:67]; COMMIT_LAST <= work[77];
               COMMIT_DIFF <= different;

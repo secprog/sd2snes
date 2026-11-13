@@ -3,7 +3,7 @@
 // 256-byte OAM in separate RAMB16s would waste nearly two whole blocks.
 // Port B is read-only in this build: SGB_MCU_ACCESS is disabled, while the
 // bridge still reads OAM snapshots through it. Both clocks are the same CLK.
-module gbc_small_ram #(parameter ABITS=8)(
+module gbc_small_ram #(parameter ABITS=8, READ_B=1)(
   input clka, wea,
   input [ABITS-1:0] addra,
   input [7:0] dina,
@@ -19,11 +19,29 @@ module gbc_small_ram #(parameter ABITS=8)(
   always @(posedge clka) begin
     if(wea)ram[addra]<=dina;
     douta<=ram[addra];
-    doutb<=ram[addrb];
   end
+  // HRAM has no bridge reader and its MCU debug port is disabled. Remove the
+  // read port before RAM inference so XST can use single-port LUT memories.
+  generate if (READ_B) begin : g_read_b
+    always @(posedge clka) doutb<=ram[addrb];
+  end else begin : g_no_read_b
+    always @(posedge clka) doutb<=0;
+  end endgenerate
   // synthesis translate_off
   always @(posedge clka) if(web) $fatal(1,"Mk.II LUT RAM port B is read-only");
   // synthesis translate_on
+endmodule
+
+// PPU pixel FIFO, two asynchronous read ports and one clocked write. Keeping
+// the entire word on each read lets XST share the colour/priority/palette
+// address decode instead of treating an expanded case as a third read port.
+module gbc_pixel_ram #(parameter WIDTH=4)(input CLK, WE,
+  input [4:0] WADDR, RADDR, input [WIDTH-1:0] DATA,
+  output [WIDTH-1:0] WRITE_Q, READ_Q);
+  (* ram_style = "distributed" *) reg [WIDTH-1:0] pixels [0:31];
+  always @(posedge CLK) if(WE) pixels[WADDR] <= DATA;
+  assign WRITE_Q = pixels[WADDR];
+  assign READ_Q = pixels[RADDR];
 endmodule
 
 // 18 rows of 20 dirty cells. Even/odd rows have separate dual-port LUT RAMs:
@@ -45,35 +63,38 @@ module c6_dirty_ram(input CLK, RST, ALL, SET, input [4:0] ROW, COL,
 
   // Five status bytes contain exactly two 20-cell rows. A small constant
   // lookup avoids a divider and reads one even/odd pair in parallel.
-  reg [6:0] read_sel;
-  always @(BIDX) begin
-    case (BIDX)
-       0: read_sel={4'd0,3'd0};  1: read_sel={4'd0,3'd1};
-       2: read_sel={4'd0,3'd2};  3: read_sel={4'd0,3'd3};
-       4: read_sel={4'd0,3'd4};  5: read_sel={4'd1,3'd0};
-       6: read_sel={4'd1,3'd1};  7: read_sel={4'd1,3'd2};
-       8: read_sel={4'd1,3'd3};  9: read_sel={4'd1,3'd4};
-      10: read_sel={4'd2,3'd0}; 11: read_sel={4'd2,3'd1};
-      12: read_sel={4'd2,3'd2}; 13: read_sel={4'd2,3'd3};
-      14: read_sel={4'd2,3'd4}; 15: read_sel={4'd3,3'd0};
-      16: read_sel={4'd3,3'd1}; 17: read_sel={4'd3,3'd2};
-      18: read_sel={4'd3,3'd3}; 19: read_sel={4'd3,3'd4};
-      20: read_sel={4'd4,3'd0}; 21: read_sel={4'd4,3'd1};
-      22: read_sel={4'd4,3'd2}; 23: read_sel={4'd4,3'd3};
-      24: read_sel={4'd4,3'd4}; 25: read_sel={4'd5,3'd0};
-      26: read_sel={4'd5,3'd1}; 27: read_sel={4'd5,3'd2};
-      28: read_sel={4'd5,3'd3}; 29: read_sel={4'd5,3'd4};
-      30: read_sel={4'd6,3'd0}; 31: read_sel={4'd6,3'd1};
-      32: read_sel={4'd6,3'd2}; 33: read_sel={4'd6,3'd3};
-      34: read_sel={4'd6,3'd4}; 35: read_sel={4'd7,3'd0};
-      36: read_sel={4'd7,3'd1}; 37: read_sel={4'd7,3'd2};
-      38: read_sel={4'd7,3'd3}; 39: read_sel={4'd7,3'd4};
-      40: read_sel={4'd8,3'd0}; 41: read_sel={4'd8,3'd1};
-      42: read_sel={4'd8,3'd2}; 43: read_sel={4'd8,3'd3};
-      44: read_sel={4'd8,3'd4};
-      default: read_sel={4'd0,3'd7};
+  function [6:0] read_select;
+    input [5:0] index;
+    begin
+    case (index)
+       0: read_select={4'd0,3'd0};  1: read_select={4'd0,3'd1};
+       2: read_select={4'd0,3'd2};  3: read_select={4'd0,3'd3};
+       4: read_select={4'd0,3'd4};  5: read_select={4'd1,3'd0};
+       6: read_select={4'd1,3'd1};  7: read_select={4'd1,3'd2};
+       8: read_select={4'd1,3'd3};  9: read_select={4'd1,3'd4};
+      10: read_select={4'd2,3'd0}; 11: read_select={4'd2,3'd1};
+      12: read_select={4'd2,3'd2}; 13: read_select={4'd2,3'd3};
+      14: read_select={4'd2,3'd4}; 15: read_select={4'd3,3'd0};
+      16: read_select={4'd3,3'd1}; 17: read_select={4'd3,3'd2};
+      18: read_select={4'd3,3'd3}; 19: read_select={4'd3,3'd4};
+      20: read_select={4'd4,3'd0}; 21: read_select={4'd4,3'd1};
+      22: read_select={4'd4,3'd2}; 23: read_select={4'd4,3'd3};
+      24: read_select={4'd4,3'd4}; 25: read_select={4'd5,3'd0};
+      26: read_select={4'd5,3'd1}; 27: read_select={4'd5,3'd2};
+      28: read_select={4'd5,3'd3}; 29: read_select={4'd5,3'd4};
+      30: read_select={4'd6,3'd0}; 31: read_select={4'd6,3'd1};
+      32: read_select={4'd6,3'd2}; 33: read_select={4'd6,3'd3};
+      34: read_select={4'd6,3'd4}; 35: read_select={4'd7,3'd0};
+      36: read_select={4'd7,3'd1}; 37: read_select={4'd7,3'd2};
+      38: read_select={4'd7,3'd3}; 39: read_select={4'd7,3'd4};
+      40: read_select={4'd8,3'd0}; 41: read_select={4'd8,3'd1};
+      42: read_select={4'd8,3'd2}; 43: read_select={4'd8,3'd3};
+      44: read_select={4'd8,3'd4};
+      default: read_select={4'd0,3'd7};
     endcase
-  end
+    end
+  endfunction
+  wire [6:0] read_sel = read_select(BIDX);
   wire [3:0] pair_index = read_sel[6:3];
   wire [4:0] even_row = {pair_index,1'b0};
   wire [4:0] odd_row = {pair_index,1'b1};

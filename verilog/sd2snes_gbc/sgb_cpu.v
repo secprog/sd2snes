@@ -2679,10 +2679,14 @@ assign      PPU_LY_read = (REG_LCDC_r[`LCDC_DS_EN] & ~|(ppu_state_r & ST_PPU_OFF
                         ? REG_LY_r + 8'd1 : REG_LY_r;
 
 wire [2:0]  ppu_bgw_fifo_index_start = (ppu_pix_win_active_r ? REG_WX_r[2:0] : ~REG_SCX_r[2:0]) + 1;
+`ifndef MK2
 reg  [1:0]  ppu_bgw_fifo_r[31:0]; // 4 [tiles] * 8 [pixels/tile] * 2 [bpp]
+`endif
 reg  [7:0]  ppu_pix_bgw_data_r;
 
+`ifndef MK2
 reg  [3:0]  ppu_obj_fifo_r[31:0]; // 4 [tiles] * 8 [pixels/tile] * 1+1+2[bpp,pri,pal]
+`endif
 reg  [7:0]  ppu_obj_fifo_transparent_r;
 reg  [7:0]  ppu_pix_obj_data_r;
 
@@ -2771,7 +2775,12 @@ reg  [8:0]  c6_obj_wr_meta_r;
 // OPRI = 1 (and DMG compatibility) keep the X order the engine implements.
 wire        c6_oam_order = cgb_mode & ~REG_OPRI_r;
 wire [4:0]  c6_ow_i      = ppu_obj_fifo_wr_index_r[4:0];
+`ifdef MK2
+wire [3:0]  ppu_obj_write_data, ppu_obj_read_data;
+wire        c6_ow_free   = (ppu_obj_write_data[1:0] == 2'd0);
+`else
 wire        c6_ow_free   = (ppu_obj_fifo_r[c6_ow_i][1:0] == 2'd0);
+`endif
 wire        c6_ow_wins   = c6_oam_order & |ppu_obj_fifo_wr_data_r[1:0]
                          & (c6_obj_wr_meta_r[8:3] < c6_obj_meta_fifo_r[c6_ow_i][8:3]);
 wire        c6_ow_we     = ppu_obj_fifo_wr_req_clear_r | c6_ow_free | c6_ow_wins;
@@ -2795,6 +2804,23 @@ assign      PPU_REG_lcd_stat = ~ppu_stat_active_r & |ppu_stat_match_r;
 assign      PPU_MCT_vram_active = ppu_vram_active | ppu_cpu_lock;
 assign      PPU_MCT_oam_active  = ppu_oam_active  | ppu_cpu_lock;
 
+`ifdef MK2
+// Explicit canonical LUT memories avoid XST's legacy array/case expansion.
+// The producer's current-address read and the LCD pixel read are independent
+// asynchronous ports; the write still lands on exactly the original edge.
+wire [1:0] ppu_bgw_index;
+gbc_pixel_ram #(.WIDTH(2)) bg_pixels(.CLK(CLK),
+  .WE(~cpu_ireset_r & ~ppu_bgw_fifo_wr_req_r & ppu_bgw_fifo_wr_active_r),
+  .WADDR(ppu_bgw_fifo_wr_index_r), .DATA(ppu_bgw_fifo_wr_data_r),
+  .RADDR(ppu_pix_ctr_r[4:0]), .WRITE_Q(), .READ_Q(ppu_bgw_index));
+gbc_pixel_ram #(.WIDTH(4)) obj_pixels(.CLK(CLK),
+  .WE(~cpu_ireset_r & ~ppu_obj_fifo_wr_req_r & ppu_obj_fifo_wr_active_r & c6_ow_we),
+  .WADDR(c6_ow_i), .DATA(ppu_obj_fifo_wr_data_r),
+  .RADDR(ppu_pix_ctr_r[4:0]), .WRITE_Q(ppu_obj_write_data), .READ_Q(ppu_obj_read_data));
+wire [1:0] ppu_obj_index = ppu_obj_read_data[1:0];
+wire ppu_obj_pal = ppu_obj_read_data[2];
+wire ppu_obj_pri = ppu_obj_read_data[3];
+`else
 wire  [1:0] ppu_bgw_index = ppu_bgw_fifo_r[ppu_pix_ctr_r[4:0]][1:0];
 wire  [1:0] ppu_obj_index = ppu_obj_fifo_r[ppu_pix_ctr_r[4:0]][1:0];
 reg         ppu_obj_pal;
@@ -2842,6 +2868,7 @@ always @(ppu_pix_ctr_r,
     31: {ppu_obj_pri,ppu_obj_pal} = ppu_obj_fifo_r[31][3:2];
   endcase
 end
+`endif
 
 // merge background and object indices and derive pixel values
 assign      PPU_PIXEL = HLT_REQ_sync ? 2'b00
@@ -3093,6 +3120,7 @@ always @(posedge CLK) begin
       ppu_bgw_fifo_wr_data_r <= ppu_bgw_fifo_wr_req_data_r[0];
     end
     else if (ppu_bgw_fifo_wr_active_r) begin
+`ifndef MK2
       case (ppu_bgw_fifo_wr_index_r[4:0])
         0:  ppu_bgw_fifo_r[0 ] <= ppu_bgw_fifo_wr_data_r;
         1:  ppu_bgw_fifo_r[1 ] <= ppu_bgw_fifo_wr_data_r;
@@ -3127,6 +3155,7 @@ always @(posedge CLK) begin
         30: ppu_bgw_fifo_r[30] <= ppu_bgw_fifo_wr_data_r;
         31: ppu_bgw_fifo_r[31] <= ppu_bgw_fifo_wr_data_r;
       endcase
+`endif
       ppu_bgw_fifo_wr_index_r <= ppu_bgw_fifo_wr_index_r + 1;
 
       case (ppu_bgw_fifo_wr_cnt_r[2:0])
@@ -3156,7 +3185,9 @@ always @(posedge CLK) begin
       // CGB: a later sprite also overwrites an opaque pixel if its OAM index
       // is lower (c6_ow_wins); the DMG rule is the c6_ow_free / clear half.
       if (c6_ow_we) begin
+`ifndef MK2
         ppu_obj_fifo_r[c6_ow_i][3:0] <= ppu_obj_fifo_wr_data_r[3:0];
+`endif
         c6_obj_meta_fifo_r[c6_ow_i]  <= c6_obj_wr_meta_r;
       end
       ppu_obj_fifo_wr_index_r <= ppu_obj_fifo_wr_index_r + 1;
@@ -4033,7 +4064,7 @@ wire [7:0]  dbg_hram_rddata;
 wire [7:0]  dbg_hram_wrdata;
 
 `ifdef MK2
-gbc_small_ram #(.ABITS(7)) hram (
+gbc_small_ram #(.ABITS(7), .READ_B(0)) hram (
   .clka(CLK), // input clka
   .wea(hram_wren), // input [0 : 0] wea
   .addra(hram_address), // input [6 : 0] addra

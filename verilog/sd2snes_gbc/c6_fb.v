@@ -616,33 +616,39 @@ assign      STAT_HIT = (STAT_OFF >= 8'h58) & (STAT_OFF <= 8'h93);
 assign      STAT_HIT = (STAT_OFF >= 8'h58) & (STAT_OFF <= 8'h91);
 `endif
 always @(*) begin
+`ifdef GBC_EXTERNAL_FB
+  // The address decodes are disjoint. A parallel reduction avoids a serial
+  // status mux without changing reserved bytes or the dirty-byte pipeline.
+  STAT_BYTE = ({8{STAT_OFF == 8'h58}} & flags)
+            | ({8{STAT_OFF == 8'h5A}} & row_frozen_r[7:0])
+            | ({8{STAT_OFF == 8'h5B}} & row_frozen_r[15:8])
+            | ({8{STAT_OFF == 8'h5C}} & {6'd0,row_frozen_r[17:16]})
+            | ({8{STAT_OFF == 8'h5D}} & clb)
+            | ({8{STAT_OFF == 8'h8D}} & row_clid_r[7:0])
+            | ({8{STAT_OFF == 8'h8E}} & row_clid_r[15:8])
+            | ({8{STAT_OFF == 8'h8F}} & {6'd0,row_clid_r[17:16]})
+            | ({8{STAT_OFF == 8'h90}} & COLW_N[7:0])
+            | ({8{STAT_OFF == 8'h91}} & COLW_N[15:8])
+            | ({8{STAT_OFF == 8'h92}} & cache_ready_status)
+            | ({8{STAT_OFF == 8'h93}} & {7'd0,fb_overflow})
+            | ({8{dhit}} & dirty_byte);
+`else
   case (STAT_OFF)
     8'h58:   STAT_BYTE = flags;
-`ifdef GBC_EXTERNAL_FB
-    8'h59:   STAT_BYTE = 0; // diagnostic counter unused by the Mk.II player
-`else
     8'h59:   STAT_BYTE = frames_r[7:0];
-`endif
     8'h5A:   STAT_BYTE = row_frozen_r[7:0];
     8'h5B:   STAT_BYTE = row_frozen_r[15:8];
     8'h5C:   STAT_BYTE = {6'd0, row_frozen_r[17:16]};
     8'h5D:   STAT_BYTE = clb;
-`ifdef GBC_EXTERNAL_FB
-    8'h5E:   STAT_BYTE = 0; // row release/freeze/dirty state remains unchanged
-`else
     8'h5E:   STAT_BYTE = rows_dropped_r[7:0];
-`endif
     8'h8D:   STAT_BYTE = row_clid_r[7:0];
     8'h8E:   STAT_BYTE = row_clid_r[15:8];
     8'h8F:   STAT_BYTE = {6'd0, row_clid_r[17:16]};
     8'h90:   STAT_BYTE = COLW_N[7:0];
     8'h91:   STAT_BYTE = COLW_N[15:8];
-`ifdef GBC_EXTERNAL_FB
-    8'h92:   STAT_BYTE = cache_ready_status; // $ff until requested row is complete
-    8'h93:   STAT_BYTE = {7'd0,fb_overflow}; // sticky: never silently serve a torn row
-`endif
     default: STAT_BYTE = dhit ? dirty_byte : 8'h00;
   endcase
+`endif
 end
 
 assign FLAGS        = flags;

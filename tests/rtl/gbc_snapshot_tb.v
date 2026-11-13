@@ -83,6 +83,28 @@ module gbc_snapshot_tb;
   always @(negedge CLK)
     if(!RST && dut.view_byte !== view_reference)
       $fatal(1,"view selection changed at address %h",ADDR);
+  reg [7:0] c6_status_reference;
+  always @(*) begin
+    case(dut.c6fb.STAT_OFF)
+      8'h58: c6_status_reference=dut.c6fb.flags;
+      8'h59,8'h5E: c6_status_reference=0;
+      8'h5A: c6_status_reference=dut.c6fb.row_frozen_r[7:0];
+      8'h5B: c6_status_reference=dut.c6fb.row_frozen_r[15:8];
+      8'h5C: c6_status_reference={6'd0,dut.c6fb.row_frozen_r[17:16]};
+      8'h5D: c6_status_reference=dut.c6fb.clb;
+      8'h8D: c6_status_reference=dut.c6fb.row_clid_r[7:0];
+      8'h8E: c6_status_reference=dut.c6fb.row_clid_r[15:8];
+      8'h8F: c6_status_reference={6'd0,dut.c6fb.row_clid_r[17:16]};
+      8'h90: c6_status_reference=dut.c6fb.COLW_N[7:0];
+      8'h91: c6_status_reference=dut.c6fb.COLW_N[15:8];
+      8'h92: c6_status_reference=dut.c6fb.cache_ready_status;
+      8'h93: c6_status_reference={7'd0,dut.c6fb.fb_overflow};
+      default: c6_status_reference=dut.c6fb.dhit ? dut.c6fb.dirty_byte : 0;
+    endcase
+  end
+  always @(negedge CLK)
+    if(!RST && dut.c6fb.STAT_BYTE !== c6_status_reference)
+      $fatal(1,"C6 status selection changed at address %h",ADDR);
   task read_status(input [23:0] a, input [7:0] expected);
     begin
       // Wire $04 permits up to three clocks for the full view window.
@@ -209,6 +231,8 @@ module gbc_snapshot_tb;
       read_byte(24'he30138,sprite_byte(312));
       read_byte(24'he3013b,sprite_byte(315));
       check_views;
+      // Cover reserved addresses as well as every live C6 status byte.
+      for(i=0;i<256;i=i+1) begin ADDR=24'he20200+i; tick; end
     end
     // Reset at each position in the copy, including its two write-drain
     // cycles, then overwrite the same hidden half with a complete snapshot.

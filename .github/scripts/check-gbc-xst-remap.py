@@ -115,6 +115,12 @@ for name, cell in carry.items():
         carry_edges[previous].add(name)
 sum_carry = {carry_driver[c["connections"]["CI"][0]] for c in native["cells"].values()
              if c["type"] == "XORCY" and c["connections"]["CI"][0] in carry_driver}
+# MULT_AND has only a dedicated connection into a MUXCY. Even a chain without
+# sum outputs must retain that physical connection (ISE logical DRC LIT:102).
+hard_and_outputs = {c["connections"]["LO"][0] for c in native["cells"].values()
+                    if c["type"] == "MULT_AND"}
+hard_and_carry = {n for n, c in carry.items()
+                  if c["connections"]["DI"][0] in hard_and_outputs}
 compare_carry, visited = set(), set()
 for name in carry:
     if name in visited:
@@ -126,7 +132,7 @@ for name in carry:
             chain.add(member)
             pending.extend(carry_edges[member] - chain)
     visited |= chain
-    if not chain & sum_carry and not any("_wg_cy" in n for n in chain):
+    if not chain & (sum_carry | hard_and_carry) and not any("_wg_cy" in n for n in chain):
         compare_carry |= chain
 # Use ABC's area-oriented cut selection as well as its default delay-oriented
 # selection. Every candidate has the same whole-cone proof obligation; a lower
@@ -159,6 +165,10 @@ profiles = (("fixed-mux", False, None),
              "; &get -m -n; &mfs2 -K 4 -a; &put; lutpack -S 1"),
             ("lut4-sat", True, "strash; " + resub + area_tail +
              "; &get -m -n; &mfs2 -K 4; &put; lutpack -S 1"),
+            # Cost 1/2/4 for LUT4/5/6 reflects their decomposition into real
+            # LUT4s plus MUXF5/F6. Let ABC select and group these cones anew.
+            ("wide-lut5-resub", True, "strash; " + resub + "dch -f; if -a; mfs2"),
+            ("wide-lut6-resub", True, "strash; " + resub + "dch -f; if -a; mfs2"),
             ("compare-resub", False, "strash; " + resub + area_tail),
             ("compare-sat", False, "strash; " + resub + area_tail +
              "; &get -m -n; &mfs2 -K 4; &put; lutpack -S 1"))
@@ -209,7 +219,8 @@ for profile, remap_mux, abc_script in profiles:
         "inputs": inputs, "outputs": outputs, "logic_types": sorted(logic_types),
         "logic_names": sorted(logic_names),
     }, indent=2) + "\n")
-    abc_command = "abc -lut 4"
+    lut_width = "4:5" if profile == "wide-lut5-resub" else "4:6" if profile == "wide-lut6-resub" else "4"
+    abc_command = "abc -lut " + lut_width
     if abc_script:
         script_path = report / (profile + ".abc")
         # &get needs -n as well as -m: otherwise &put invents boundary names

@@ -92,6 +92,44 @@ always @(posedge clkin) begin
   end
 end
 
+`ifdef MK2
+`ifdef DSP_COMP
+// DSPX_DMA_BYTE_WRITER_BEGIN
+wire dma_write_prefix, dma_write4, dma_write5, dma_write6;
+dspx_dma_write_prefix dma_write_prefix_lut(
+  .upper(reg_addr[3:2]), .strobe(reg_we_rising), .selected(dma_write_prefix)
+);
+dspx_dma_write_slot #(.WORD(2'b00)) dma_write_slot4_lut(
+  .lower(reg_addr[1:0]), .prefix(dma_write_prefix), .enabled(enable), .selected(dma_write4)
+);
+dspx_dma_write_slot #(.WORD(2'b01)) dma_write_slot5_lut(
+  .lower(reg_addr[1:0]), .prefix(dma_write_prefix), .enabled(enable), .selected(dma_write5)
+);
+dspx_dma_write_slot #(.WORD(2'b10)) dma_write_slot6_lut(
+  .lower(reg_addr[1:0]), .prefix(dma_write_prefix), .enabled(enable), .selected(dma_write6)
+);
+always @(posedge clkin) begin
+  if (reset) begin
+    for (i = 0; i < 10; i = i + 1) dma_r[i] <= 0;
+  end else begin
+    if(dma_write4) dma_r[4] <= reg_data_in;
+    if(dma_write5) dma_r[5] <= reg_data_in;
+    if(dma_write6) dma_r[6] <= reg_data_in;
+    // Keep the original dynamic write for every other address, including X
+    // addresses. The global CPU-write guard still suppresses ST_DONE clearing
+    // even when an invalid/unknown address selects no real register.
+    if(reg_we_rising & enable) begin
+      case(reg_addr)
+        4'h4, 4'h5, 4'h6: begin end
+        default: dma_r[reg_addr] <= reg_data_in;
+      endcase
+    end else if (state == ST_DONE) begin
+      dma_r[9][0] <= 0;
+    end
+  end
+end
+// DSPX_DMA_BYTE_WRITER_END
+`else
 always @(posedge clkin) begin
   if (reset) begin
     for (i = 0; i < 10; i = i + 1) dma_r[i] <= 0;
@@ -103,6 +141,21 @@ always @(posedge clkin) begin
     dma_r[9][0] <= 0;   // clear single-op trigger
   end
 end
+`endif
+`else
+always @(posedge clkin) begin
+  if (reset) begin
+    for (i = 0; i < 10; i = i + 1) dma_r[i] <= 0;
+  end
+  else if(reg_we_rising & enable) begin
+    dma_r[reg_addr] <= reg_data_in;
+  end
+  else if (state == ST_DONE) begin
+    dma_r[9][0] <= 0;   // clear single-op trigger
+  end
+end
+`endif
+
 
 wire [23:0] SRC_ADDR, DST_ADDR, LEN;
 wire [4:0] OPCODE;
@@ -262,3 +315,31 @@ always @(posedge clkin) begin
 end
 
 endmodule
+
+`ifdef MK2
+`ifdef DSP_COMP
+// DSPX_DMA_BYTE_HELPERS_BEGIN
+// Address and strobe decode is independent of the later global enable.
+(* LUT_MAP="yes" *)
+module dspx_dma_write_prefix(input [1:0] upper, input strobe, output reg selected);
+always @* begin
+  selected = 1'b0;
+  if(strobe & (upper == 2'b01)) selected = 1'b1;
+end
+endmodule
+
+// Four actual inputs: low address pair, predecode and unchanged global enable.
+(* LUT_MAP="yes" *)
+module dspx_dma_write_slot #(parameter [1:0] WORD = 2'b00)(
+  input [1:0] lower, input prefix, enabled, output reg selected
+);
+always @* begin
+  selected = 1'b0;
+  if(enabled & prefix) begin
+    if(lower == WORD) selected = 1'b1;
+  end
+end
+endmodule
+// DSPX_DMA_BYTE_HELPERS_END
+`endif
+`endif

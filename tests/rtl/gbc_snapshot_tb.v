@@ -17,12 +17,13 @@ module gbc_snapshot_tb;
   reg [7:0] shown_oam[0:159], shown_cram[0:127];
   reg [7:0] shown_lcdc;
   reg shown_compat;
-  integer frame, i, checks=0, seq_expected=0, seed=32'h4319eb7;
+  integer frame, i, j, checks=0, seq_expected=0, seed=32'h4319eb7;
+  reg [15:0] starvation=0;
 
   gbc_bridge dut(.CLK(CLK),.RST(RST),.SNES_WR_end(WR),.SNES_ADDR(ADDR),
     .DATA_IN(DIN),.VIEW_ENABLE(VIEW),.EF_ENABLE(EF),.DATA_OUT(DOUT),
     .FB_MEM_ACK(FB_ACK),.FB_MEM_Q(8'd0),.CE1(1'b0),.BUS_EDGE(1'b0),
-    .STARVATION(16'd0),.DILATION(16'd0),.P1I(2'b11),
+    .STARVATION(starvation),.DILATION(16'd0),.P1I(2'b11),
     .PPU_DOT_EDGE(1'b0),.PPU_VSYNC_EDGE(1'b0),.LCD_ON(1'b1),.COMPAT(COMPAT),
     .C6_PX_VALID(PIXEL),.C6_PX_X(PX_X),.C6_PX_Y(PX_Y),.C6_PX_BGR(15'd0),
     .TAP_VRAM_WE(VWE),.TAP_VRAM_BANK(VBANK),.TAP_VRAM_ADDR(VADDR),
@@ -220,6 +221,13 @@ module gbc_snapshot_tb;
     while(DOUT!==0 && i<20000) begin tick; i=i+1; end
     if(DOUT!==0) $fatal(1,"C6 row cache never became ready");
     read_status(24'he20200,4);
+    read_status(24'he2020d,0);
+    starvation=16'ha53c;
+    for(j=0;j<16;j=j+1)
+      read_status(24'he20230+j,j==12 ? 8'h3c : j==13 ? 8'ha5 : 0);
+    starvation=0;
+    read_status(24'he20259,0);
+    read_status(24'he2025e,0);
     read_status(24'he20260,8'hff);
     read_status(24'he20292,0);
     DIN=18; command(8'h07); // Invalid release must not invalidate row 0.

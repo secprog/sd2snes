@@ -1444,6 +1444,16 @@ wire [7:0] status_flags0 = {snap_valid_r, log_ovf_pub_r, sn_first_frame_r, sn_lo
 // bridge's own telemetry without the MCU in the loop.
 reg [7:0] gbdg_mirror;
 always @(*) begin
+`ifdef MK2
+  // The player copies these bytes but never consumes them. Keep the memory
+  // starvation diagnostic for board validation; omit the other debug-only
+  // counters and their wide read mux on the capacity-limited Mk.II.
+  case (SNES_ADDR[3:0])
+    4'hC: gbdg_mirror=STARVATION[7:0];
+    4'hD: gbdg_mirror=STARVATION[15:8];
+    default: gbdg_mirror=0;
+  endcase
+`else
   case (SNES_ADDR[3:0])
     4'h0:    gbdg_mirror = "G";
     4'h1:    gbdg_mirror = "B";
@@ -1462,6 +1472,7 @@ always @(*) begin
     4'hE:    gbdg_mirror = log_ovf_ctr_r[7:0];
     default: gbdg_mirror = log_ovf_ctr_r[15:8];   // 4'hF
   endcase
+`endif
 end
 
 reg [7:0] status_byte;
@@ -1480,7 +1491,11 @@ always @(*) begin
     8'h0A:   status_byte = sn_opri_r;
     8'h0B:   status_byte = sn_key1_r;
     8'h0C:   status_byte = ly_sync_r;
+`ifdef MK2
+    8'h0D:   status_byte = 0; // unused by the player; SEQ remains at +0E/+0F
+`else
     8'h0D:   status_byte = frame_ctr_r;
+`endif
     8'h0E:   status_byte = seq_r[7:0];
     8'h0F:   status_byte = seq_r[15:8];
 `ifdef MK2

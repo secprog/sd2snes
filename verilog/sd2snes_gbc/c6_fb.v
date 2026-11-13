@@ -618,12 +618,20 @@ assign      STAT_HIT = (STAT_OFF >= 8'h58) & (STAT_OFF <= 8'h91);
 always @(*) begin
   case (STAT_OFF)
     8'h58:   STAT_BYTE = flags;
+`ifdef GBC_EXTERNAL_FB
+    8'h59:   STAT_BYTE = 0; // diagnostic counter unused by the Mk.II player
+`else
     8'h59:   STAT_BYTE = frames_r[7:0];
+`endif
     8'h5A:   STAT_BYTE = row_frozen_r[7:0];
     8'h5B:   STAT_BYTE = row_frozen_r[15:8];
     8'h5C:   STAT_BYTE = {6'd0, row_frozen_r[17:16]};
     8'h5D:   STAT_BYTE = clb;
+`ifdef GBC_EXTERNAL_FB
+    8'h5E:   STAT_BYTE = 0; // row release/freeze/dirty state remains unchanged
+`else
     8'h5E:   STAT_BYTE = rows_dropped_r[7:0];
+`endif
     8'h8D:   STAT_BYTE = row_clid_r[7:0];
     8'h8E:   STAT_BYTE = row_clid_r[15:8];
     8'h8F:   STAT_BYTE = {6'd0, row_clid_r[17:16]};

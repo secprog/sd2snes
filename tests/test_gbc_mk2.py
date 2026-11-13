@@ -43,26 +43,6 @@ def main():
         subprocess.run([args.vvp, str(clock)], check=True, timeout=60)
         if args.clock_only:
             return
-        frequency_ref = Path(tmp) / "frequency_ref.v"
-        preprocess_frequency = [args.iverilog, "-E", "-DMK3", "-I",
-                                str(root / "verilog/sd2snes_gbc"), "-o", str(frequency_ref),
-                                str(root / "verilog/sd2snes_gbc/clk_test.v")]
-        if args.ivl_base:
-            preprocess_frequency += ["-B", args.ivl_base]
-        subprocess.run(preprocess_frequency, check=True)
-        source, count = re.subn(r"\bmodule clk_test\(", "module clk_test_ref(", frequency_ref.read_text())
-        if count != 1:
-            raise RuntimeError("Frequency reference interface changed")
-        frequency_ref.write_text(source)
-        frequency = Path(tmp) / "frequency.vvp"
-        compile_frequency = [args.iverilog, "-g2012", "-DMK2", "-s", "gbc_frequency_tb",
-                             "-I", str(root / "verilog/sd2snes_gbc"), "-o", str(frequency),
-                             str(root / "tests/rtl/gbc_frequency_tb.v"), str(frequency_ref),
-                             str(root / "verilog/sd2snes_gbc/clk_test.v")]
-        if args.ivl_base:
-            compile_frequency += ["-B", args.ivl_base]
-        subprocess.run(compile_frequency, check=True)
-        subprocess.run([args.vvp, str(frequency)], check=True, timeout=60)
         # Compile the production read function AND its actual sequential call
         # sites, including OPR_I holds. The test oracle is the old flat table.
         cpu = (root / "verilog/sd2snes_gbc/sgb_cpu.v").read_text()

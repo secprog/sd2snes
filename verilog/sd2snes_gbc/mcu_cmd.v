@@ -99,11 +99,19 @@ end
 
 wire [31:0] snes_sysclk_freq;
 
+`ifdef MK2
+// Only the system-information menu consumes GETSYSCLK (src/sysinfo.c).
+// main.c reloads FPGA_BASE before entering that menu; the GBC player has no
+// such screen or in-game menu. Keep the unsupported/unknown reply, without
+// carrying a second frequency meter through the Mk.II game configuration.
+assign snes_sysclk_freq = 32'hffffffff;
+`else
 clk_test snes_clk_test (
     .clk(clk),
     .sysclk(snes_sysclk),
     .snes_sysclk_freq(snes_sysclk_freq)
 );
+`endif
 
 reg [3:0] MAPPER_BUF;
 reg [23:0] ADDR_OUT_BUF;

@@ -59,6 +59,9 @@ the bus-starvation counter for board validation. The functional SEQ,
 LOG_OVF, row-freeze, dirty, palette and cache-ready/overflow fields remain.
 COLW_N saturates at 256 on Mk.II: the player tests only >=96 and >=256,
 so additional count precision cannot change its rendering-mode policy.
+GETSYSCLK returns the unknown marker ($ffffffff) in the Mk.II GBC core.
+Only the System Information menu reads it; that menu runs on FPGA_BASE,
+whose frequency measurement remains available.
 The player image must remain below SRAM $70000, reserved for video storage.
 
 Build and verify on GitHub Actions (Build firmware, FPGA mode):

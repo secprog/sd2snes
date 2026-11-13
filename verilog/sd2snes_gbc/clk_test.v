@@ -18,7 +18,6 @@
 // Additional Comments:
 //
 //////////////////////////////////////////////////////////////////////////////////
-`include "config.vh"
 module clk_test(
   input clk,
   input sysclk,
@@ -28,16 +27,8 @@ module clk_test(
 reg [31:0] snes_sysclk_freq_r;
 assign snes_sysclk_freq = snes_sysclk_freq_r;
 
-`ifdef MK2
-// The window stops at 96,000,000, and at most one event can be counted per
-// clock. Both accumulators therefore fit in 27 bits without changing either
-// the measurement interval or the 32-bit output (including its initial $ff).
-localparam COUNT_BITS=27;
-`else
-localparam COUNT_BITS=32;
-`endif
-reg [COUNT_BITS-1:0] sysclk_counter;
-reg [COUNT_BITS-1:0] sysclk_value;
+reg [31:0] sysclk_counter;
+reg [31:0] sysclk_value;
 
 initial snes_sysclk_freq_r = 32'hFFFFFFFF;
 initial sysclk_counter = 0;

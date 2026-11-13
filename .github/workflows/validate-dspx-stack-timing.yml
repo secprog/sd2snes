@@ -30,8 +30,8 @@ jobs:
           git diff --name-only "$BASELINE" HEAD > "$report/changed-paths.txt"
           printf '%s\n' .github/scripts/validate-dspx-mn-control.py .github/workflows/validate-dspx-stack-timing.yml verilog/sd2snes_dsp/upd77c25.v | LC_ALL=C sort > "$report/expected-changed-paths.txt"
           cmp "$report/expected-changed-paths.txt" "$report/changed-paths.txt"
-          test "$(git hash-object --no-filters verilog/sd2snes_dsp/upd77c25.v)" = eb6fb993ff3e699c0c83fc3516de43548fa65063
-          test "$(git hash-object --no-filters .github/scripts/validate-dspx-mn-control.py)" = 26982304ef792f917b97d4a68cdf506499ba87fb
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/upd77c25.v)" = cac28b80b059b97dafb9520a7b03272d706f4683
+          test "$(git hash-object --no-filters .github/scripts/validate-dspx-mn-control.py)" = 60dc7f7af67e9b55013f31c64c357b963cecae4f
           test "$(git hash-object --no-filters .github/scripts/post-sync-evidence.py)" = fdb60667eb015c3769b2adc452864396ff64e9e7
           python3 .github/scripts/post-sync-evidence.py snapshot "$GITHUB_WORKSPACE" "$report/source-before"
           git diff "$BASELINE" HEAD -- verilog > "$report/production-change.diff"
@@ -94,7 +94,7 @@ jobs:
           mkdir -p "$report"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           test "$(git hash-object --no-filters verilog/sd2snes_dsp/main.v)" = 82c29e4d6a6b3a3f894d810bbc69e3fd9915b019
-          test "$(git hash-object --no-filters verilog/sd2snes_dsp/upd77c25.v)" = eb6fb993ff3e699c0c83fc3516de43548fa65063
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/upd77c25.v)" = cac28b80b059b97dafb9520a7b03272d706f4683
           test -s "$RUNNER_TEMP/accepted-proof/verified.txt"
           (cd "$RUNNER_TEMP/accepted-proof" && sha256sum --check SHA256SUMS)
           python3 .github/scripts/post-sync-evidence.py snapshot "$GITHUB_WORKSPACE" "$report/source-before"

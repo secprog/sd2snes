@@ -1093,15 +1093,10 @@ endmodule
 `ifdef MK2
 `ifdef DSP_COMP
 // DSPX_MN_HELPERS_BEGIN
-// Procedural case retains the original full-state case behavior for unknowns.
+// A continuous case comparison preserves full defined-match behavior at time0.
 (* LUT_MAP="yes" *)
-module dspx_mn_case4 #(parameter [3:0] VALUE=4'b0000)(input [3:0] key, output reg match);
-always @* begin
-  match = 1'b0;
-  case(key)
-    VALUE: match = 1'b1;
-  endcase
-end
+module dspx_mn_case4 #(parameter [3:0] VALUE=4'b0000)(input [3:0] key, output match);
+assign match = (key === VALUE);
 endmodule
 (* LUT_MAP="yes" *)
 module dspx_mn_run4(input rst,frozen,lo_match,hi_match,output running);

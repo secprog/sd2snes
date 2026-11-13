@@ -217,7 +217,15 @@ reg signed [15:0] regs_k;
 reg signed [15:0] regs_l;
 reg [15:0] regs_trb;
 reg [15:0] regs_tr;
+`ifdef MK2
+`ifdef DSP_COMP
+wire [15:0] regs_dr;
+`else
 reg [15:0] regs_dr;
+`endif
+`else
+reg [15:0] regs_dr;
+`endif
 reg [15:0] regs_sr;
 reg [3:0] regs_sp;
 
@@ -440,7 +448,13 @@ initial begin
   flags_s1 = 2'b0;
   regs_tr = 16'b0;
   regs_trb = 16'b0;
+`ifndef MK2
   regs_dr = 16'b0;
+`else
+`ifndef DSP_COMP
+  regs_dr = 16'b0;
+`endif
+`endif
 end
 
 always @(posedge CLK) begin
@@ -505,6 +519,35 @@ always @(posedge CLK) begin
   end
 end
 
+`ifdef MK2
+`ifdef DSP_COMP
+dspx_dr_storage #(
+  .STATE_STORE(STATE_STORE),
+  .I_OP(I_OP),
+  .I_RT(I_RT),
+  .I_LD(I_LD),
+  .SR_DRS(SR_DRS),
+  .SR_DRC(SR_DRC)
+) dr_storage (
+  .CLK(CLK),
+  .RST(RST),
+  .ss_frozen(ss_frozen),
+  .enable(enable),
+  .reg_we_rising(reg_we_rising),
+  .A0(A0),
+  .ss_wr(ss_wr),
+  .DI(DI),
+  .ss_wa(ss_wa),
+  .ss_wd(ss_wd),
+  .regs_sr(regs_sr),
+  .idb(idb),
+  .ld_id(ld_id),
+  .ld_dst(ld_dst),
+  .insn_state(insn_state),
+  .op(op),
+  .regs_dr(regs_dr)
+);
+`else
 always @(posedge CLK) begin
   if(RST & ~ss_frozen) begin
     if(enable & reg_we_rising & (A0 == 1'b0)) begin
@@ -530,6 +573,34 @@ always @(posedge CLK) begin
     regs_dr <= 16'h0000;
   end
 end
+`endif
+`else
+always @(posedge CLK) begin
+  if(RST & ~ss_frozen) begin
+    if(enable & reg_we_rising & (A0 == 1'b0)) begin
+      if(!regs_sr[SR_DRC]) begin
+        if(regs_sr[SR_DRS] == 1'b0) begin
+          regs_dr[7:0] <= DI;
+        end else begin
+          regs_dr[15:8] <= DI;
+        end
+      end else begin
+        regs_dr[7:0] <= DI;
+      end
+    end else if(ld_dst == 4'b0110 && insn_state == STATE_STORE) begin
+      if (op == I_OP || op == I_RT) regs_dr <= idb;
+      else if (op == I_LD) regs_dr <= ld_id;
+    end
+  end else if(RST & ss_frozen) begin
+    if(ss_wr) begin
+      if(ss_wa == 8'h0a) regs_dr[7:0]  <= ss_wd; // restore low byte
+      if(ss_wa == 8'h0b) regs_dr[15:8] <= ss_wd; // restore high byte
+    end
+  end else begin
+    regs_dr <= 16'h0000;
+  end
+end
+`endif
 
 assign UPD_DO = (A0 ? regs_sr[15:8] : (regs_sr[SR_DRC] ? regs_dr[7:0] : (regs_sr[SR_DRS] ? regs_dr[15:8] : regs_dr[7:0])));
 assign DO = ss_ctrl ? {7'b0, ss_halted}
@@ -950,3 +1021,53 @@ always @(posedge CLK) begin
 end
 
 endmodule
+
+`ifdef MK2
+`ifdef DSP_COMP
+// Keep this original register writer inside a synthesis retiming boundary.
+(* KEEP_HIERARCHY="yes", register_balancing="no" *)
+module dspx_dr_storage #(
+  parameter STATE_STORE = 8'b00010000,
+  parameter I_OP = 2'b00,
+  parameter I_RT = 2'b01,
+  parameter I_LD = 2'b11,
+  parameter SR_DRS = 12,
+  parameter SR_DRC = 10
+)(
+  input CLK, RST, ss_frozen, enable, reg_we_rising, A0, ss_wr,
+  input [7:0] DI, ss_wa, ss_wd,
+  input [15:0] regs_sr, idb, ld_id,
+  input [3:0] ld_dst,
+  input [7:0] insn_state,
+  input [1:0] op,
+  output reg [15:0] regs_dr
+);
+initial regs_dr = 16'b0;
+always @(posedge CLK) begin
+  if(RST & ~ss_frozen) begin
+    if(enable & reg_we_rising & (A0 == 1'b0)) begin
+      if(!regs_sr[SR_DRC]) begin
+        if(regs_sr[SR_DRS] == 1'b0) begin
+          regs_dr[7:0] <= DI;
+        end else begin
+          regs_dr[15:8] <= DI;
+        end
+      end else begin
+        regs_dr[7:0] <= DI;
+      end
+    end else if(ld_dst == 4'b0110 && insn_state == STATE_STORE) begin
+      if (op == I_OP || op == I_RT) regs_dr <= idb;
+      else if (op == I_LD) regs_dr <= ld_id;
+    end
+  end else if(RST & ss_frozen) begin
+    if(ss_wr) begin
+      if(ss_wa == 8'h0a) regs_dr[7:0]  <= ss_wd; // restore low byte
+      if(ss_wa == 8'h0b) regs_dr[15:8] <= ss_wd; // restore high byte
+    end
+  end else begin
+    regs_dr <= 16'h0000;
+  end
+end
+endmodule
+`endif
+`endif

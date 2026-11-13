@@ -202,6 +202,9 @@ wire [23:0] SNES_ADDR = (SNES_ADDRr[6] & SNES_ADDRr[5]);
 wire [8:0] gbc_cmd_match;
 gbc_command_decode command_decode(.CLK(CLK2),
   .ADDR_EARLY(SNES_ADDRr[4] & SNES_ADDRr[3]), .MATCH(gbc_cmd_match));
+wire [8:0] gbc_view_match;
+gbc_view_decode view_decode(.CLK(CLK2),
+  .ADDR_EARLY(SNES_ADDRr[4] & SNES_ADDRr[3]), .MATCH(gbc_view_match));
 `endif
 wire [7:0] SNES_PA = (SNES_PAr[6] & SNES_PAr[5]);
 wire [7:0] SNES_DATA_IN = (SNES_DATAr[3] & SNES_DATAr[2]);
@@ -446,6 +449,7 @@ sgb snes_sgb (
   .EF_ENABLE(gbc_ef_enable),
 `ifdef MK2
   .CMD_MATCH(gbc_cmd_match),
+  .VIEW_MATCH(gbc_view_match),
 `endif
   .DATA_OUT(SGB_SNES_DATA_OUT),
 `ifdef GBC_EXTERNAL_FB
@@ -1183,5 +1187,37 @@ module gbc_command_decode(input CLK, input [23:0] ADDR_EARLY,
     for(command=0; command<9; command=command+1)
       byte_match[command] <= ADDR_EARLY[7:0] == command;
     MATCH <= byte_match & {9{page_match}};
+  end
+endmodule
+
+// Decode the read regions over the same two address-delay clocks. In
+// particular the raw-palette selection reaches the snapshot RAM without a
+// serial bank/window/status/raw decode after the final address register.
+module gbc_view_decode(input CLK, input [23:0] ADDR_EARLY,
+                       output reg [8:0] MATCH=0);
+  reg [4:0] bank_match=0;
+  reg [6:0] range_match=0;
+  integer bank;
+  always @(posedge CLK) begin
+    for(bank=0; bank<5; bank=bank+1)
+      bank_match[bank] <= ADDR_EARLY[23:16] == 8'he0+bank;
+    range_match[0] <= ADDR_EARLY[15:0] < 16'h3000;
+    range_match[1] <= ADDR_EARLY[15:14] == 2'b01;
+    range_match[2] <= ADDR_EARLY[15:0] < 16'h2000;
+    range_match[3] <= ADDR_EARLY[15:0] < 16'h0200;
+    range_match[4] <= ADDR_EARLY[15:8] == 8'h02;
+    range_match[5] <= ADDR_EARLY[15:12] == 4'd0
+                    && (ADDR_EARLY[11] ^ ADDR_EARLY[10]);
+    range_match[6] <= ADDR_EARLY[7:5] == 3'b010
+                    && ADDR_EARLY[4:3] != 2'b11;
+    MATCH[0] <= bank_match[0] && range_match[0];
+    MATCH[1] <= bank_match[0] && range_match[1];
+    MATCH[2] <= bank_match[1] && range_match[2];
+    MATCH[3] <= bank_match[2] && range_match[3];
+    MATCH[4] <= bank_match[2] && range_match[4];
+    MATCH[5] <= bank_match[3] && range_match[3];
+    MATCH[6] <= bank_match[2] && range_match[5];
+    MATCH[7] <= bank_match[4];
+    MATCH[8] <= bank_match[2] && range_match[4] && range_match[6];
   end
 endmodule

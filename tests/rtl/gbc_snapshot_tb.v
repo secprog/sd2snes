@@ -24,10 +24,24 @@ module gbc_snapshot_tb;
   reg [3:0] mf_kind=0;
   integer palette_writes, published_writes;
   wire [8:0] command_match = EF && ADDR[7:0]<9 ? (9'd1 << ADDR[7:0]) : 9'd0;
+  // The decoder's cycle alignment is tested with the real main.v address
+  // pipeline separately. Supply the original region predicates here so this
+  // copy-engine test retains its independent three-clock view oracle.
+  wire [8:0] view_match = {9{VIEW}} & {
+    ADDR[23:16]==8'he2 && ADDR[15:0]>=16'h0240 && ADDR[15:0]<16'h0258,
+    ADDR[23:16]==8'he4,
+    ADDR[23:16]==8'he2 && ADDR[15:0]>=16'h0400 && ADDR[15:0]<16'h0c00,
+    ADDR[23:16]==8'he3 && ADDR[15:0]<16'h0200,
+    ADDR[23:16]==8'he2 && ADDR[15:8]==8'h02,
+    ADDR[23:16]==8'he2 && ADDR[15:0]<16'h0200,
+    ADDR[23:16]==8'he1 && ADDR[15:0]<16'h2000,
+    ADDR[23:16]==8'he0 && ADDR[15:14]==2'b01,
+    ADDR[23:16]==8'he0 && ADDR[15:0]<16'h3000};
 
   gbc_bridge dut(.CLK(CLK),.RST(RST),.SNES_WR_end(WR),.SNES_ADDR(ADDR),
     .DATA_IN(DIN),.VIEW_ENABLE(VIEW),.EF_ENABLE(EF),.DATA_OUT(DOUT),
     .CMD_MATCH(command_match),
+    .VIEW_MATCH(view_match),
     .FB_MEM_ACK(FB_ACK),.FB_MEM_Q(8'd0),.CE1(1'b0),.BUS_EDGE(1'b0),
     .STARVATION(starvation),.DILATION(16'd0),.P1I(2'b11),
     .PPU_DOT_EDGE(1'b0),.PPU_VSYNC_EDGE(1'b0),.LCD_ON(1'b1),.COMPAT(COMPAT),

@@ -74,15 +74,18 @@ module gbc_timeout_actual(input CLK2, input [7:0] SNES_CPU_CLKr,
         address_wire = re.search(r"wire \[23:0\] SNES_ADDR =[^;]+;", main_source)[0]
         command_start = main_source.index("gbc_command_decode command_decode(")
         command_instance = main_source[command_start:main_source.index(");", command_start)+2]
+        view_start = main_source.index("gbc_view_decode view_decode(")
+        view_instance = main_source[view_start:main_source.index(");", view_start)+2]
         command_module = main_source[main_source.index("module gbc_command_decode("):]
         command_source = Path(tmp) / "command_actual.v"
         command_source.write_text('''
 module gbc_command_actual(input CLK2, input [23:0] SNES_ADDR_IN,
- output [23:0] ADDRESS, output [8:0] MATCH);
+ output [23:0] ADDRESS, output [8:0] MATCH,VIEW_MATCH);
  reg [23:0] SNES_ADDRr [6:0];
- wire [8:0] gbc_cmd_match;
+ wire [8:0] gbc_cmd_match,gbc_view_match;
 ''' + address_wire + "\n" + command_instance
-            + "\nassign ADDRESS=SNES_ADDR; assign MATCH=gbc_cmd_match;\n"
+            + "\n" + view_instance
+            + "\nassign ADDRESS=SNES_ADDR; assign MATCH=gbc_cmd_match; assign VIEW_MATCH=gbc_view_match;\n"
             + "always @(posedge CLK2) begin\n" + "\n".join(address_shift)
             + "\nend\nendmodule\n" + command_module)
         commands = Path(tmp) / "commands.vvp"

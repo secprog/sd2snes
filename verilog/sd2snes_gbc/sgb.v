@@ -33,6 +33,7 @@ module sgb(
   input         EF_ENABLE,     // $EF00xx write
 `ifdef MK2
   input [8:0]   CMD_MATCH,     // retimed address-only decode, aligned to SNES_ADDR
+  input [8:0]   VIEW_MATCH,
 `endif
   output [7:0]  DATA_OUT,
 
@@ -474,6 +475,7 @@ gbc_bridge bridge(
   .EF_ENABLE(EF_ENABLE),
 `ifdef MK2
   .CMD_MATCH(CMD_MATCH),
+  .VIEW_MATCH(VIEW_MATCH),
 `endif
   .DATA_OUT(DATA_OUT),
 `ifdef GBC_EXTERNAL_FB

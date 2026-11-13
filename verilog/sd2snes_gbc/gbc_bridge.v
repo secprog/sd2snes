@@ -128,6 +128,7 @@ module gbc_bridge(
   input         EF_ENABLE,       // $EF00xx
 `ifdef MK2
   input [8:0]   CMD_MATCH,       // address-only decode aligned to SNES_ADDR
+  input [8:0]   VIEW_MATCH,      // BG, OBJ, map, CGRAM, status, OAM, log, FB, raw
 `endif
   output [7:0]  DATA_OUT,
 
@@ -648,9 +649,14 @@ wire [1:0]  vbank = SNES_ADDR[17:16];    // 0 = $E0 ... 3 = $E3
 wire [15:0] vaddr = SNES_ADDR[15:0];
 // VIEW_ENABLE now also covers $E4 (address.v); bit 18 tells the FB bank apart.
 wire        view_lo = VIEW_ENABLE & ~SNES_ADDR[18];
-wire        sel_fb  = VIEW_ENABLE &  SNES_ADDR[18];
 wire        view_chr = view_lo;
 
+`ifdef MK2
+wire sel_bgch=VIEW_MATCH[0], sel_obch=VIEW_MATCH[1], sel_map=VIEW_MATCH[2];
+wire sel_cgram=VIEW_MATCH[3], sel_stat=VIEW_MATCH[4], sel_oam=VIEW_MATCH[5];
+wire sel_log=VIEW_MATCH[6], sel_fb=VIEW_MATCH[7];
+`else
+wire        sel_fb  = VIEW_ENABLE &  SNES_ADDR[18];
 wire sel_bgch  = view_chr & (vbank == 2'd0) & (vaddr <  16'h3000);
 wire sel_obch  = view_chr & (vbank == 2'd0) & (vaddr[15:14] == 2'b01);
 wire sel_map   = view_chr & (vbank == 2'd1) & (vaddr <  16'h2000);
@@ -662,6 +668,7 @@ wire sel_oam   = view_lo & (vbank == 2'd3) & (vaddr <  16'h0200);
 // hole in the window.
 wire sel_log   = view_lo & (vbank == 2'd2) & (vaddr[15:12] == 4'h0)
                              & (vaddr[11] ^ vaddr[10]);
+`endif
 
 // ---- 4.1 BG chr: t = addr[13:4], bank = t >= 384, offset = (t mod 384)*16 ----
 wire [9:0]  bg_t    = vaddr[13:4];
@@ -760,7 +767,11 @@ wire        cg_white  = (cg_c == 8'd98);   // BG4 pal 0 colour 2 = the white scr
 // palettes wanted here are 0..7, 64..71 and 72..79 -- and with the offset from
 // $40 in vaddr[4:0], that is a bit pick: bit 6 = "OBJ" = |off[4:3], bit 3 =
 // "palette 1" = off[4], bits 2:0 = the byte within the palette.
+`ifdef MK2
+wire        sel_craw  = VIEW_MATCH[8];
+`else
 wire        sel_craw  = sel_stat & (vaddr[7:5] == 3'b010) & (vaddr[4:3] != 2'b11);
+`endif
 wire [6:0]  craw_idx  = {|vaddr[4:3], 2'b00, vaddr[4], vaddr[2:0]};
 
 wire [7:0]  cram_snap_ra = {snap_buf_r,

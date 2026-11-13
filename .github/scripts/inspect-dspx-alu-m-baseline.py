@@ -1,0 +1,198 @@
+#!/usr/bin/env python3
+"""GitHub-only bounded inspection of adopted baseline ALU_P/M register CE logic; no generation or Boolean evaluation."""
+import hashlib
+import io
+import json
+import os
+from pathlib import Path, PurePosixPath
+import re
+import stat
+import sys
+import zipfile
+
+if os.environ.get('GITHUB_ACTIONS') != 'true':
+    raise SystemExit('GitHub-hosted execution only')
+
+RUN=43467561223
+HEAD='f4bcfe872f4c10f067fd1d6eca72882fa23b5b26'
+ARTIFACT=14062690690
+ZIP_SIZE=2520006
+ZIP_SHA='fae12362d987524ba0f7713e563f82bd27940b3f8010e7e43d589a17fe3ae93c'
+XDL_SIZE=4631153
+XDL_SHA='c3f1214ed604a032b9c045bbb5bd0f2ca32c6d53f6bc7ab46915d31a826af22e'
+PIN=re.compile(r'\b(outpin|inpin)\s+"([^"\n]+)"\s+([A-Za-z0-9_]+)')
+
+
+def need(value,message):
+    if not value:
+        raise ValueError(message)
+
+
+def sha(raw):
+    return hashlib.sha256(raw).hexdigest()
+
+
+def save(path,value):
+    path.write_text(json.dumps(value,indent=2)+'\n',encoding='utf-8')
+
+
+def load_original(archive_path,api):
+    metadata=json.loads((api/'artifact.json').read_text())
+    jobs=json.loads((api/'jobs.json').read_text())['jobs']
+    need(metadata['id']==ARTIFACT and metadata['workflow_run']['id']==RUN
+         and metadata['workflow_run']['head_sha']==HEAD and metadata['digest']=='sha256:'+ZIP_SHA
+         and metadata['size_in_bytes']==ZIP_SIZE and not metadata['expired'],'Original design API identity changed')
+    proof=next(job for job in jobs if job['id']==132030641690)
+    native=next(job for job in jobs if job['id']==132030910778)
+    need(proof['head_sha']==HEAD and native['head_sha']==HEAD and proof['run_attempt']==1 and native['run_attempt']==1
+         and proof['conclusion']=='success' and native['status']=='completed' and native['conclusion']=='failure'
+         and [step['number'] for step in native['steps'] if step['conclusion']=='failure']==[9,12],
+         'Original proof/native outcome changed')
+    raw=archive_path.read_bytes();need(len(raw)==ZIP_SIZE and sha(raw)==ZIP_SHA,'Original design ZIP changed')
+    found=[];seen=set()
+    with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+        need(len(archive.infolist())<=512,'Unexpected native ZIP entry count')
+        for info in archive.infolist():
+            name=info.filename;path=PurePosixPath(name);mode=(info.external_attr>>16)&0xffff
+            need(not path.is_absolute() and chr(92) not in name and ':' not in name
+                 and '..' not in path.parts and path.as_posix()==name.rstrip('/')
+                 and stat.S_IFMT(mode) in (0,stat.S_IFREG,stat.S_IFDIR),'Unsafe original design ZIP path')
+            need(name.casefold() not in seen,'Duplicate original design ZIP path');seen.add(name.casefold())
+            if path.name=='map.xdl' and not info.is_dir():
+                need(info.file_size==XDL_SIZE,'Original mapped export size changed');found.append(archive.read(info))
+    need(len(found)==1 and len(found[0])==XDL_SIZE and sha(found[0])==XDL_SHA,'Original mapped XDL identity changed')
+    need(b'\0' not in found[0],'Invalid mapped text');text=found[0].decode('utf-8')
+    return parse_xdl(text, full=True)
+
+def parse_xdl(text, full=False):
+    starts=re.findall(r'(?m)^\s*(inst|net)\s+"',text)
+    statements=re.findall(r'(?ms)^\s*(?:inst|net)\s+".*?;',text)
+    need(starts and len(starts)==len(statements),'Incomplete or empty mapped statements')
+    instances={};nets={}
+    for body in statements:
+        match=re.match(r'\s*(inst|net)\s+"([^"\n]+)"',body);need(match is not None,'Unrecognized mapped statement')
+        kind,name=match.groups();target=instances if kind=='inst' else nets
+        need(name not in target,'Duplicate mapped statement');target[name]=body.strip()
+    if full:
+        need(len(instances)==3603 and len(nets)==8657,'Original mapped inventory changed')
+    return instances,nets
+
+def part(instances,nets,seeds,stats_path=None):
+    selected=set(seeds)
+    frontier={(comp,'CE') for comp in seeds}
+    for depth in range(3):
+        incoming={name for name,body in nets.items() if any(kind=='inpin' and (comp,pin) in frontier for kind,comp,pin in PIN.findall(body))}
+        following=set()
+        for name in incoming:
+            for kind,comp,pin in PIN.findall(nets[name]):
+                if kind!='outpin' or comp not in instances:
+                    continue
+                selected.add(comp)
+                if pin not in ['X','Y']:
+                    continue
+                direct='F' if pin=='X' else 'G'
+                mux='FXMUX::F' if pin=='X' else 'GYMUX::G'
+                # Follow only the LUT slot driving this output. A physical F5/FX
+                # mux conservatively retains both LUTs and BX/BY select inputs.
+                pins=[direct+str(i) for i in range(1,5)] if mux in instances[comp].split() else ['F'+str(i) for i in range(1,5)]+['G'+str(i) for i in range(1,5)]+['BX','BY']
+                following.update((comp,p) for p in pins)
+        frontier=following
+    selected_nets={name for name,body in nets.items() if any(comp in selected for _,comp,_ in PIN.findall(body))}
+    # Preserve immediate source bodies for every selected whole net.
+    for name in selected_nets:
+        selected.update(comp for kind,comp,_ in PIN.findall(nets[name]) if kind=='outpin' and comp in instances)
+    text='\n\n'.join([instances[name] for name in sorted(selected)]+[nets[name] for name in sorted(selected_nets)])+'\n'
+    if stats_path is not None:
+        save(stats_path,dict(components=len(selected),nets=len(selected_nets),bytes=len(text.encode()),seedComponents=sorted(seeds),scope='CE first, then actual driving LUT-slot input edges only; no unrelated seed data-LUT traversal'))
+    need(len(selected)<=400 and len(selected_nets)<=700 and len(text.encode())<=3000000,'Fixed component/net/text part bound exceeded; no truncation')
+    nodes=[]
+    for comp in sorted(selected):
+        for slot,logical,equation in re.findall(r'\b(F|G):([^:\s]+):#LUT:([^\s]+)',instances[comp]):
+            bindings={}
+            for name in selected_nets:
+                for kind,target,pin in PIN.findall(nets[name]):
+                    if kind=='inpin' and target==comp and re.fullmatch(slot+r'[1-4]',pin):
+                        need(pin not in bindings,'Multiply bound LUT pin');bindings[pin]=name
+            nodes.append(dict(component=comp,slot=slot,logical=logical,equation=equation,inputNetBindings=bindings))
+    return text,dict(components=sorted(selected),nets=sorted(selected_nets),bytes=len(text.encode()),sha256=sha(text.encode()),luts=nodes,scope='Seed register components, three upstream CE and driving-LUT-slot input layers, whole incident nets and immediate source bodies; no downstream closure or truth evaluation')
+
+def self_test(output):
+    rows=[]
+    fixtures=[('complete records','inst "a" "SLICEL", cfg " F:logic:#LUT:D=A1 ";\nnet "n", inpin "a" F1;',True),
+              ('empty export','',False),('incomplete net','inst "a" "SLICEL";\nnet "n"',False),
+              ('duplicate instance','inst "a" "SLICEL";\ninst "a" "SLICEL";',False),
+              ('duplicate net','inst "a" "SLICEL";\nnet "n";\nnet "n";',False)]
+    for name,text,expected in fixtures:
+        error=None
+        try:
+            parse_xdl(text);accepted=True
+        except ValueError as exc:
+            accepted=False;error=str(exc)
+        rows.append(dict(name=name,expected=expected,accepted=accepted,error=error,passed=accepted==expected))
+    for name,count,expected in [('within net bound',700,True),('net cap not silently raised',701,False)]:
+        instances={'a':'inst "a" "SLICEL";'}
+        nets={str(i):'net "'+str(i)+'", inpin "a" F1;' for i in range(count)}
+        error=None
+        try:
+            part(instances,nets,{'a'});accepted=True
+        except ValueError as exc:
+            accepted=False;error=str(exc)
+        rows.append(dict(name=name,expected=expected,accepted=accepted,error=error,passed=accepted==expected))
+    for mux,expect_far in [('F',False),('FX',True)]:
+        instances={'seed':'inst "seed" "SLICEL";',
+                   'driver':'inst "driver" "SLICEL", cfg " FXMUX::'+mux+' F:lo:#LUT:D=A1 G:hi:#LUT:D=A1 ";',
+                   'branch':'inst "branch" "SLICEL", cfg " FXMUX::F F:branch:#LUT:D=A1 ";',
+                   'near':'inst "near" "SLICEL";', 'far':'inst "far" "SLICEL";'}
+        nets={'ce':'net "ce", outpin "driver" X, inpin "seed" CE;',
+              'lo':'net "lo", outpin "near" XQ, inpin "driver" F1;',
+              'hi':'net "hi", outpin "branch" X, inpin "driver" G1;',
+              'far':'net "far", outpin "far" XQ, inpin "branch" F1;'}
+        _,index=part(instances,nets,{'seed'})
+        actual='far' in index['components']
+        rows.append(dict(name='Exact output mux token '+mux,expectedFarBranch=expect_far,observedFarBranch=actual,passed=actual==expect_far))
+    save(output,rows);need(all(x['passed'] for x in rows),'Hosted parser/bound controls failed')
+
+def inspect(archive_path,api,output):
+    output.mkdir(parents=True,exist_ok=False)
+    self_test(output/'controls.json')
+    instances,nets=load_original(archive_path,api)
+    inventory=[]
+    families=['alu_p','regs_m','regs_n']
+    for comp,body in instances.items():
+        for slot,logical in re.findall(r'\b(FFX|FFY):([^:\s]+):#FF(?=\s|$)',body):
+            if any(logical.startswith('snes_dspx/'+family) for family in families):
+                inventory.append(dict(component=comp,slot=slot,logical=logical))
+    save(output/'all-target-family-ff-inventory.json',inventory)
+    reports=[]
+    targets=[('alu_p',14),('regs_m',8),('regs_m',14)]
+    for family,bit in targets:
+        label=family+'-'+str(bit)
+        aliases={'snes_dspx/'+family+'_'+str(bit),'snes_dspx/'+family+'<'+str(bit)+'>'}
+        rows=[x for x in inventory if x['logical'] in aliases]
+        seeds={x['component'] for x in rows}
+        body,index=part(instances,nets,seeds,output/(label+'-collection-stats.json'))
+        (output/(label+'-raw.txt')).write_text(body)
+        index['target']=dict(family=family,bit=bit,acceptedAliases=sorted(aliases));index['registers']=rows
+        bindings=[]
+        for row in rows:
+            comp=row['component'];pins={}
+            for name,net in nets.items():
+                for kind,target,pin in PIN.findall(net):
+                    if kind=='inpin' and target==comp and pin in ['CLK','CE','SR','BX','BY']:
+                        need(pin not in pins,'Multiple nets on register control pin');pins[pin]=name
+            bindings.append(dict(**row,controlPins=pins,config=instances[comp]))
+        index['actualRegisterControlPins']=bindings
+        save(output/(label+'-index.json'),index);reports.append(index)
+    save(output/'inspection-result.json',dict(sourceRun=RUN,sourceHead=HEAD,sourceArtifact=ARTIFACT,
+         sourceZipBytes=ZIP_SIZE,sourceZipSha256=ZIP_SHA,mappedXdlBytes=XDL_SIZE,mappedXdlSha256=XDL_SHA,
+         totalInstances=len(instances),totalNets=len(nets),sourceProductionVerilogTree='893e807029df25af8263fd63fa71dadabf02b0d0',
+         parts=[dict(target=x['target'],components=len(x['components']),nets=len(x['nets']),rawBytes=x['bytes'],rawSha256=x['sha256'],registers=x['registers']) for x in reports],
+         collectionOnly=True,originalNativeStillFailure=True,noGenerationConversionParTraceProofOrSimulation=True,
+         limits='Only3 actual negative-path destination FF CE cones and whole incident records; inventory ofallmatchingALU_P/M/NFF aliases is ancillary. No claim ofwholeM/N stateclosure, fullupstreamclosure, behavior/equivalence, newtiming orI/O/hardwarequalification.'))
+    need(all(len(x['registers'])==1 for x in reports),'One exact known routed-path destination alias not observed; complete raw/index retained')
+    need(all(x['controlPins'].get('CLK')=='CLK2' and 'CLKINV::CLK' in x['config'] for report in reports for x in report['actualRegisterControlPins']),'Original register clock not observed; complete raw retained')
+    print('Collected original baseline ALU_P14/M8/M14 actual clock/CE pins and bounded3-layerupstream LUT bindings; no newimplementation. Original native/timing failures unchanged.')
+
+if __name__=='__main__':
+    need(len(sys.argv)==4,'Usage: ORIGINAL_DESIGN_ZIP API_DIRECTORY OUTPUT')
+    inspect(Path(sys.argv[1]),Path(sys.argv[2]),Path(sys.argv[3]))

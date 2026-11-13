@@ -141,7 +141,7 @@ jobs:
           native=$(find "$RUNNER_TEMP/gbc-native" -name main_synth.v -print -quit)
           test -n "$native"
           python3 .github/scripts/check-gbc-xst-remap.py "$native" "$RUNNER_TEMP/gbc-yosys/xst-remap" \
-            fixed-mux-cuts fixed-mux-sat fixed-mux-sat-area
+            compare-resub compare-sat
       - uses: actions/upload-artifact@v4
         if: always()
         with:

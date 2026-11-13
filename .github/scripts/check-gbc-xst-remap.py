@@ -3,7 +3,7 @@
 This deliberately emits no FPGA image. The native artifact and its provenance
 remain the reference; a successful logic proof is not a place/route result.
 """
-from collections import Counter
+from collections import Counter, defaultdict
 import hashlib
 import json
 from pathlib import Path
@@ -102,6 +102,32 @@ native_counts = Counter(c["type"] for c in native["cells"].values())
 if sum(native_counts[t] for t in ("LUT1", "LUT2", "LUT3", "LUT4")) < 5000:
     raise RuntimeError("native diagnostic did not retain the expected LUT primitives")
 summaries = {}
+# Discover whole carry chains with no sum XOR. Keep arithmetic chains fixed;
+# comparator-only chains can instead be optimized with the surrounding LUTs.
+# Exclude XST's wide-gate read muxes here: the earlier widegate trial regressed.
+carry = {n: c for n, c in native["cells"].items() if c["type"] == "MUXCY"}
+carry_driver = {c["connections"]["O"][0]: n for n, c in carry.items()}
+carry_edges = defaultdict(set)
+for name, cell in carry.items():
+    previous = carry_driver.get(cell["connections"]["CI"][0])
+    if previous is not None:
+        carry_edges[name].add(previous)
+        carry_edges[previous].add(name)
+sum_carry = {carry_driver[c["connections"]["CI"][0]] for c in native["cells"].values()
+             if c["type"] == "XORCY" and c["connections"]["CI"][0] in carry_driver}
+compare_carry, visited = set(), set()
+for name in carry:
+    if name in visited:
+        continue
+    pending, chain = [name], set()
+    while pending:
+        member = pending.pop()
+        if member not in chain:
+            chain.add(member)
+            pending.extend(carry_edges[member] - chain)
+    visited |= chain
+    if not chain & sum_carry and not any("_wg_cy" in n for n in chain):
+        compare_carry |= chain
 # Use ABC's area-oriented cut selection as well as its default delay-oriented
 # selection. Every candidate has the same whole-cone proof obligation; a lower
 # logic count still requires native MAP/PAR before it can become an FPGA image.
@@ -130,7 +156,10 @@ profiles = (("fixed-mux", False, None),
             ("fixed-mux-sat", False, "strash; " + resub + area_tail +
              "; &get -m -n; &mfs2 -K 4; &put; lutpack -S 1"),
             ("fixed-mux-sat-area", False, "strash; " + resub + area_tail +
-             "; &get -m -n; &mfs2 -K 4 -a; &put; lutpack -S 1"))
+             "; &get -m -n; &mfs2 -K 4 -a; &put; lutpack -S 1"),
+            ("compare-resub", False, "strash; " + resub + area_tail),
+            ("compare-sat", False, "strash; " + resub + area_tail +
+             "; &get -m -n; &mfs2 -K 4; &put; lutpack -S 1"))
 if len(sys.argv) > 3:
     selected = set(sys.argv[3:])
     if not selected <= {p[0] for p in profiles}:
@@ -145,6 +174,8 @@ for profile, remap_mux, abc_script in profiles:
     # all arithmetic carry chains and every state/memory primitive stay fixed.
     logic_names = {n for n, c in native["cells"].items() if c["type"] in logic_types
                    or (profile.startswith("widegate-") and c["type"] == "MUXCY" and "_wg_cy" in n)}
+    if profile.startswith("compare-"):
+        logic_names |= compare_carry
     logic = [c for n, c in native["cells"].items() if n in logic_names]
     driven = {bit for c in logic for bit in c["connections"]["O"] if isinstance(bit, int)}
     used = {bit for c in logic for port, bits in c["connections"].items() if port != "O"

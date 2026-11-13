@@ -599,6 +599,37 @@ assign DO = ss_ctrl ? {7'b0, ss_halted}
           : ss_regwin ? ss_reg_do
           : (DP_enable ? DP_DO : UPD_DO);
 
+`ifdef MK2
+`ifdef DSP_COMP
+// DSPX_MN_CONTROL_BEGIN
+wire mn_fetch_low, mn_fetch_high, mn_running;
+dspx_mn_case4 #(.VALUE(STATE_FETCH[3:0])) mn_fetch_low_lut(.key(insn_state[3:0]), .match(mn_fetch_low));
+dspx_mn_case4 #(.VALUE(STATE_FETCH[7:4])) mn_fetch_high_lut(.key(insn_state[7:4]), .match(mn_fetch_high));
+dspx_mn_run4 mn_fetch_run_lut(.rst(RST), .frozen(ss_frozen), .lo_match(mn_fetch_low), .hi_match(mn_fetch_high), .running(mn_running));
+always @(posedge CLK) begin
+  if(RST & ~ss_frozen) begin
+    if(mn_running) begin
+        regs_m <= {mul_result[31], mul_result[29:15]};
+        regs_n <= {mul_result[14:0], 1'b0};
+    end
+  end else if(RST & ss_frozen) begin
+    if(ss_wr) begin
+      case(ss_wa)
+        8'h14: regs_m[7:0]      <= ss_wd;
+        8'h15: regs_m[15:8]     <= ss_wd;
+        8'h16: regs_n[7:0]      <= ss_wd;
+        8'h17: regs_n[15:8]     <= ss_wd;
+      endcase
+    end
+  end else begin
+    regs_m <= 16'b0;
+    regs_n <= 16'b0;
+  end
+end
+// DSPX_MN_CONTROL_END
+`endif
+`endif
+
 always @(posedge CLK) begin
   if(RST & ~ss_frozen) begin
 `ifdef MK2
@@ -664,8 +695,15 @@ always @(posedge CLK) begin
         ld_id <= opcode_w[21:6];
         ld_dst <= opcode_w[3:0];
 
+`ifdef MK2
+`ifndef DSP_COMP
         regs_m <= {mul_result[31], mul_result[29:15]};
         regs_n <= {mul_result[14:0], 1'b0};
+`endif
+`else
+        regs_m <= {mul_result[31], mul_result[29:15]};
+        regs_n <= {mul_result[14:0], 1'b0};
+`endif
       end
       STATE_LOAD: begin
         insn_state <= STATE_ALU1;
@@ -928,10 +966,19 @@ always @(posedge CLK) begin
         8'h11: regs_k[15:8]     <= ss_wd;
         8'h12: regs_l[7:0]      <= ss_wd;
         8'h13: regs_l[15:8]     <= ss_wd;
+`ifdef MK2
+`ifndef DSP_COMP
         8'h14: regs_m[7:0]      <= ss_wd;
         8'h15: regs_m[15:8]     <= ss_wd;
         8'h16: regs_n[7:0]      <= ss_wd;
         8'h17: regs_n[15:8]     <= ss_wd;
+`endif
+`else
+        8'h14: regs_m[7:0]      <= ss_wd;
+        8'h15: regs_m[15:8]     <= ss_wd;
+        8'h16: regs_n[7:0]      <= ss_wd;
+        8'h17: regs_n[15:8]     <= ss_wd;
+`endif
         8'h18: begin regs_dph <= ss_wd[7:4]; regs_dpl <= ss_wd[3:0]; end
         8'h19: regs_dpb <= ss_wd[1:0];
         8'h1a: regs_sp  <= ss_wd[3:0];
@@ -1007,8 +1054,15 @@ always @(posedge CLK) begin
     jp_na <= 11'b0;
     ld_id <= 16'b0;
     ld_dst <= 4'b0;
+`ifdef MK2
+`ifndef DSP_COMP
     regs_m <= 16'b0;
     regs_n <= 16'b0;
+`endif
+`else
+    regs_m <= 16'b0;
+    regs_n <= 16'b0;
+`endif
   end
 end
 
@@ -1033,5 +1087,26 @@ always @* begin
   end
 end
 endmodule
+`endif
+`endif
+
+`ifdef MK2
+`ifdef DSP_COMP
+// DSPX_MN_HELPERS_BEGIN
+// Procedural case retains the original full-state case behavior for unknowns.
+(* LUT_MAP="yes" *)
+module dspx_mn_case4 #(parameter [3:0] VALUE=4'b0000)(input [3:0] key, output reg match);
+always @* begin
+  match = 1'b0;
+  case(key)
+    VALUE: match = 1'b1;
+  endcase
+end
+endmodule
+(* LUT_MAP="yes" *)
+module dspx_mn_run4(input rst,frozen,lo_match,hi_match,output running);
+assign running = rst & ~frozen & lo_match & hi_match;
+endmodule
+// DSPX_MN_HELPERS_END
 `endif
 `endif

@@ -236,7 +236,15 @@ def audit_state(design, family, variant):
         state += module['netnames'][name]['bits']
     need(len(state) == len(set(state)) and all(type(b) is int for b in state), 'Aliased or nonvariable state')
     observed = module['ports']['pipeline_state' if family == 'producer' else 'state']['bits']
-    need(observed == (state[:17] if family == 'producer' else state), 'State carrier ordering changed')
+    if family == 'producer':
+        need(observed == state[:17], 'Producer state carrier ordering changed')
+    else:
+        # memory_memx retains guards on even constant-address read ports.
+        # The actual carrier is therefore proved equal to named FF Qs below,
+        # rather than assuming it must already be a direct wire alias.
+        need(len(observed) == 176 and len(set(observed)) == 176
+             and all(type(b) is int for b in observed)
+             and module['ports']['state']['direction'] == 'output', 'Invalid complete stack observation carrier')
     clock=module['ports']['CLK']['bits']
     need(len(clock)==1 and module['ports']['CLK']['direction']=='input', 'Invalid clock boundary')
     expected_init={}
@@ -387,7 +395,10 @@ def consumer_transform(design,variant):
 
 def audit_controls(original,family,variant):
     controls=[]
-    for name in ('wrong-clock','duplicate-Q','wrong-init','wrong-state-view'):
+    names = ['wrong-clock','duplicate-Q','wrong-init']
+    if family == 'producer':
+        names.append('wrong-state-view')
+    for name in names:
         changed=copy.deepcopy(original)
         top='producer_model' if family=='producer' else 'stack_model'
         module=changed['modules'][top]

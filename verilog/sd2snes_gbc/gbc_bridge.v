@@ -367,7 +367,16 @@ wire snap_take  = snap_req & snap_ready;
 wire snap_skip  = TAP_LY0 & ~snap_take;
 
 // The copy engine has moved its last byte...
-wire        snap_done    = snap_run_r & snap_rd_d1_r & (snap_cnt_d1_r == 8'd159);
+wire        snap_copy_last = snap_run_r & snap_rd_d1_r & (snap_cnt_d1_r == 8'd159);
+`ifdef MK2
+// The packed snapshot store writes the assembled OAM word one clock after
+// its final byte arrives. Publish on that write edge, never before it.
+reg snap_copy_last_r;
+always @(posedge CLK) snap_copy_last_r <= snap_copy_last & ~RST;
+wire        snap_done = snap_copy_last_r;
+`else
+wire        snap_done = snap_copy_last;
+`endif
 // ...but publishing it INSIDE the read window would hand the player a snapshot
 // half of its own frame is already built on: SEQ would move under it and the
 // OAM it copied twenty lines ago would no longer be the one the status block
@@ -382,16 +391,16 @@ wire        snap_publish = (snap_done & ~busy_eff) | (snap_pub_pend_r & wr_consu
 // byte needs Y, X, tile and attribute together (visibility depends on Y and X,
 // the tile number on the attribute), and a byte-wide RAM would need four reads
 // where the contract allows two cycles in total.  40 sprites x 2 buffers.
+`ifdef MK2
+wire [31:0] oam_snap_q_r;
+wire [7:0] cram_snap_q_r;
+`else
 reg  [31:0] oam_snap_r[0:127];
 reg  [31:0] oam_snap_q_r;
 
 // CRAM stays byte-wide: one CGRAM view byte is one palette byte, and which one
 // is pure index arithmetic (the compatibility remap included).
-`ifdef MK2
-(* ram_style = "block" *) reg  [7:0]  cram_snap_r[0:255];
-`else
 (* ram_style = "distributed" *) reg  [7:0]  cram_snap_r[0:255];
-`endif
 reg  [7:0]  cram_snap_q_r;
 
 // An M9K powers up at zero (power_up_uninitialized defaults to FALSE), so this
@@ -402,6 +411,7 @@ initial begin
   for (snap_i = 0; snap_i < 128; snap_i = snap_i + 1) oam_snap_r[snap_i]  = 32'd0;
   for (snap_i = 0; snap_i < 256; snap_i = snap_i + 1) cram_snap_r[snap_i] =  8'd0;
 end
+`endif
 
 //-------------------------------------------------------------------
 // Mid-frame log -- write side (contract section 8)
@@ -754,6 +764,16 @@ wire [31:0] snap_oam_wd = {OAM_RD_DATA, snap_oam_word_r};
 wire        snap_cram_we = snap_rd_d1_r & ~snap_cnt_d1_r[7];
 wire [7:0]  snap_cram_wa = {snap_wbuf, snap_cnt_d1_r[6:0]};
 
+`ifdef MK2
+// Both views select one shared synchronous read port. The copy engine emits
+// an OAM word every four clocks; the paired CRAM word uses the following
+// write slot. One RAMB16 holds both double-buffered snapshots.
+gbc_snapshot_ram snapshots(.CLK(CLK), .RST(RST),
+  .OAM_WE(snap_oam_we), .OAM_WADDR(snap_oam_wa), .OAM_DATA(snap_oam_wd),
+  .CRAM_WE(snap_cram_we), .CRAM_WADDR(snap_cram_wa), .CRAM_DATA(CRAM_RD_DATA),
+  .OAM_RADDR(oam_snap_ra), .CRAM_RADDR(cram_snap_ra),
+  .CRAM_READ(sel_cgram | sel_craw), .OAM_Q(oam_snap_q_r), .CRAM_Q(cram_snap_q_r));
+`else
 always @(posedge CLK) begin
   if (snap_oam_we) oam_snap_r[snap_oam_wa] <= snap_oam_wd;
   oam_snap_q_r <= oam_snap_r[oam_snap_ra];
@@ -763,6 +783,7 @@ always @(posedge CLK) begin
   if (snap_cram_we) cram_snap_r[snap_cram_wa] <= CRAM_RD_DATA;
   cram_snap_q_r <= cram_snap_r[cram_snap_ra];
 end
+`endif
 
 // The log RAM, same shape.  The write port addresses the live buffer and the
 // read port the published one, which are never the same buffer, so the two can

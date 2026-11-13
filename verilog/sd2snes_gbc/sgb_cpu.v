@@ -2500,7 +2500,7 @@ wire        dbg_oam_free = ~OAM_RD_REQ & ~oam_rd_req_d1_r;
 assign OAM_RD_DATA = dbg_oam_rddata;
 
 `ifdef MK2
-gbc_small_ram #(.ABITS(8)) oam (
+oam oam (
   .clka(CLK), // input clka
   .wea(oam_wren), // input [0 : 0] wea
   .addra(oam_address), // input [7 : 0] addra

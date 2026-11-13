@@ -5,12 +5,12 @@ VHSRC =
 
 HEADER = config.vh
 
-COMMON_IP = dec_table vram snescmd_buf
+COMMON_IP = dec_table vram snescmd_buf oam
 
 XIL_IP =
 XIL_IPCORE_DIR = ../sd2snes_sgb/ip/mk2
 
-INT_IP = pll oam hram
+INT_IP = pll hram
 
 include ../settings.mk
 include ../common.mk

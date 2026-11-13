@@ -1,8 +1,7 @@
 `timescale 1ns/1ps
-// Small memories belong in LUT RAM on Mk.II. Keeping the 128-byte HRAM and
-// 256-byte OAM in separate RAMB16s would waste nearly two whole blocks.
-// Port B is read-only in this build: SGB_MCU_ACCESS is disabled, while the
-// bridge still reads OAM snapshots through it. Both clocks are the same CLK.
+// Small memories can use LUT RAM on Mk.II when no block RAM is available.
+// Port B is read-only in this build: SGB_MCU_ACCESS is disabled. Both clocks
+// are the same CLK; HRAM removes the unused second port before inference.
 module gbc_small_ram #(parameter ABITS=8, READ_B=1)(
   input clka, wea,
   input [ABITS-1:0] addra,
@@ -29,6 +28,53 @@ module gbc_small_ram #(parameter ABITS=8, READ_B=1)(
   end endgenerate
   // synthesis translate_off
   always @(posedge clka) if(web) $fatal(1,"Mk.II LUT RAM port B is read-only");
+  // synthesis translate_on
+endmodule
+
+// One 256x32 block RAM for the double-buffered OAM and palette snapshots.
+// OAM occupies words 0..127; CRAM occupies words 128..191. The bridge's copy
+// stream groups four OAM bytes into a word and delivers CRAM byte by byte.
+// Schedule the resulting OAM/CRAM writes on consecutive clocks. The read
+// still has one clock of latency, and its byte lane is registered with it.
+module gbc_snapshot_ram(input CLK, RST,
+  input OAM_WE, input [6:0] OAM_WADDR, input [31:0] OAM_DATA,
+  input CRAM_WE, input [7:0] CRAM_WADDR, input [7:0] CRAM_DATA,
+  input [6:0] OAM_RADDR, input [7:0] CRAM_RADDR, input CRAM_READ,
+  output [31:0] OAM_Q, output [7:0] CRAM_Q);
+  (* ram_style = "block" *) reg [31:0] words [0:255];
+  reg [31:0] q;
+  reg [1:0] read_byte;
+  wire [7:0] read_addr = CRAM_READ ? {2'b10,CRAM_RADDR[7:2]} : {1'b0,OAM_RADDR};
+  reg oam_pending=0, cram_pending=0, cram_delayed=0;
+  reg [6:0] oam_addr;
+  reg [5:0] cram_addr;
+  reg [31:0] oam_word, cram_word;
+  reg [23:0] cram_shift;
+  integer init_i;
+  initial for(init_i=0;init_i<256;init_i=init_i+1) words[init_i]=0;
+  always @(posedge CLK) begin
+    oam_pending <= OAM_WE & ~RST;
+    cram_pending <= CRAM_WE & (&CRAM_WADDR[1:0]) & ~RST;
+    cram_delayed <= cram_pending & ~RST;
+    if(OAM_WE) begin oam_addr<=OAM_WADDR; oam_word<=OAM_DATA; end
+    if(CRAM_WE) begin
+      cram_shift <= {CRAM_DATA,cram_shift[23:8]};
+      if(&CRAM_WADDR[1:0]) begin
+        cram_addr <= CRAM_WADDR[7:2];
+        cram_word <= {CRAM_DATA,cram_shift};
+      end
+    end
+    if(!RST && oam_pending) words[{1'b0,oam_addr}] <= oam_word;
+    else if(!RST && cram_delayed) words[{2'b10,cram_addr}] <= cram_word;
+    q <= words[read_addr];
+    read_byte <= CRAM_RADDR[1:0];
+  end
+  assign OAM_Q = q;
+  assign CRAM_Q = read_byte == 0 ? q[7:0] : read_byte == 1 ? q[15:8]
+                : read_byte == 2 ? q[23:16] : q[31:24];
+  // synthesis translate_off
+  always @(posedge CLK) if(!RST && oam_pending && cram_delayed)
+    $fatal(1,"snapshot copy stream violates the four-byte write cadence");
   // synthesis translate_on
 endmodule
 

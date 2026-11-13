@@ -82,6 +82,16 @@ module gbc_sram_arb_model(
             compile_pixel += ["-B", args.ivl_base]
         subprocess.run(compile_pixel, check=True)
         subprocess.run([args.vvp, str(pixel_ram)], check=True, timeout=60)
+        snapshots = Path(tmp) / "snapshots.vvp"
+        compile_snapshots = [args.iverilog, "-g2012", "-DMK2", "-s", "gbc_snapshot_tb",
+                             "-I", str(root / "verilog/sd2snes_gbc"), "-o", str(snapshots),
+                             str(root / "tests/rtl/gbc_snapshot_tb.v")]
+        compile_snapshots += [str(root / "verilog/sd2snes_gbc" / name) for name in
+                              ("gbc_bridge.v", "c6_fb.v", "c6_sram.v", "mk2_memory.v")]
+        if args.ivl_base:
+            compile_snapshots += ["-B", args.ivl_base]
+        subprocess.run(compile_snapshots, check=True)
+        subprocess.run([args.vvp, str(snapshots)], check=True, timeout=60)
         # Compile the existing, independent SGB audio implementation with zero
         # PCM data, then compare every cartridge output against the GBC DAC.
         reference = Path(tmp) / "dac_ref.v"

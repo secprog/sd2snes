@@ -2619,6 +2619,9 @@ parameter
   ST_PPU_HBL     = 13'b0100000000000,
   ST_PPU_VBL     = 13'b1000000000000;
 
+`ifdef MK2
+(* fsm_encoding = "compact" *)
+`endif
 reg  [12:0] ppu_state_r;
 
 reg  [8:0]  ppu_dot_ctr_r;

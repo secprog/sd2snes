@@ -58,6 +58,22 @@ module gbc_sram_arb_model(
             compile_bus += ["-B", args.ivl_base]
         subprocess.run(compile_bus, check=True)
         subprocess.run([args.vvp, str(bus)], check=True, timeout=60)
+        log_ram = Path(tmp) / "log-ram.vvp"
+        compile_log = [args.iverilog, "-g2012", "-s", "gbc_log_ram_tb", "-o", str(log_ram),
+                       str(root / "tests/rtl/gbc_log_ram_tb.v"),
+                       str(root / "verilog/sd2snes_gbc/mk2_memory.v")]
+        if args.ivl_base:
+            compile_log += ["-B", args.ivl_base]
+        subprocess.run(compile_log, check=True)
+        subprocess.run([args.vvp, str(log_ram)], check=True, timeout=60)
+        dirty_ram = Path(tmp) / "dirty-ram.vvp"
+        compile_dirty = [args.iverilog, "-g2012", "-s", "gbc_dirty_ram_tb", "-o", str(dirty_ram),
+                         str(root / "tests/rtl/gbc_dirty_ram_tb.v"),
+                         str(root / "verilog/sd2snes_gbc/mk2_memory.v")]
+        if args.ivl_base:
+            compile_dirty += ["-B", args.ivl_base]
+        subprocess.run(compile_dirty, check=True)
+        subprocess.run([args.vvp, str(dirty_ram)], check=True, timeout=60)
         # Compile the existing, independent SGB audio implementation with zero
         # PCM data, then compare every cartridge output against the GBC DAC.
         reference = Path(tmp) / "dac_ref.v"

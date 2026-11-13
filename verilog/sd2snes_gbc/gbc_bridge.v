@@ -387,7 +387,11 @@ reg  [31:0] oam_snap_q_r;
 
 // CRAM stays byte-wide: one CGRAM view byte is one palette byte, and which one
 // is pure index arithmetic (the compatibility remap included).
+`ifdef MK2
+(* ram_style = "block" *) reg  [7:0]  cram_snap_r[0:255];
+`else
 (* ram_style = "distributed" *) reg  [7:0]  cram_snap_r[0:255];
+`endif
 reg  [7:0]  cram_snap_q_r;
 
 // An M9K powers up at zero (power_up_uninitialized defaults to FALSE), so this
@@ -418,8 +422,14 @@ end
 // combinationally here would ask the fitter for 32768 flip-flops.
 // max_depth 256: six 256x32 M9Ks.  Left to itself the fitter rounds the depth
 // up to 2048 and asks for eight, which is one more than the device has left.
+`ifdef MK2
+// XST rounds a 1536-word array up to four RAMB16s. Three explicit 512-word
+// banks preserve the one-cycle read and use three, leaving one for CRAM.
+wire [31:0] log_q_r;
+`else
 (* ramstyle = "no_rw_check", max_depth = 256 *) reg  [31:0] log_ram_r[0:1535];
 reg  [31:0] log_q_r;
+`endif
 
 reg  [1:0]  log_pub_r;        // the buffer the SNES reads
 reg  [1:0]  log_live_r;       // the buffer the GB writes
@@ -440,10 +450,12 @@ reg  [15:0] log_ovf_ctr_r;    // GBDG +0E: frames whose log overflowed
 reg  [15:0] colw_live_r;
 reg  [15:0] colw_pub_r;       // status +90..91
 
+`ifndef MK2
 integer log_i;
 initial begin
   for (log_i = 0; log_i < 1536; log_i = log_i + 1) log_ram_r[log_i] = 32'd0;
 end
+`endif
 
 // Byte 0, ly_eff: the line the write takes effect on.  A write that lands
 // before this line's mode 3 still changes what mode 3 fetches, so it counts for
@@ -757,10 +769,15 @@ end
 // never meet on one address and the read-during-write behaviour of the M9K
 // never matters (no_rw_check on the declaration tells the fitter so, and saves
 // it the bypass).
+`ifdef MK2
+gbc_log_ram log_ram(.CLK(CLK), .WE(log_take), .WADDR(log_wa),
+                    .DATA(log_word), .RADDR(log_ra), .Q(log_q_r));
+`else
 always @(posedge CLK) begin
   if (log_take) log_ram_r[log_wa] <= log_word;
   log_q_r <= log_ram_r[log_ra];
 end
+`endif
 
 //-------------------------------------------------------------------
 // C6: the framebuffer (c6_fb.v, contract section 14)

@@ -163,7 +163,9 @@ wire        c6_off   = TAP_LY0 & ~ctl_en_r &  en_eff_r;
 // state
 //-------------------------------------------------------------------
 reg  [17:0]  row_frozen_r, thaw_pend_r, row_clid_r;
+`ifndef GBC_EXTERNAL_FB
 reg  [359:0] dirty_r;
+`endif
 reg  [2:0]   cl_cur_r, cl_prev_r, cl_cand_r;
 reg          cl_id_r;
 reg  [3:0]   cl_hyst_r;
@@ -415,6 +417,13 @@ end
 // frozen row and a frozen row takes no writes.
 //-------------------------------------------------------------------
 wire        dset    = wr2_r & wr_diff_r;
+wire [5:0]  didx  = STAT_OFF[7] ? {2'b10, STAT_OFF[3:0]} : {1'b0, STAT_OFF[4:0]};
+`ifdef GBC_EXTERNAL_FB
+wire [7:0] dirty_read;
+c6_dirty_ram dirty_bitmap(.CLK(CLK), .RST(RST), .ALL(c6_reset),
+  .SET(dset), .ROW(wr_row2_r), .COL(wr_col2_r), .CLEAR(rd_mask),
+  .BIDX(didx), .BYTE(dirty_read));
+`else
 wire [17:0] set_row = {18{c6_reset}} | ({18{dset}} & (18'd1 << wr_row2_r));
 wire [19:0] set_col = {20{c6_reset}} | (20'd1 << wr_col2_r);
 wire [17:0] clr_row = rd_mask | {18{RST}};
@@ -427,6 +436,7 @@ generate
     end
   end
 endgenerate
+`endif
 
 //-------------------------------------------------------------------
 // the two memories (even / odd cell columns)
@@ -543,6 +553,7 @@ wire [7:0]  clb   = {1'b0, cl_prev_r, cl_id_r, cl_cur_r};
 // +60..+7F -> 0..31, +80..+8C -> 32..44, no subtractor.  Written as the part
 // select dirty_r[8*(off - $60) +: 8] it came out as a 360-bit shifter: 1.3 K
 // LE, a tenth of the chip, for a 45-byte mux.
+`ifndef GBC_EXTERNAL_FB
 wire [7:0]  dbytes [0:63];
 genvar      gd;
 generate
@@ -554,11 +565,19 @@ generate
     end
   end
 endgenerate
-wire [5:0]  didx  = STAT_OFF[7] ? {2'b10, STAT_OFF[3:0]} : {1'b0, STAT_OFF[4:0]};
+`endif
 wire        dhit  = (STAT_OFF >= 8'h60) & (STAT_OFF <= 8'h8C);
 // XST's @* expansion cannot name an unpacked array. Select outside the
 // procedural mux, retaining the byte-array decode instead of a wide shifter.
+`ifdef GBC_EXTERNAL_FB
+// Break the large dirty-byte read mux away from the status/view mux. Mk.II
+// still settles in two clocks, inside the three-clock SNES view contract.
+reg [7:0] dirty_byte_r;
+always @(posedge CLK) dirty_byte_r <= dirty_read;
+wire [7:0] dirty_byte = dirty_byte_r;
+`else
 wire [7:0] dirty_byte = dbytes[didx];
+`endif
 
 `ifdef GBC_EXTERNAL_FB
 assign      STAT_HIT = (STAT_OFF >= 8'h58) & (STAT_OFF <= 8'h93);

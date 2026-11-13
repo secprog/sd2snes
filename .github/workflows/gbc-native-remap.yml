@@ -20,8 +20,8 @@ on:
         description: Proved combinational mapping candidate
         type: choice
         required: true
-        default: fixed-mux-resub
-        options: [fixed-mux-resub, lut4-resub, fixed-mux-area, lut4-area, fixed-mux, lut4]
+        default: fixed-mux-sat
+        options: [fixed-mux-sat, compare-sat, fixed-mux-resub, lut4-resub, fixed-mux-area, lut4-area, fixed-mux, lut4]
 
 permissions:
   contents: read

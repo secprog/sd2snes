@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # GitHub-hosted native qualification only. Never skip fit or timing failures.
 set -euo pipefail
-case "$PROFILE" in fixed-mux-resub|lut4-resub|fixed-mux-area|lut4-area|fixed-mux|lut4) ;; *) exit 2 ;; esac
+case "$PROFILE" in fixed-mux-sat|compare-sat|fixed-mux-resub|lut4-resub|fixed-mux-area|lut4-area|fixed-mux|lut4) ;; *) exit 2 ;; esac
 root=$PWD
 experiment="$root/.ci-tools/gbc-remap"
 native=$(find "$experiment/native" -name main_native.edf -print -quit)

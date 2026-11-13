@@ -140,7 +140,8 @@ jobs:
           gh run download 43508728031 --name fpga-reports-mk2-gbc --dir "$RUNNER_TEMP/gbc-native"
           native=$(find "$RUNNER_TEMP/gbc-native" -name main_synth.v -print -quit)
           test -n "$native"
-          python3 .github/scripts/check-gbc-xst-remap.py "$native" "$RUNNER_TEMP/gbc-yosys/xst-remap"
+          python3 .github/scripts/check-gbc-xst-remap.py "$native" "$RUNNER_TEMP/gbc-yosys/xst-remap" \
+            fixed-mux-resyn2 fixed-mux-resub lut4-resub
       - uses: actions/upload-artifact@v4
         if: always()
         with:

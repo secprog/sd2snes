@@ -18,11 +18,17 @@ report = Path(sys.argv[2]).resolve()
 report.mkdir(parents=True, exist_ok=True)
 
 
-def run(name, commands):
+def run(name, commands, expect_counterexample=False):
     script = report / (name + ".ys")
     script.write_text("\n".join(commands) + "\n")
-    subprocess.run(["yosys", "-Q", "-q", "-l", str(report / (name + ".log")), "-s", str(script)],
-                   check=True, timeout=300)
+    log = report / (name + ".log")
+    result = subprocess.run(["yosys", "-Q", "-q", "-l", str(log), "-s", str(script)],
+                            timeout=300)
+    if expect_counterexample:
+        if result.returncode == 0 or "proof did fail" not in log.read_text():
+            raise RuntimeError("The deliberately corrupted output was not rejected by SAT")
+    else:
+        result.check_returncode()
 
 
 def quote(path):
@@ -97,11 +103,23 @@ summaries = {}
 # selection. Every candidate has the same whole-cone proof obligation; a lower
 # logic count still requires native MAP/PAR before it can become an FPGA image.
 abc_prefix = "strash; &get -n; &fraig -x; &put; scorr; dc2; dretime; strash; dch -f; "
+# Expanded standard ABC resynthesis/resubstitution sequences, avoiding aliases
+# that depend on a user abc.rc. Reference: berkeley-abc/abc, abc.rc.
+resyn2 = ("balance; rewrite; refactor; balance; rewrite; rewrite -z; "
+          "balance; refactor -z; rewrite -z; balance; ")
+resub = ("balance; resub -K 6; rewrite; resub -K 6 -N 2; refactor; "
+         "resub -K 8; balance; resub -K 8 -N 2; rewrite; resub -K 10; "
+         "rewrite -z; resub -K 10 -N 2; balance; resub -K 12; refactor -z; "
+         "resub -K 12 -N 2; rewrite -z; balance; ")
+area_tail = "dch -f; if -K 4 -a; mfs2; lutpack -S 1"
 profiles = (("fixed-mux", False, None),
             ("fixed-mux-area", False, abc_prefix + "if -K 4 -a; mfs2; lutpack -S 1"),
             ("fixed-mux-area2", False, abc_prefix + "if -K 4 -a; mfs2; mfs2; lutpack -S 1"),
             ("lut4", True, None),
-            ("lut4-area", True, abc_prefix + "if -K 4 -a; mfs2; lutpack -S 1"))
+            ("lut4-area", True, abc_prefix + "if -K 4 -a; mfs2; lutpack -S 1"),
+            ("fixed-mux-resyn2", False, "strash; " + resyn2 + resyn2 + area_tail),
+            ("fixed-mux-resub", False, "strash; " + resub + area_tail),
+            ("lut4-resub", True, "strash; " + resub + area_tail))
 if len(sys.argv) > 3:
     selected = set(sys.argv[3:])
     if not selected <= {p[0] for p in profiles}:
@@ -127,6 +145,17 @@ for profile, remap_mux, abc_script in profiles:
         raise RuntimeError("empty native logic boundary")
     source = report / (profile + ".v")
     source.write_text(render_logic(native, logic_types, inputs, outputs, "gbc_logic"))
+    if not summaries:
+        corrupt = report / "corrupt-output.v"
+        corrupt.write_text(
+            f"module gbc_corrupt(input [{len(inputs)-1}:0] i, output [{len(outputs)-1}:0] o);\n"
+            f"wire [{len(outputs)-1}:0] raw; gbc_logic original(i,raw);\n"
+            f"assign o = raw ^ {len(outputs)}'d1; endmodule\n")
+        run("negative-control", ["read_verilog " + quote(source) + " " + quote(corrupt),
+                                 "proc", "opt",
+                                 "miter -equiv -flatten gbc_logic gbc_corrupt miter",
+                                 "hierarchy -top miter", "sat -verify -prove trigger 0"],
+            expect_counterexample=True)
     (report / (profile + "-boundary.json")).write_text(json.dumps({
         "inputs": inputs, "outputs": outputs, "logic_types": sorted(logic_types),
     }, indent=2) + "\n")
@@ -163,6 +192,7 @@ for profile, remap_mux, abc_script in profiles:
         "remapped_cells": dict(sorted(cells.items())),
         "fixed_cells": dict(sorted(fixed.items())),
         "combinational_equivalence": "proved at every fixed-macro input and top-level output",
+        "negative_control": "SAT rejected a deliberately inverted boundary output",
         "limitations": "Diagnostic only; fixed macro boundaries, no native placement/timing or console validation.",
     }
     if network is not None:

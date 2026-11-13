@@ -1,6 +1,14 @@
 name: GBC native remapping experiment
 
 on:
+  workflow_call:
+    inputs:
+      native_run:
+        type: string
+        required: true
+      profile:
+        type: string
+        required: true
   workflow_dispatch:
     inputs:
       native_run:

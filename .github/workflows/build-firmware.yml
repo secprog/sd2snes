@@ -152,15 +152,17 @@ jobs:
   gbc-native-remap:
     if: inputs.build == 'fpga' && inputs.fpga_cores == 'mk2:gbc' && inputs.gbc_yosys_check && inputs.mk2_run_id != ''
     needs: gbc-checks
-    name: Native GBC remap (${{ matrix.profile }})
+    name: Native GBC remap (${{ matrix.profile }}, duplication ${{ matrix.register_duplication }})
     strategy:
       fail-fast: false
       matrix:
         profile: [lut4-sat]
+        register_duplication: [project, 'off']
     uses: ./.github/workflows/gbc-native-remap.yml
     with:
       native_run: ${{ inputs.mk2_run_id }}
       profile: ${{ matrix.profile }}
+      register_duplication: ${{ matrix.register_duplication }}
 
   package-contract:
     if: inputs.build != 'fpga' || inputs.gbc_mcu_check

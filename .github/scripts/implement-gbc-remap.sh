@@ -11,6 +11,26 @@ project="$root/verilog/sd2snes_gbc/sd2snes_gbc.xise"
 xtclsh "$root/.github/scripts/gbc-remap-options.tcl" "$root" "$experiment/reports"
 read -r -a map_args < "$experiment/reports/map.options"
 read -r -a par_args < "$experiment/reports/par.options"
+candidate_args=("${map_args[@]}")
+case "${MAP_DUPLICATION:-project}" in
+  project) ;;
+  off)
+    changed=0
+    for i in "${!candidate_args[@]}"; do
+      if [[ "${candidate_args[$i]}" == -register_duplication ]]; then
+        [[ "${candidate_args[$((i+1))]}" == on ]]
+        candidate_args[$((i+1))]=off
+        changed=$((changed+1))
+      fi
+    done
+    [[ "$changed" == 1 ]]
+    ;;
+  *) exit 2 ;;
+esac
+# Keep diagnostics that show what packing/physical synthesis actually changed.
+# The unchanged reconstruction must still use the exact native project options.
+candidate_args+=(-detail)
+printf '%s\n' "${candidate_args[*]}" > "$experiment/reports/candidate-map.options"
 printf 'MAP options: %s\n' "${map_args[*]}"
 printf 'PAR options: %s\n' "${par_args[*]}"
 
@@ -24,7 +44,11 @@ for variant in baseline candidate; do
   # instances. UG628 requires -a for this third-party EDIF representation.
   ngdbuild -a -dd _ngo -sd "$ip" -nt timestamp -uc main.ucf -p xc3s400-4pq208 main.edf main.ngd
   map_status=0
-  map -p xc3s400-4pq208 "${map_args[@]}" -o main_map.ncd main.ngd main.pcf || map_status=$?
+  if [[ "$variant" == baseline ]]; then
+    map -p xc3s400-4pq208 "${map_args[@]}" -o main_map.ncd main.ngd main.pcf || map_status=$?
+  else
+    map -p xc3s400-4pq208 "${candidate_args[@]}" -o main_map.ncd main.ngd main.pcf || map_status=$?
+  fi
   if [[ "$variant" == baseline ]]; then
     # The unchanged exported EDIF must reproduce the source NGC's resource
     # report. The current reference is over capacity, so Map:237 is expected.

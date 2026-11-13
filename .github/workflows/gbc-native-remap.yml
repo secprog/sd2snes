@@ -9,6 +9,9 @@ on:
       profile:
         type: string
         required: true
+      register_duplication:
+        type: string
+        default: project
   workflow_dispatch:
     inputs:
       native_run:
@@ -22,6 +25,11 @@ on:
         required: true
         default: fixed-mux-sat
         options: [fixed-mux-sat, compare-sat, lut4-sat, fixed-mux-resub, lut4-resub, fixed-mux-area, lut4-area, fixed-mux, lut4]
+      register_duplication:
+        description: Candidate MAP register duplication (reference retains project options)
+        type: choice
+        default: project
+        options: [project, 'off']
 
 permissions:
   contents: read
@@ -29,7 +37,7 @@ permissions:
 
 jobs:
   implementation:
-    name: Prove and implement ${{ inputs.profile }}
+    name: Prove and implement ${{ inputs.profile }} (duplication ${{ inputs.register_duplication }})
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
@@ -84,16 +92,17 @@ jobs:
       - name: Check native round trip and implement with strict timing
         env:
           PROFILE: ${{ inputs.profile }}
+          MAP_DUPLICATION: ${{ inputs.register_duplication }}
         run: |
           set -o pipefail
           docker run --rm --user 0:0 --mac-address 08:00:27:68:c9:35 \
-            --volume "$GITHUB_WORKSPACE:/work" --workdir /work --env PROFILE \
+            --volume "$GITHUB_WORKSPACE:/work" --workdir /work --env PROFILE --env MAP_DUPLICATION \
             --entrypoint /bin/bash sd2snes-ci:mk2 \
             .github/scripts/implement-gbc-remap.sh 2>&1 | tee .ci-tools/gbc-remap/reports/implementation.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: gbc-native-remap-${{ inputs.profile }}
+          name: gbc-native-remap-${{ inputs.profile }}-dup-${{ inputs.register_duplication }}
           path: |
             .ci-tools/gbc-remap/reports/
             .ci-tools/gbc-remap/baseline/*.mrp
@@ -101,6 +110,8 @@ jobs:
             .ci-tools/gbc-remap/baseline/*-counts.txt
             .ci-tools/gbc-remap/candidate/*.mrp
             .ci-tools/gbc-remap/candidate/*.bld
+            .ci-tools/gbc-remap/candidate/*.psr
+            .ci-tools/gbc-remap/candidate/*.map
             .ci-tools/gbc-remap/candidate/*.par
             .ci-tools/gbc-remap/candidate/*.twr
             .ci-tools/gbc-remap/candidate/*.pcf

@@ -1822,7 +1822,19 @@ assign      EXE_IFD_ready    = exe_ready_r;
 assign      EXE_IFD_ime      = (exe_ime_r | (exe_res_int_enable_r & ~IFD_EXE_op[5])) & ~IFD_EXE_int & ~exe_res_int_disable_r; // RETI and disables need bypass.  EI is delayed a clock.
 
 assign      EXE_MCT_req_val     = IFD_EXE_valid & exe_mem_req_r & ^exe_stage[1:0];
-assign      EXE_MCT_req_addr_d1 = ( EXE_MCT_req_wr ? {((IFD_EXE_decode[`DEC_DST] == `OPR_S8 || IFD_EXE_decode[`DEC_DST] == `OPR_C) ? 8'hFF : exe_dst_r[15:8]),exe_dst_r[7:0]}
+// Address operand selection. MIC/MDC and every memory CB instruction decode
+// both operands as HL. Their source and destination latches are therefore
+// identical by ST_MCT_DEC, after the existing one-clock operand-read delay.
+// Mk.II can select the source for both halves of these operations, removing
+// the latency/stage calculation from the 16-bit address-adder critical path.
+// The actual read/write request and all transaction clocks remain unchanged.
+`ifdef MK2
+wire exe_addr_dst = IFD_EXE_decode[`DEC_GRP] == `GRP_MST
+                 || IFD_EXE_decode[`DEC_GRP] == `GRP_CLL;
+`else
+wire exe_addr_dst = EXE_MCT_req_wr;
+`endif
+assign      EXE_MCT_req_addr_d1 = ( exe_addr_dst ? {((IFD_EXE_decode[`DEC_DST] == `OPR_S8 || IFD_EXE_decode[`DEC_DST] == `OPR_C) ? 8'hFF : exe_dst_r[15:8]),exe_dst_r[7:0]}
                                               : {((IFD_EXE_decode[`DEC_SRC] == `OPR_S8 || IFD_EXE_decode[`DEC_SRC] == `OPR_C) ? 8'hFF : exe_src_r[15:8]),exe_src_r[7:0]})
                                   + exe_mem_addr_mod_r;
 assign      EXE_MCT_req_wr = (  IFD_EXE_decode[`DEC_GRP] == `GRP_MST

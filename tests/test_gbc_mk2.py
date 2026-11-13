@@ -245,6 +245,38 @@ module gbc_sram_arb_model(
             compile_decode += ["-B", args.ivl_base]
         subprocess.run(compile_decode, check=True)
         subprocess.run([args.vvp, str(decode_hram)], cwd=tmp, check=True, timeout=60)
+        # Use the real decode overrides, operand latches and address expression.
+        # Compare with the former stage-dependent address selection for every
+        # opcode and stage, plus every HL value for memory read/modify/write.
+        address_start = cpu.index("// Address operand selection.")
+        address_end = cpu.index("// always write MSB", address_start)
+        decode_assignment = re.search(r"  ifd_decode_r <= .*?;", cpu, re.S)[0]
+        los_declaration = re.search(r"wire\s+exe_loadopstore = .*?;", cpu, re.S)[0]
+        address_source = Path(tmp) / "address_actual.v"
+        address_source.write_text(defines + aliases + '''
+module gbc_address_actual(input CLK,
+ input [7:0] A_r,F_r,B_r,C_r,D_r,E_r,H_r,L_r,
+ input [15:0] SP_r,IFD_EXE_pc_next,dec_data,exe_mem_addr_mod_r,
+ input [23:0] IFD_EXE_op, input [2:0] exe_stage,
+ input ifd_int_r,ifd_cb_r, input [7:0] ifd_data_r,
+ output [15:0] src,dst,decoded,address, output wr);
+ reg [15:0] exe_src_r,exe_dst_r,ifd_decode_r;
+ wire [15:0] IFD_EXE_decode=ifd_decode_r;
+ wire EXE_MCT_req_wr;
+ wire [15:0] EXE_MCT_req_addr_d1;
+ assign src=exe_src_r; assign dst=exe_dst_r; assign decoded=IFD_EXE_decode;
+ assign address=EXE_MCT_req_addr_d1; assign wr=EXE_MCT_req_wr;
+''' + function + "\n" + los_declaration + "\n" + cpu[address_start:address_end]
+            + "\nalways @(posedge CLK) begin\n" + decode_assignment + "\n"
+            + cpu[read_start:read_end] + "\nend\nendmodule\n")
+        addresses = Path(tmp) / "addresses.vvp"
+        compile_addresses = [args.iverilog, "-g2012", "-DMK2", "-s", "gbc_address_tb",
+                             "-o", str(addresses), str(address_source),
+                             str(root / "tests/rtl/gbc_address_tb.v")]
+        if args.ivl_base:
+            compile_addresses += ["-B", args.ivl_base]
+        subprocess.run(compile_addresses, check=True)
+        subprocess.run([args.vvp, str(addresses)], cwd=tmp, check=True, timeout=60)
         row_flags = Path(tmp) / "row-flags.vvp"
         compile_flags = [args.iverilog, "-g2012", "-s", "gbc_row_flags_tb", "-o", str(row_flags),
                          str(root / "tests/rtl/gbc_row_flags_tb.v"),

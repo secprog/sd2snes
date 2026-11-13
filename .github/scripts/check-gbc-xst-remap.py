@@ -105,6 +105,10 @@ for profile, remap_mux, abc_width in (("fixed-mux", False, "4"),
     # state, carry chains, memories, clocking and I/O stay outside these cones.
     run(profile, ["read_verilog " + quote(source), "hierarchy -top gbc_logic",
                   "proc", "flatten", "opt", "techmap", "opt",
+                  # Only fixed-macro boundary ports are the proof contract.
+                  # ABC can legally repurpose/eliminate named internal nodes;
+                  # matching those names creates false equivalence cutpoints.
+                  "rename -hide",
                   "design -save reference", "abc -lut " + abc_width, "clean",
                   "design -save mapped", "rename gbc_logic gate",
                   "design -copy-from reference -as gold gbc_logic",

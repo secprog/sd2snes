@@ -1,4 +1,4 @@
-"""Hosted logic-remapping diagnostic, preserving XST's RAM/FF/carry boundaries.
+"""Hosted logic-remapping diagnostic, preserving XST's RAM/FF boundaries.
 
 This deliberately emits no FPGA image. The native artifact and its provenance
 remain the reference; a successful logic proof is not a place/route result.
@@ -62,6 +62,10 @@ else:
     native = json.loads((report / "native.json").read_text())["modules"]["main"]
 
 
+def output_port(cell):
+    return "LO" if cell["type"] == "MULT_AND" else "O"
+
+
 def render_logic(model, logic_types, inputs, outputs, module_name, logic_names=()):
     logic = [c for n, c in model["cells"].items() if c["type"] in logic_types or n in logic_names]
     bits = {b for c in logic for values in c["connections"].values()
@@ -93,9 +97,13 @@ def render_logic(model, logic_types, inputs, outputs, module_name, logic_names=(
             expression = "~" + ports["I"]
         elif c["type"] == "MUXCY":
             expression = f"{ports['S']} ? {ports['CI']} : {ports['DI']}"
+        elif c["type"] == "XORCY":
+            expression = f"{ports['LI']} ^ {ports['CI']}"
+        elif c["type"] == "MULT_AND":
+            expression = f"{ports['I0']} & {ports['I1']}"
         else:
             expression = f"{ports['S']} ? {ports['I1']} : {ports['I0']}"
-        lines.append(f"assign {ports['O']}={expression};")
+        lines.append(f"assign {ports[output_port(c)]}={expression};")
     lines.append("endmodule")
     return "\n".join(lines) + "\n"
 native_counts = Counter(c["type"] for c in native["cells"].values())
@@ -121,7 +129,7 @@ hard_and_outputs = {c["connections"]["LO"][0] for c in native["cells"].values()
                     if c["type"] == "MULT_AND"}
 hard_and_carry = {n for n, c in carry.items()
                   if c["connections"]["DI"][0] in hard_and_outputs}
-compare_carry, visited = set(), set()
+compare_carry, short_carry, visited = set(), set(), set()
 for name in carry:
     if name in visited:
         continue
@@ -134,6 +142,15 @@ for name in carry:
     visited |= chain
     if not chain & (sum_carry | hard_and_carry) and not any("_wg_cy" in n for n in chain):
         compare_carry |= chain
+    if len(chain) <= 8 and not chain & hard_and_carry:
+        short_carry |= chain
+short_carry |= compare_carry
+short_outputs = {carry[n]["connections"]["O"][0] for n in short_carry}
+short_inputs = {(carry[n]["connections"]["CI"][0], carry[n]["connections"]["S"][0])
+                for n in short_carry}
+short_sums = {n for n, c in native["cells"].items() if c["type"] == "XORCY"
+              and (c["connections"]["CI"][0] in short_outputs
+                   or (c["connections"]["CI"][0], c["connections"]["LI"][0]) in short_inputs)}
 # Use ABC's area-oriented cut selection as well as its default delay-oriented
 # selection. Every candidate has the same whole-cone proof obligation; a lower
 # logic count still requires native MAP/PAR before it can become an FPGA image.
@@ -171,6 +188,10 @@ profiles = (("fixed-mux", False, None),
             ("wide-lut6-resub", True, "strash; " + resub + "dch -f; if -a; mfs2"),
             ("compare-resub", False, "strash; " + resub + area_tail),
             ("compare-sat", False, "strash; " + resub + area_tail +
+             "; &get -m -n; &mfs2 -K 4; &put; lutpack -S 1"),
+            ("short-carry-sat", True, "strash; " + resub + area_tail +
+             "; &get -m -n; &mfs2 -K 4; &put; lutpack -S 1"),
+            ("all-carry-sat", True, "strash; " + resub + area_tail +
              "; &get -m -n; &mfs2 -K 4; &put; lutpack -S 1"))
 if len(sys.argv) > 3:
     selected = set(sys.argv[3:])
@@ -181,6 +202,10 @@ for profile, remap_mux, abc_script in profiles:
     logic_types = {"LUT1", "LUT2", "LUT3", "LUT4", "INV"}
     if remap_mux:
         logic_types |= {"MUXF5", "MUXF6", "MUXF7", "MUXF8"}
+    if profile == "all-carry-sat":
+        # Include the dedicated AND with its carry consumers. Keeping its
+        # output as a fixed boundary would violate the physical connection.
+        logic_types |= {"MUXCY", "XORCY", "MULT_AND"}
     # XST also uses carry multiplexers for wide gates (not arithmetic). Let
     # these named cones participate in Boolean optimization in two trials;
     # all arithmetic carry chains and every state/memory primitive stay fixed.
@@ -188,9 +213,11 @@ for profile, remap_mux, abc_script in profiles:
                    or (profile.startswith("widegate-") and c["type"] == "MUXCY" and "_wg_cy" in n)}
     if profile.startswith("compare-"):
         logic_names |= compare_carry
+    if profile == "short-carry-sat":
+        logic_names |= short_carry | short_sums
     logic = [c for n, c in native["cells"].items() if n in logic_names]
-    driven = {bit for c in logic for bit in c["connections"]["O"] if isinstance(bit, int)}
-    used = {bit for c in logic for port, bits in c["connections"].items() if port != "O"
+    driven = {bit for c in logic for bit in c["connections"][output_port(c)] if isinstance(bit, int)}
+    used = {bit for c in logic for port, bits in c["connections"].items() if port != output_port(c)
             for bit in bits if isinstance(bit, int)}
     boundary = {bit for n, c in native["cells"].items() if n not in logic_names
                 for bits in c["connections"].values() for bit in bits if isinstance(bit, int)}
@@ -229,7 +256,8 @@ for profile, remap_mux, abc_script in profiles:
                                + quote(report / (profile + "-abc.blif")) + "\n")
         abc_command += " -script " + quote(script_path)
     # Compare at every fixed-macro input and top-level output. Sequential
-    # state, carry chains, memories, clocking and I/O stay outside these cones.
+    # state, memories, clocking and I/O stay outside these cones. Selected
+    # carry cells use the exact MUXCY/XORCY/MULT_AND truth tables from UG607.
     run(profile, ["read_verilog " + quote(source), "hierarchy -top gbc_logic",
                   "proc", "flatten", "opt", "techmap", "opt",
                   # Only fixed-macro boundary ports are the proof contract.

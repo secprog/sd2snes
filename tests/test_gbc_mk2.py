@@ -47,6 +47,27 @@ def main():
         # and decoder module. Compare to decoding the original final address,
         # even when raw pins change every clock instead of holding a bus cycle.
         main_source = (root / "verilog/sd2snes_gbc/main.v").read_text()
+        timeout_declarations = main_source.index("`ifdef MK2\n// Only the timeout event")
+        timeout_declarations_end = main_source.index("// MCU r/w request", timeout_declarations)
+        timeout_start = main_source.index("always @(posedge CLK2) begin\n`ifdef MK2\n  if(SNES_CPU_CLKr[1])")
+        timeout_end = main_source.index("always @(posedge CLK2) begin\n  if(SNES_DEADr", timeout_start)
+        timeout_parameter = re.search(r"parameter SNES_DEAD_TIMEOUT =[^;]+;", main_source)[0]
+        timeout_source = Path(tmp) / "timeout_actual.v"
+        timeout_source.write_text('''
+module gbc_timeout_actual(input CLK2, input [7:0] SNES_CPU_CLKr,
+ output dead,reset_strobe);
+ reg SNES_DEADr=1,SNES_reset_strobe;
+ assign dead=SNES_DEADr; assign reset_strobe=SNES_reset_strobe;
+''' + timeout_parameter + "\n" + main_source[timeout_declarations:timeout_declarations_end]
+            + main_source[timeout_start:timeout_end] + "\nendmodule\n")
+        timeout = Path(tmp) / "timeout.vvp"
+        compile_timeout = [args.iverilog, "-g2012", "-DMK2", "-s", "gbc_timeout_tb",
+                           "-o", str(timeout), str(timeout_source),
+                           str(root / "tests/rtl/gbc_timeout_tb.v")]
+        if args.ivl_base:
+            compile_timeout += ["-B", args.ivl_base]
+        subprocess.run(compile_timeout, check=True)
+        subprocess.run([args.vvp, str(timeout)], check=True, timeout=60)
         address_shift = re.findall(r"^\s*SNES_ADDRr\[\d\] <=[^;]+;", main_source, re.M)
         if len(address_shift) != 7:
             raise RuntimeError("SNES address delay pipeline changed")

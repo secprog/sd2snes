@@ -774,8 +774,16 @@ snescmd_buf snescmd (
 // OE always active. Overridden by WE when needed.
 assign ROM_OE = 1'b0;
 
+`ifdef MK2
+// Only the timeout event is observed. XAPP052's 17/14 XOR sequence reaches
+// $001b3 after 84001 low clocks from seed 1, so the following clock asserts
+// the same sticky flag as the original count > 84000 test. No timer value
+// crosses an interface. Keep ordinary flip-flops rather than SRL packing.
+(* shreg_extract = "no" *) reg [16:0] SNES_DEAD_LFSRr = 17'd1;
+`else
 reg[17:0] SNES_DEAD_CNTr;
 initial SNES_DEAD_CNTr = 0;
+`endif
 
 // MCU r/w request
 always @(posedge CLK2) begin
@@ -818,8 +826,14 @@ always @(posedge CLK2) begin
 end
 
 always @(posedge CLK2) begin
+`ifdef MK2
+  if(SNES_CPU_CLKr[1]) SNES_DEAD_LFSRr <= 17'd1;
+  else SNES_DEAD_LFSRr <= {SNES_DEAD_LFSRr[15:0],
+                          SNES_DEAD_LFSRr[16] ^ SNES_DEAD_LFSRr[13]};
+`else
   if(~SNES_CPU_CLKr[1]) SNES_DEAD_CNTr <= SNES_DEAD_CNTr + 1;
   else SNES_DEAD_CNTr <= 17'h0;
+`endif
 end
 
 always @(posedge CLK2) begin
@@ -828,7 +842,11 @@ always @(posedge CLK2) begin
     SNES_DEADr <= 1'b0;
     if(SNES_DEADr) SNES_reset_strobe <= 1'b1;
   end
+`ifdef MK2
+  else if(SNES_DEAD_LFSRr == 17'h001b3) SNES_DEADr <= 1'b1;
+`else
   else if(SNES_DEAD_CNTr > SNES_DEAD_TIMEOUT) SNES_DEADr <= 1'b1;
+`endif
 end
 
 always @(posedge CLK2) begin

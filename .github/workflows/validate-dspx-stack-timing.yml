@@ -31,7 +31,7 @@ jobs:
           printf '%s\n' .github/scripts/validate-dspx-alup-control.py .github/workflows/validate-dspx-stack-timing.yml verilog/sd2snes_dsp/upd77c25.v | LC_ALL=C sort > "$report/expected-changed-paths.txt"
           cmp "$report/expected-changed-paths.txt" "$report/changed-paths.txt"
           test "$(git hash-object --no-filters verilog/sd2snes_dsp/upd77c25.v)" = 29f0f800dd2007f2fcbc8b334cd87e92604084ff
-          test "$(git hash-object --no-filters .github/scripts/validate-dspx-alup-control.py)" = ff8866907bd49fc622c24cabb3120504507accbb
+          test "$(git hash-object --no-filters .github/scripts/validate-dspx-alup-control.py)" = a336368daadd7822015d992ade1bb895846edd93
           test "$(git hash-object --no-filters .github/scripts/post-sync-evidence.py)" = fdb60667eb015c3769b2adc452864396ff64e9e7
           python3 .github/scripts/post-sync-evidence.py snapshot "$GITHUB_WORKSPACE" "$report/source-before"
           git diff "$BASELINE" HEAD -- verilog > "$report/production-change.diff"

@@ -204,13 +204,15 @@ def proof(output):
     rows = []; results = []; first = None
     for index, (board, comp, debug, lean) in enumerate(itertools.product(['MK2','MK3'], [False,True], [False,True], [False,True])):
         defines = [board] + (['DSP_COMP'] if comp else []) + (['DEBUG'] if debug else []) + (['DSP_LEAN'] if lean else [])
+        header = Path('verilog/sd2snes_dspx' if board == 'MK2' and comp else 'verilog/sd2snes_dsp').resolve()
+        (output / ('config-header-' + str(index) + '.vh')).write_bytes((header / 'config.vh').read_bytes())
         paths = []
         for label in ['gold','gate']:
             path = output / (label + '-preprocessed-' + str(index) + '.v')
-            run(['iverilog','-g2005-sv','-E'] + ['-D' + d for d in defines] + ['-o',str(path),str(output / (label + '-source.v'))], output, label + '-preprocess-' + str(index))
+            run(['iverilog','-g2005-sv','-E','-I',str(header)] + ['-D' + d for d in defines] + ['-o',str(path),str(output / (label + '-source.v'))], output, label + '-preprocess-' + str(index))
             paths.append(path)
         target = board == 'MK2' and comp
-        rows.append(dict(index=index, defines=defines, target=target, goldSha256=sha(paths[0].read_bytes()), gateSha256=sha(paths[1].read_bytes())))
+        rows.append(dict(index=index, defines=defines, target=target, header=header.as_posix(), headerSha256=sha((header / 'config.vh').read_bytes()), goldSha256=sha(paths[0].read_bytes()), gateSha256=sha(paths[1].read_bytes())))
         if not target:
             need([s for s in paths[0].read_text().splitlines() if s.strip()] == [s for s in paths[1].read_text().splitlines() if s.strip()], 'Non-target source changed')
             continue

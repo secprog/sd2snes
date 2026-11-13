@@ -77,23 +77,33 @@ def parse_xdl(text, full=False):
         need(len(instances)==3603 and len(nets)==8657,'Original mapped inventory changed')
     return instances,nets
 
-def part(instances,nets,seeds):
-    selected=set(seeds);frontier=set(seeds)
+def part(instances,nets,seeds,stats_path=None):
+    selected=set(seeds)
+    frontier={(comp,'CE') for comp in seeds}
     for depth in range(3):
-        incoming={name for name,body in nets.items() if any(kind=='inpin' and comp in frontier and (pin=='CE' or re.fullmatch(r'[FG][1-4]',pin)) for kind,comp,pin in PIN.findall(body))}
+        incoming={name for name,body in nets.items() if any(kind=='inpin' and (comp,pin) in frontier for kind,comp,pin in PIN.findall(body))}
         following=set()
         for name in incoming:
             for kind,comp,pin in PIN.findall(nets[name]):
-                if kind=='outpin' and comp in instances:
-                    selected.add(comp)
-                    if pin in ['X','Y']:
-                        following.add(comp)
+                if kind!='outpin' or comp not in instances:
+                    continue
+                selected.add(comp)
+                if pin not in ['X','Y']:
+                    continue
+                direct='F' if pin=='X' else 'G'
+                mux='FXMUX::F' if pin=='X' else 'GYMUX::G'
+                # Follow only the LUT slot driving this output. A physical F5/FX
+                # mux conservatively retains both LUTs and BX/BY select inputs.
+                pins=[direct+str(i) for i in range(1,5)] if mux in instances[comp].split() else ['F'+str(i) for i in range(1,5)]+['G'+str(i) for i in range(1,5)]+['BX','BY']
+                following.update((comp,p) for p in pins)
         frontier=following
     selected_nets={name for name,body in nets.items() if any(comp in selected for _,comp,_ in PIN.findall(body))}
     # Preserve immediate source bodies for every selected whole net.
     for name in selected_nets:
         selected.update(comp for kind,comp,_ in PIN.findall(nets[name]) if kind=='outpin' and comp in instances)
     text='\n\n'.join([instances[name] for name in sorted(selected)]+[nets[name] for name in sorted(selected_nets)])+'\n'
+    if stats_path is not None:
+        save(stats_path,dict(components=len(selected),nets=len(selected_nets),bytes=len(text.encode()),seedComponents=sorted(seeds),scope='CE first, then actual driving LUT-slot input edges only; no unrelated seed data-LUT traversal'))
     need(len(selected)<=400 and len(selected_nets)<=700 and len(text.encode())<=3000000,'Fixed component/net/text part bound exceeded; no truncation')
     nodes=[]
     for comp in sorted(selected):
@@ -104,7 +114,7 @@ def part(instances,nets,seeds):
                     if kind=='inpin' and target==comp and re.fullmatch(slot+r'[1-4]',pin):
                         need(pin not in bindings,'Multiply bound LUT pin');bindings[pin]=name
             nodes.append(dict(component=comp,slot=slot,logical=logical,equation=equation,inputNetBindings=bindings))
-    return text,dict(components=sorted(selected),nets=sorted(selected_nets),bytes=len(text.encode()),sha256=sha(text.encode()),luts=nodes,scope='Seed register components, three upstream CE/LUT input layers, whole incident nets and immediate source bodies; no downstream closure or truth evaluation')
+    return text,dict(components=sorted(selected),nets=sorted(selected_nets),bytes=len(text.encode()),sha256=sha(text.encode()),luts=nodes,scope='Seed register components, three upstream CE and driving-LUT-slot input layers, whole incident nets and immediate source bodies; no downstream closure or truth evaluation')
 
 def self_test(output):
     rows=[]
@@ -128,6 +138,18 @@ def self_test(output):
         except ValueError as exc:
             accepted=False;error=str(exc)
         rows.append(dict(name=name,expected=expected,accepted=accepted,error=error,passed=accepted==expected))
+    for mux,expect_far in [('F',False),('FX',True)]:
+        instances={'seed':'inst "seed" "SLICEL";',
+                   'driver':'inst "driver" "SLICEL", cfg " FXMUX::'+mux+' F:lo:#LUT:D=A1 G:hi:#LUT:D=A1 ";',
+                   'branch':'inst "branch" "SLICEL", cfg " FXMUX::F F:branch:#LUT:D=A1 ";',
+                   'near':'inst "near" "SLICEL";', 'far':'inst "far" "SLICEL";'}
+        nets={'ce':'net "ce", outpin "driver" X, inpin "seed" CE;',
+              'lo':'net "lo", outpin "near" XQ, inpin "driver" F1;',
+              'hi':'net "hi", outpin "branch" X, inpin "driver" G1;',
+              'far':'net "far", outpin "far" XQ, inpin "branch" F1;'}
+        _,index=part(instances,nets,{'seed'})
+        actual='far' in index['components']
+        rows.append(dict(name='Exact output mux token '+mux,expectedFarBranch=expect_far,observedFarBranch=actual,passed=actual==expect_far))
     save(output,rows);need(all(x['passed'] for x in rows),'Hosted parser/bound controls failed')
 
 def inspect(archive_path,api,output):
@@ -148,7 +170,7 @@ def inspect(archive_path,api,output):
     for bank in [4,5,6]:
         rows=[x for x in inventory if x['bank']==bank]
         seeds={x['component'] for x in rows}
-        body,index=part(instances,nets,seeds)
+        body,index=part(instances,nets,seeds,output/('dma-bank-'+str(bank)+'-collection-stats.json'))
         (output/('dma-bank-'+str(bank)+'-raw.txt')).write_text(body)
         index['bank']=bank;index['registers']=rows
         bindings=[]

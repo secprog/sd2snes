@@ -28,7 +28,7 @@ jobs:
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           test "$(git rev-parse HEAD:verilog)" = 893e807029df25af8263fd63fa71dadabf02b0d0
           test -z "$(git diff 4d0199bf639629284546858b2b92abcd840b48a9 HEAD -- verilog)"
-          test "$(git hash-object --no-filters .github/scripts/inspect-dspx-dma-write-baseline.py)" = 05f5bc37a0dea1429fb863c162105d97a350d6c9
+          test "$(git hash-object --no-filters .github/scripts/inspect-dspx-dma-write-baseline.py)" = bdf304c04277ba6a89e0e03b45c36a394bb8dd53
           test "$(git hash-object --no-filters .github/scripts/post-sync-evidence.py)" = fdb60667eb015c3769b2adc452864396ff64e9e7
           python3 .github/scripts/post-sync-evidence.py snapshot "$GITHUB_WORKSPACE" "$report/source-before"
       - name: Inspect original mapped DMA register controls on GitHub only

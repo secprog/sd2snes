@@ -53,6 +53,15 @@ endif
 # Include the configuration file
 include $(CONFIG)
 
+# Keep experimental Mk.II GBC objects separate from the production firmware.
+# Switching this option must never reuse objects compiled with the other policy.
+ifeq ($(MK2_GBC_EXPERIMENTAL),1)
+ifneq ($(CONFIG_MK2),y)
+$(error MK2_GBC_EXPERIMENTAL requires CONFIG=config-mk2)
+endif
+CONFIGSUFFIX := $(CONFIGSUFFIX)-gbc
+endif
+
 # OpenOCD search path from config
 export CONFIG_OPENOCD_SCRIPT_PATH ?= .
 
@@ -176,6 +185,7 @@ CSTANDARD = -std=gnu99
 
 # Place -D or -U options here
 CDEFS = -DF_OSC=$(CONFIG_MCU_FOSC)UL
+CDEFS += $(if $(filter 1,$(MK2_GBC_EXPERIMENTAL)),-DCONFIG_MK2_GBC)
 # XC_DEBUG=1: Xeno Crisis soft CPU halt report in /sd2snes/xc_debug.txt (xc.c); off by default
 CDEFS += $(if $(filter 1,$(XC_DEBUG)),-DXC_DEBUG)
 # card overlay load timing probe (ovl.c), published for USB: make OVL_TIMING=1, never a release

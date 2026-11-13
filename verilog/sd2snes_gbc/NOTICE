@@ -47,8 +47,11 @@ Mk.II status
 ------------
 This is an experimental port, excluded from normal Mk.II packages and MCU
 routing until native implementation and console validation are complete.
-The original SGB core remains the normal Mk.II Game Boy core. The Mk.II GBC
-port keeps both VRAM banks, the colour pipeline, HDMA and double speed. Small
+The original SGB core remains the normal Mk.II Game Boy core. An explicit
+MCU build with MK2_GBC_EXPERIMENTAL=1 enables GBC routing and uses a separate
+obj-mk2-gbc directory, so it cannot reuse production objects. The GBC route
+never selects the SGB/MSU variant. The Mk.II GBC port keeps both VRAM banks,
+the colour pipeline, HDMA and double speed. Small
 memories use LUT RAM; the optional MCU state-debug window is omitted there.
 The player image must remain below SRAM $70000, reserved for video storage.
 
@@ -61,6 +64,9 @@ assembles both player variants, and runs the existing SNES-player tests.
 It uploads native resource/timing reports and the two player images.
 Wire $04 uses gbc_snes_mk2.bin; wire $03 keeps gbc_snes.bin. A mismatched pair
 fails the existing version check. No additional image quantisation is used.
+The optional gbc_mcu_check input builds a real Mk.II bootstrap, then compiles
+and links production and experimental MCU firmware in separate object trees.
+These checks do not qualify a GBC bitstream or replace console validation.
 
 
 Block RAM rules

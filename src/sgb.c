@@ -254,13 +254,13 @@ uint8_t sgb_update_romprops(snes_romprops_t *romprops, uint8_t *filename) {
     }
     
     /* Same LoROM slot for both cores; only which bitstream boots it differs.
-       core_is_gbc is set by gbc_id() and is always 0 on the mk2. */
+       core_is_gbc is set by gbc_id(); production Mk.II keeps it at zero. */
     romprops->fpga_conf = sgb_romprops.core_is_gbc ? FPGA_GBC : FPGA_SGB;
     romprops->load_address = 0x880000;
 
 #ifdef CONFIG_MK2
     // FIXME: temporary workaround for MSU
-    if (msu1_check(filename)) {
+    if (!sgb_romprops.core_is_gbc && msu1_check(filename)) {
       // msu1_check has several side effects.  assume they can be safely ignored for this workaround
       extern FIL msudata;      
       f_close(&msudata);

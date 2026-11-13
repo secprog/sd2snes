@@ -18,7 +18,7 @@ def require(condition, message):
 
 
 def check(board, lines):
-    require(board in {'mk2', 'mk3', 'mk3-stm32'}, 'unknown board')
+    require(board in {'mk2', 'mk2-gbc', 'mk3', 'mk3-stm32'}, 'unknown board')
     obj = 'obj-' + board + '/'
     cpu = 'cortex-m4' if board == 'mk3-stm32' else 'cortex-m3'
     compiled = []
@@ -40,6 +40,8 @@ def check(board, lines):
             continue  # Assembler objects have their own source-derived flags.
         require([arg for arg in argv if arg.startswith('-mcpu=')] == ['-mcpu=' + cpu], 'wrong CPU')
         require('-mthumb' in argv, 'missing Thumb mode')
+        if is_c:
+            require(('-DCONFIG_MK2_GBC' in argv) == (board == 'mk2-gbc'), 'wrong experimental GBC routing policy')
         if board == 'mk3-stm32':
             require([arg for arg in argv if arg.startswith('-mfloat-abi=')] == ['-mfloat-abi=hard'], 'wrong float ABI')
         else:
@@ -68,10 +70,11 @@ def check(board, lines):
 
 def self_test():
     accepted = []
-    for board in ('mk2', 'mk3', 'mk3-stm32'):
+    for board in ('mk2', 'mk2-gbc', 'mk3', 'mk3-stm32'):
         obj = 'obj-' + board + '/'
         cpu = '-mcpu=cortex-m4 -mfloat-abi=hard' if board == 'mk3-stm32' else '-mcpu=cortex-m3'
         flags = '-mthumb ' + cpu + ' --specs=nano.specs'
+        if board == 'mk2-gbc': flags += ' -DCONFIG_MK2_GBC'
         fastmem = ' '.join(obj + 'libc_full/libc_a-' + name + '.o' for name in ('memcpy', 'memmove', 'memset'))
         rows = ['arm-none-eabi-gcc -c ' + flags + ' -flto main.c -o ' + obj + 'main.o',
                 'arm-none-eabi-gcc -c ' + flags + ' theme.c -o ' + obj + 'ovl1/theme.o',
@@ -97,6 +100,7 @@ def self_test():
             'wrong_float_abi': [rows[0] + ' -mfloat-abi=soft' if board == 'mk3-stm32' else rows[0] + ' -mfloat-abi=hard'] + rows[1:],
             'misleading_banner': ['log: -flto --specs=nano.specs'] + rows[1:],
         }
+        mutations['gbc_policy'] = [rows[0].replace(' -DCONFIG_MK2_GBC', '') if board == 'mk2-gbc' else rows[0] + ' -DCONFIG_MK2_GBC'] + rows[1:]
         for member in ('memcpy', 'memmove', 'memset'):
             mutations['omit_full_' + member] = rows[:-1] + [rows[-1].replace(' ' + obj + 'libc_full/libc_a-' + member + '.o', '')]
         for label, mutation in mutations.items():
@@ -106,7 +110,7 @@ def self_test():
                 accepted.append(board + ':' + label)
             else:
                 raise ValueError('negative control accepted: ' + board + ':' + label)
-    return {'positiveControls': 3, 'negativeControls': len(accepted) - 3, 'controls': accepted,
+    return {'positiveControls': 4, 'negativeControls': len(accepted) - 4, 'controls': accepted,
             'scope': 'synthetic command-contract controls; not compilation or firmware qualification'}
 
 
@@ -145,7 +149,7 @@ verify_mcu_build() {
     return 1
   fi
   multidir=$(arm-none-eabi-gcc "${flags[@]}" -print-multi-directory)
-  case "$board:$multidir" in mk2:thumb/v7-m/nofp|mk3:thumb/v7-m/nofp|mk3-stm32:thumb/v7e-m+fp/hard) ;; *) return 1 ;; esac
+  case "$board:$multidir" in mk2:thumb/v7-m/nofp|mk2-gbc:thumb/v7-m/nofp|mk3:thumb/v7-m/nofp|mk3-stm32:thumb/v7e-m+fp/hard) ;; *) return 1 ;; esac
   library=$(realpath "$(arm-none-eabi-gcc "${flags[@]}" -print-file-name=libc.a)")
   [[ "$library" == "/opt/gcc-13.5/arm-none-eabi/lib/$multidir/libc.a" ]]
   nano_specs=$(realpath "$(arm-none-eabi-gcc "${flags[@]}" -print-file-name=nano.specs)")
@@ -178,16 +182,19 @@ verify_mcu_build() {
 if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then return 0; fi
 cd "$(dirname "$0")/../.."
 if [[ "${1:-}" == --self-test ]]; then check_mcu_commands --self-test; exit 0; fi
-board=${1:?Expected mk2, mk3 or mk3-stm32}
+board=${1:?Expected mk2, mk2-gbc, mk3 or mk3-stm32}
+config_board=$board
+extra_make_args=()
 case "$board" in
   mk3-stm32) exec bash .github/scripts/check-stm32.sh ;;
   mk2|mk3) ;;
+  mk2-gbc) config_board=mk2; extra_make_args+=(MK2_GBC_EXPERIMENTAL=1) ;;
   *) exit 2 ;;
 esac
-bash .github/scripts/toolchain-info.sh "$board"
+bash .github/scripts/toolchain-info.sh "$config_board"
 make host-tools
 set +e
-make -C src "CONFIG=config-$board" V=1 2>&1 | tee "$board-build.log"
+make -C src "CONFIG=config-$config_board" "${extra_make_args[@]}" V=1 2>&1 | tee "$board-build.log"
 build_statuses=("${PIPESTATUS[@]}")
 set -e
 printf '%s make exit=%s log capture exit=%s\n' "$board" "${build_statuses[0]}" "${build_statuses[1]}"

@@ -14,10 +14,9 @@
    SGBFW (boot ROM), SGBSR (SNES-side image), fpga_sgbfeat (CHIPFEAT $EF) and
    sgb_romprops.core_is_gbc -- so every consumer downstream keeps working unchanged.
 
-   mk3-only: there is no Spartan-3 build of the core, so on the mk2 gbc.c compiles
-   to no-op stubs and a .gb/.gbc keeps booting the SGB exactly as before (a .gbc is
-   NEVER refused there -- unlike .nes/.sms, the Game Boy has a working mk2
-   path).  Same shape as sms.c / atari.c.
+   Production Mk.II firmware keeps no-op stubs and boots the SGB. The separate
+   experimental Mk.II build enables the same policy with CONFIG_MK2_GBC, loading
+   fpga_gbc.bit and its wire-$04 player from the card.
 
    sgb.h has to be included before this header (it defines sgb_romprops_t), the way
    sgb.h itself relies on smc.h for snes_romprops_t.
@@ -31,7 +30,11 @@
 /* SNES-side player, loaded as the booted LoROM image in place of sgbN_snes.bin.
    Built from snes/gbc/gbc_snes.asm; the .bi3 and this file are a COUPLED PAIR
    (GBC-CORE-CONTRACT.md sec. 13) and are never shipped apart. */
+#ifdef CONFIG_MK2
+#define GBC_PLAYER_FILE_STR "/sd2snes/gbc_snes_mk2.bin"
+#else
 #define GBC_PLAYER_FILE_STR "/sd2snes/gbc_snes.bin"
+#endif
 #define GBC_PLAYER_FILE ((const uint8_t*)GBC_PLAYER_FILE_STR)
 /* CGB boot ROM, 2304 bytes ($0000-$00FF + $0200-$08FF), staged at PSRAM 0x800000
    (GBC-CORE-CONTRACT.md sec. 1).  Loaded through SGBFW, so it goes through the

@@ -6,9 +6,8 @@
 
    gbc.c: route a Game Boy image to the FPGA_GBC core. See gbc.h for the model.
 
-   mk3-only: on the mk2 (LPC1754, tight flash and no Spartan-3 build of the core)
-   everything below compiles to no-op stubs, so a .gb/.gbc keeps booting the SGB
-   there exactly as it did -- same shape as the SMS launch in sms.c.
+   Normal Mk.II firmware keeps the SGB path. The experimental Mk.II build
+   enables this policy with CONFIG_MK2_GBC and uses the wire-$04 player.
 */
 
 #include <string.h>
@@ -26,7 +25,7 @@
 extern cfg_t CFG;
 extern sgb_romprops_t sgb_romprops;
 
-#ifndef CONFIG_MK2
+#if !defined(CONFIG_MK2) || defined(CONFIG_MK2_GBC)
 
 /* Both names are written into the SGB globals, so they have to fit them. */
 _Static_assert(sizeof(GBC_BOOT_FILE_STR) <= sizeof(SGBFW),
@@ -138,8 +137,8 @@ void gbc_stage_config(uint32_t image_addr) {
     CFG.gb_rotate_buttons ? 1 : 0);
 }
 
-#else /* CONFIG_MK2: no-op stubs -- the GBC core is mk3-only (no Spartan-3 build of
-         fpga_gbc, and the LPC1754 flash does not pay for the loader).  A .gb/.gbc
+#else /* Production Mk.II: no-op stubs until the experimental port is qualified.
+         A .gb/.gbc
          is NOT refused here the way .nes/.sms/.a26 are: core_is_gbc stays 0 and
          the image boots the SGB, which is a complete Game Boy on this board. */
 
@@ -156,4 +155,4 @@ void gbc_stage_config(uint32_t image_addr) {
   (void)image_addr;
 }
 
-#endif /* CONFIG_MK2 */
+#endif /* Mk.III or experimental Mk.II GBC */

@@ -28,6 +28,10 @@ on:
         type: choice
         options: [none, all, clock]
         default: none
+      gbc_mcu_check:
+        description: Also compile normal and experimental MkII GBC firmware with a freshly built bootstrap
+        type: boolean
+        default: false
       placement_seeds:
         description: For MkII fpga mode only, optional comma-separated placer seeds (1..100)
         type: string
@@ -103,7 +107,7 @@ jobs:
           retention-days: 14
 
   package-contract:
-    if: inputs.build != 'fpga'
+    if: inputs.build != 'fpga' || inputs.gbc_mcu_check
     name: Check firmware and overlay package contracts
     runs-on: ubuntu-22.04
     timeout-minutes: 5
@@ -116,7 +120,7 @@ jobs:
           bash .github/scripts/check-mcu.sh --self-test
 
   prepare-software:
-    if: inputs.build != 'fpga'
+    if: inputs.build != 'fpga' || inputs.gbc_mcu_check
     name: Prepare cached GCC 13.5 toolchain
     needs: package-contract
     runs-on: ubuntu-24.04
@@ -414,7 +418,7 @@ jobs:
           retention-days: 14
 
   mini-mk2:
-    if: inputs.build == 'software' && inputs.mk2_run_id == ''
+    if: (inputs.build == 'software' && inputs.mk2_run_id == '') || (inputs.build == 'fpga' && inputs.gbc_mcu_check && contains(inputs.fpga_cores, 'mk2:gbc'))
     name: Build MkII firmware bootstrap
     runs-on: ubuntu-22.04
     timeout-minutes: 45
@@ -434,6 +438,39 @@ jobs:
         with:
           name: fpga-mk2-mini
           path: verilog/sd2snes_mini/fpga_mini.bit
+          if-no-files-found: error
+          retention-days: 14
+
+  gbc-mcu:
+    if: inputs.build == 'fpga' && inputs.gbc_mcu_check && contains(inputs.fpga_cores, 'mk2:gbc')
+    name: Check production and experimental MkII GBC firmware
+    needs: [mini-mk2, prepare-software]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          name: fpga-mk2-mini
+          path: verilog/sd2snes_mini/
+      - uses: ./.github/actions/prepare-build-image
+        with:
+          target: software
+      - name: Compile and verify both routing policies
+        run: |
+          docker run --rm --user 0:0 --volume "$GITHUB_WORKSPACE:/work" --workdir /work \
+            sd2snes-ci:software /bin/bash -c \
+            'bash .github/scripts/check-mcu.sh mk2 && bash .github/scripts/check-mcu.sh mk2-gbc'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gbc-mk2-mcu-checks
+          path: |
+            mk2*.log
+            src/obj-mk2*/sd2snes*.elf
+            src/obj-mk2*/*.map
+            src/obj-mk2*/firmware.img
+            src/obj-mk2*/ovl*.img
           if-no-files-found: error
           retention-days: 14
 

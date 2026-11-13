@@ -284,7 +284,14 @@ module gbc_snapshot_tb;
       LY0=1; tick; LY0=0;
       if(frame%2) begin
         read_status(24'he20290,0); read_status(24'he20291,0);
+        // Releasing while the copy is still running does not publish it
+        // early. Also cover release after the completed copy is pending.
+        if(frame%4==3) begin
+          repeat(163) tick;
+          read_status(24'he20290,0); read_status(24'he20291,0);
+        end
         command(5);
+        if(frame%4==1) repeat(163) tick;
       end
       published_writes=palette_writes>256 ? 256 : palette_writes;
       read_status(24'he20290,published_writes);

@@ -8,10 +8,11 @@ native=$(find "$experiment/native" -name main_native.edf -print -quit)
 native_dir=$(dirname "$native")
 ip=$(dirname "$(find "$experiment/native" -name vram.ngc -print -quit)")
 project="$root/verilog/sd2snes_gbc/sd2snes_gbc.xise"
-map_options=$(xtclsh "$root/verilog/xilinx_scripts/xgenmapcmd.tcl" "$project")
-par_options=$(xtclsh "$root/verilog/xilinx_scripts/xgenparcmd.tcl" "$project")
-read -r -a map_args <<< "$map_options"
-read -r -a par_args <<< "$par_options"
+xtclsh "$root/.github/scripts/gbc-remap-options.tcl" "$root" "$experiment/reports"
+read -r -a map_args < "$experiment/reports/map.options"
+read -r -a par_args < "$experiment/reports/par.options"
+printf 'MAP options: %s\n' "${map_args[*]}"
+printf 'PAR options: %s\n' "${par_args[*]}"
 
 mkdir -p "$experiment/baseline" "$experiment/candidate"
 cp "$experiment/reports/native-reconstructed.edf" "$experiment/baseline/main.edf"
@@ -71,7 +72,7 @@ trce -v 10 -n 10 -u 10 -fastpaths main.ncd main.pcf -o main.twr || trce_status=$
 [[ "$par_status" == 0 && "$trce_status" == 0 ]]
 grep -Eq 'Timing Score: 0 \(Setup: 0, Hold: 0' main.par
 grep -Eq 'Timing errors: 0[[:space:]]+Score: 0' main.twr
-xtclsh "$root/verilog/xilinx_scripts/xgenbitgenfile.tcl" "$project" main.ut
+xtclsh "$root/verilog/xilinx_scripts/xgenbitgenfile.tcl" "$project" "$experiment/candidate/main.ut"
 bitgen -f main.ut main.ncd
 make -C "$root" host-tools
 "$root/utils/rle" main.bit fpga_gbc.bit

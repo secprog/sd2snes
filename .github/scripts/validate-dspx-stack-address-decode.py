@@ -40,6 +40,101 @@ def reference_permit():
     return '\n'.join(lines + ["    end", "  end", "end", ""])
 
 
+def read_semantics_bench():
+    return """module read_semantics;
+reg [10:0] addr;
+reg [3:0] sp;
+wire [10:0] s0,s1,s2,s3,r0,r1,r2,r3;
+read_raw_gold g0(.CLK(1'b0),.RST(1'b0),.ss_frozen(1'b0),.push_now(1'b0),.ss_wr(1'b0),.pc(11'b0),.DP_ADDR(addr),.regs_sp(sp),.ss_wa(8'b0),.ss_wd(8'b0),.scan_read(s0),.return_read(r0));
+read_raw_gate g1(.CLK(1'b0),.RST(1'b0),.ss_frozen(1'b0),.push_now(1'b0),.ss_wr(1'b0),.pc(11'b0),.DP_ADDR(addr),.regs_sp(sp),.ss_wa(8'b0),.ss_wd(8'b0),.scan_read(s1),.return_read(r1));
+read_guarded_gold g2(.CLK(1'b0),.RST(1'b0),.ss_frozen(1'b0),.push_now(1'b0),.ss_wr(1'b0),.pc(11'b0),.DP_ADDR(addr),.regs_sp(sp),.ss_wa(8'b0),.ss_wd(8'b0),.scan_read(s2),.return_read(r2));
+read_guarded_gate g3(.CLK(1'b0),.RST(1'b0),.ss_frozen(1'b0),.push_now(1'b0),.ss_wr(1'b0),.pc(11'b0),.DP_ADDR(addr),.regs_sp(sp),.ss_wa(8'b0),.ss_wd(8'b0),.scan_read(s3),.return_read(r3));
+integer pattern,a,c,k,digit,checks;
+task seed;
+  input integer pattern;
+  integer word;
+  reg [10:0] value;
+  begin
+    for(word=0;word<16;word=word+1) begin
+      if(pattern==0) value=11'h000;
+      else if(pattern==1) value=11'h7ff;
+      else if(pattern==2) value=(word*11'h071)^11'h5a5;
+      else if((pattern-3)/11==word) value=11'h001<<((pattern-3)%11);
+      else value=11'h000;
+      g0.stack[word]=value;g1.stack[word]=value;g2.stack[word]=value;g3.stack[word]=value;
+    end
+  end
+endtask
+task compare;
+  begin
+    #1;
+    if(s0!==s1 || s0!==s2 || s0!==s3 || r0!==r1 || r0!==r2 || r0!==r3)
+      $fatal(1,"Read semantics differ pattern=%0d addr=%b sp=%b scan=%b/%b/%b/%b return=%b/%b/%b/%b",pattern,addr,sp,s0,s1,s2,s3,r0,r1,r2,r3);
+    if(sp===4'h0 && (r0!==11'bx || r1!==11'bx))
+      $fatal(1,"Untouched unsized SP0 return must remain out-of-range X");
+    checks=checks+1;
+  end
+endtask
+initial begin
+  checks=0;addr=0;sp=0;
+  for(pattern=0;pattern<179;pattern=pattern+1) begin
+    seed(pattern);
+    for(a=0;a<256;a=a+1) begin addr=a;sp=a;compare;end
+    addr=11'h034;
+    for(c=0;c<256;c=c+1) begin
+      for(k=0;k<4;k=k+1) begin
+        digit=(c>>(2*k))&3;
+        case(digit) 0:sp[k]=1'b0;1:sp[k]=1'b1;2:sp[k]=1'bx;3:sp[k]=1'bz;endcase
+      end
+      compare;
+    end
+    if(pattern<3) begin
+      sp=4'h1;
+      for(c=0;c<65536;c=c+1) begin
+        for(k=0;k<8;k=k+1) begin
+          digit=(c>>(2*k))&3;
+          case(digit) 0:addr[k]=1'b0;1:addr[k]=1'b1;2:addr[k]=1'bx;3:addr[k]=1'bz;endcase
+        end
+        compare;
+      end
+    end
+  end
+  if(checks!=179*512+3*65536) $fatal(1,"Incomplete semantic check inventory");
+  $display("READ_SEMANTICS_VERIFIED checks=%0d all176basis all4stateSP all4stateScan SP0_X retained; raw and guarded source models match",checks);
+  $finish;
+end
+endmodule
+"""
+
+
+def check_read_semantics(output):
+    executable=output.parent/('dspx-read-semantics-'+str(os.getpid())+'.vvp')
+    models=['read-semantics.v','read-raw-gold.v','read-raw-gate.v','read-guarded-gold.v','read-guarded-gate.v']
+    commands=[['iverilog','-g2012','-s','read_semantics','-o',str(executable.resolve())]+models,
+              ['vvp',str(executable.resolve())]]
+    results=[]
+    try:
+        for i,command in enumerate(commands):
+            record=dict(argv=command,cwd=str(output.resolve()))
+            save(output/('read-semantics-'+str(i)+'-attempt.json'),record)
+            result=subprocess.run(command,cwd=output,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=600)
+            for stream,raw in [('stdout',result.stdout),('stderr',result.stderr)]:
+                need(len(raw)<=3000000 and b'\0' not in raw,'Invalid semantic check console')
+                raw.decode('utf-8');(output/('read-semantics-'+str(i)+'-'+stream+'.log')).write_bytes(raw)
+                print(raw.decode('utf-8'),end='',flush=True)
+            record.update(exit=result.returncode,stdoutSha256=sha(result.stdout),stderrSha256=sha(result.stderr))
+            save(output/('read-semantics-'+str(i)+'-status.json'),record);results.append(record)
+            need(result.returncode==0,'Hosted source read semantics check failed')
+            if i==1:
+                need('READ_SEMANTICS_VERIFIED checks=288256 ' in result.stdout.decode(),'Incomplete source read semantic checks')
+    finally:
+        if executable.exists():
+            executable.unlink()
+    save(output/'read-semantics-result.json',dict(passed=True,commands=results,
+         checkedCases=288256,all176BasisStates=True,all4StateSp=True,all4StateScanAddress=True,
+         originalNativeExpressionsUnchanged=True,scope='Read semantics and formal guard validation only; full arbitrary-state transition SAT still required.'))
+
+
 def prepare(output):
     output.mkdir(parents=True, exist_ok=True)
     old_bytes = subprocess.check_output(['git','show',BASELINE + ':' + SOURCE])
@@ -157,6 +252,18 @@ reg [10:0] stack [15:0];
     gold_write="always @(posedge CLK) begin\n  if(RST & ~ss_frozen) begin\n"+FRAGMENTS['originalPush']+"  end else if(RST & ss_frozen) begin\n    if(ss_wr) begin\n      if(ss_wa >= 8'h34 && ss_wa <= 8'h53) begin\n"+FRAGMENTS['originalRestore']+"      end\n    end\n  end\nend\n"
     cgold=stack_prefix+gold_write+stack_suffix
     cgate=stack_prefix+"reg [15:0] stack_restore_permit;\n"+reference_decode+FRAGMENTS['writes']+stack_suffix
+    # Keep both untouched read models for a separate hosted Icarus semantic
+    # check. Yosys0.33 mem2reg narrows the unsized subtraction for one model;
+    # explicit invalid-index X guards below preserve array-read semantics.
+    (output/'read-raw-gold.v').write_text(once(cgold,'module stack_model(','module read_raw_gold('),encoding='utf-8')
+    (output/'read-raw-gate.v').write_text(once(cgate,'module stack_model(','module read_raw_gate('),encoding='utf-8')
+    scan_guard="assign scan_read = ((^ss_stk_idx) === 1'bx) ? 11'bx : stack[ss_stk_idx];"
+    return_guard="wire [31:0] proof_return_index = regs_sp - 1;\nassign return_read = (((^proof_return_index) === 1'bx) || proof_return_index >= 32'd16) ? 11'bx : stack[proof_return_index];"
+    cgold=once(once(cgold,'assign scan_read = stack[ss_stk_idx];',scan_guard),'assign return_read = stack[regs_sp-1];',return_guard)
+    cgate=once(once(cgate,'assign scan_read = stack[ss_stk_idx];',scan_guard),'assign return_read = stack[regs_sp-1];',return_guard)
+    (output/'read-guarded-gold.v').write_text(once(cgold,'module stack_model(','module read_guarded_gold('),encoding='utf-8')
+    (output/'read-guarded-gate.v').write_text(once(cgate,'module stack_model(','module read_guarded_gate('),encoding='utf-8')
+    (output/'read-semantics.v').write_text(read_semantics_bench(),encoding='utf-8')
     consumer={'gold':cgold,'gate':cgate}
     def block_mutation(model,word,before,after):
         block=FRAGMENTS['blocks'][word];changed=once(block,before,after)
@@ -178,9 +285,10 @@ reg [10:0] stack [15:0];
     }
     for name,(word,before,after) in changes.items():
         consumer[name]=block_mutation(cgate,word,before,after)
-    consumer['bad-return']=once(cgate,'assign return_read = stack[regs_sp-1];','assign return_read = stack[regs_sp+1];')
-    consumer['bad-scan']=once(cgate,'assign scan_read = stack[ss_stk_idx];',"assign scan_read = stack[ss_stk_idx] ^ 11'h001;")
-    need(len(producer)==10 and len(consumer)==17,'Unexpected complete model inventory')
+    consumer['bad-return']=once(cgate,'stack[proof_return_index];','stack[regs_sp+1];')
+    consumer['bad-return-wrap']=once(cgate,return_guard,"assign return_read = stack[regs_sp-4'd1];")
+    consumer['bad-scan']=once(cgate,'stack[ss_stk_idx];',"(stack[ss_stk_idx] ^ 11'h001);")
+    need(len(producer)==10 and len(consumer)==18,'Unexpected complete model inventory')
     for family,models in [('producer',producer),('consumer',consumer)]:
         for name,text in models.items():
             (output/(family+'-'+name+'.v')).write_text(text,encoding='utf-8')
@@ -203,6 +311,8 @@ reg [10:0] stack [15:0];
          exactFullSourceInverse=True,sourceBlocks=FRAGMENTS,originalProducerStateBits=17,newProducerStateBits=33,
          originalStackBits=176,newAddressControlBits=16,referencePermit=reference_decode,goldWrite=gold_write,
          nativeReturnUnchanged=FRAGMENTS['returnRead'],nativeScanUnchanged=FRAGMENTS['scanRead'],
+         proofOnlyReadGuards=dict(scan=scan_guard,returnRead=return_guard),
+         readSemanticCheck='Hosted Icarus compares untouched and explicitly guarded models on every4-state4-bit SP and every4-state8-bit scan address, plus all176 one-bit stack basis states with all binary addresses. Native source expressions unchanged. No nomem2reg/ignore_gold_x/positive assumption.',
          composition='Producer proves initial and every next qualified word/data/lane/strobe transaction. Consumer compares every176-bit state transition and both unchanged reads using that separately proved transaction boundary. No SAT assumptions or positive constraints.',
          initialContract='Original ss_wr init0 masks original uninitialized address/data. New16 address bits init0; no extra architectural latency.',
          wholeMappedOrElectricalQualification=False))
@@ -582,6 +692,7 @@ def miter_controls(path,family,observation):
 
 def prove(output):
     plan=json.loads((output/'proof-plan.json').read_text(encoding='utf-8'))
+    check_read_semantics(output)
     results=[]
     for family,key in [('producer','producerModels'),('consumer','consumerModels')]:
         for variant in plan[key]:

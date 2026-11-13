@@ -13,7 +13,7 @@ env:
   BASELINE: 4d0199bf639629284546858b2b92abcd840b48a9
 jobs:
   proof:
-    name: Prove complete complete32bit M/N state
+    name: Prove complete32bit M/N state
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -31,7 +31,7 @@ jobs:
           printf '%s\n' .github/scripts/validate-dspx-mn-control.py .github/workflows/validate-dspx-stack-timing.yml verilog/sd2snes_dsp/upd77c25.v | LC_ALL=C sort > "$report/expected-changed-paths.txt"
           cmp "$report/expected-changed-paths.txt" "$report/changed-paths.txt"
           test "$(git hash-object --no-filters verilog/sd2snes_dsp/upd77c25.v)" = eb6fb993ff3e699c0c83fc3516de43548fa65063
-          test "$(git hash-object --no-filters .github/scripts/validate-dspx-mn-control.py)" = f9dc361a85295d284d0c6aac858b49434d33c371
+          test "$(git hash-object --no-filters .github/scripts/validate-dspx-mn-control.py)" = 26982304ef792f917b97d4a68cdf506499ba87fb
           test "$(git hash-object --no-filters .github/scripts/post-sync-evidence.py)" = fdb60667eb015c3769b2adc452864396ff64e9e7
           python3 .github/scripts/post-sync-evidence.py snapshot "$GITHUB_WORKSPACE" "$report/source-before"
           git diff "$BASELINE" HEAD -- verilog > "$report/production-change.diff"

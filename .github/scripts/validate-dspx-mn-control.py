@@ -182,6 +182,71 @@ def prove_pair(gold, gate, output, mode, expected):
     save(output / 'proof-review.json', receipt)
     return receipt
 
+def simulate_pair(gold_text,gate_text,output,expected):
+    output.mkdir()
+    (output/'gold.v').write_text(gold_text.replace('module mn_model(', 'module gold_model(', 1))
+    (output/'gate.v').write_text(gate_text.replace('module mn_model(', 'module gate_model(', 1))
+    bench="""module mn_tb;
+reg CLK=0,RST=0,ss_frozen=0,ss_wr=0;
+reg [7:0] ss_wa=0,ss_wd=0,insn_state=1;
+reg [31:0] mul_result=32'h13579bdf;
+wire [31:0] gold_state,gate_state;
+wire [7:0] gmlo,gmhi,gnlo,gnhi,cmlo,cmhi,cnlo,cnhi;
+integer checks=0,j;
+gold_model gold(.CLK(CLK),.RST(RST),.ss_frozen(ss_frozen),.ss_wr(ss_wr),.ss_wa(ss_wa),.ss_wd(ss_wd),.insn_state(insn_state),.mul_result(mul_result),.state(gold_state),.scan_m_low(gmlo),.scan_m_high(gmhi),.scan_n_low(gnlo),.scan_n_high(gnhi));
+gate_model gate(.CLK(CLK),.RST(RST),.ss_frozen(ss_frozen),.ss_wr(ss_wr),.ss_wa(ss_wa),.ss_wd(ss_wd),.insn_state(insn_state),.mul_result(mul_result),.state(gate_state),.scan_m_low(cmlo),.scan_m_high(cmhi),.scan_n_low(cnlo),.scan_n_high(cnhi));
+task tick;
+begin
+ CLK=0;#1;CLK=1;#1;checks=checks+1;
+ if(gold_state !== gate_state || {gmlo,gmhi,gnlo,gnhi} !== {cmlo,cmhi,cnlo,cnhi}) begin
+  $display("MN_STATE_MISMATCH check=%0d state=%b RST=%b frozen=%b gold=%h gate=%h",checks,insn_state,RST,ss_frozen,gold_state,gate_state);
+  $fatal(1,"Actual M/N transition mismatch");
+ end
+ CLK=0;#1;
+end
+endtask
+task seed_restore;
+begin
+ RST=1;ss_frozen=1;ss_wr=1;
+ ss_wa=8'h14;ss_wd=8'ha5;tick;
+ ss_wa=8'h15;ss_wd=8'h5a;tick;
+ ss_wa=8'h16;ss_wd=8'h3c;tick;
+ ss_wa=8'h17;ss_wd=8'hc3;tick;
+ ss_wr=0;ss_frozen=0;
+end
+endtask
+initial begin
+ tick;seed_restore;insn_state=1;tick;
+ insn_state=2;tick;
+ for(j=0;j<8;j=j+1) begin
+  seed_restore;insn_state=1;insn_state[j]=1'bx;tick;
+  seed_restore;insn_state=1;insn_state[j]=1'bz;tick;
+ end
+ seed_restore;insn_state=1;RST=1'bx;tick;
+ seed_restore;insn_state=1;RST=1'bz;tick;
+ seed_restore;insn_state=1;ss_frozen=1'bx;tick;
+ seed_restore;insn_state=1;ss_frozen=1'bz;tick;
+ seed_restore;ss_frozen=1;ss_wr=1'bx;ss_wa=8'h14;tick;
+ seed_restore;ss_frozen=1;ss_wr=1'bz;ss_wa=8'h14;tick;
+ seed_restore;ss_frozen=1;ss_wr=1;ss_wa=8'h14;ss_wa[0]=1'bx;tick;
+ seed_restore;ss_frozen=1;ss_wr=1;ss_wa=8'h14;ss_wa[0]=1'bz;tick;
+ seed_restore;insn_state=1;mul_result=32'hxxxxxxxx;tick;
+ $display("MN_DIRECTED_X_CHECKS_PASSED checks=%0d",checks);$finish;
+end
+endmodule
+"""
+    (output/'bench.v').write_text(bench)
+    run(['iverilog','-g2012','-s','mn_tb','-o','bench.vvp','gold.v','gate.v','bench.v'],output,'compile-simulation')
+    product=output/'bench.vvp';save(output/'simulation-product.json',dict(bytes=product.stat().st_size,sha256=sha(product.read_bytes()),retained=False,execution='GitHub-only vvp'))
+    code,log=run(['vvp','bench.vvp'],output,'simulation',expected=None)
+    product.unlink()
+    if expected:
+        need(code==0 and 'MN_DIRECTED_X_CHECKS_PASSED' in log and 'MN_STATE_MISMATCH' not in log,'Actual Icarus directed X/Z M/N comparison failed')
+    else:
+        need(code!=0 and 'MN_STATE_MISMATCH' in log and 'MN_DIRECTED_X_CHECKS_PASSED' not in log,'Actual casex simulation corruption was not detected')
+    save(output/'simulation-review.json',dict(expectedPass=expected,actualExit=code,model='actual closed M/N writer pair',scope='Directed X/Z state/reset/freeze/restore strobes and data; complements arbitrary-state Yosys proof, not exhaustive four-state simulation',noInternalForceOrInitialization=True))
+    
+
 def proof(output):
     output.mkdir(parents=True,exist_ok=True)
     original=subprocess.check_output(['git','show',BASE+':'+SOURCE]).decode();gate=Path(SOURCE).read_text()
@@ -221,10 +286,12 @@ def proof(output):
         candidate=HEADER+FRAGMENTS['stateFetchDeclaration']+'\n'+FRAGMENTS['body']+TRAILER+FRAGMENTS['helpers']+'\n'
         folder=output/('config-'+str(index));folder.mkdir()
         compile_model(golden,folder/'gold','gold');compile_model(candidate,folder/'gate','gate')
+        simulate_pair(golden,candidate,folder/'directed-simulation',True)
         for mode in ['binary','xstate']:
             results.append(prove_pair(folder/'gold',folder/'gate',folder/mode,mode,True))
         if first is None:first=(folder/'gold',candidate)
     gold,candidate=first
+    simulate_pair((gold/'model.v').read_text(),once(candidate,'case(key)','casex(key)'),output/'actual-casex-simulation-control',False)
     normal=FRAGMENTS['normal'];restore=FRAGMENTS['restore'];reset=FRAGMENTS['reset']
     mutations=[
       ('missing-reset',reset,"    regs_m <= regs_m;\n    regs_n <= regs_n;"),
@@ -235,7 +302,7 @@ def proof(output):
       ('wrong-fetch-high','.VALUE(STATE_FETCH[7:4])',".VALUE(4'b0001)"),
       ('wrong-product-sign','{mul_result[31], mul_result[29:15]}','{mul_result[30], mul_result[29:15]}'),
       ('missing-n-shift',"{mul_result[14:0], 1'b0}",'mul_result[15:0]'),
-      ('x-state-casex','case(key)','casex(key)'),
+      ('x-state-unknown-as-true',"  match = 1'b0;\n  case(key)\n    VALUE: match = 1'b1;\n  endcase", "  match = ((key == VALUE) !== 1'b0);"),
       ('x-run-guard','if(RST & ~ss_frozen) begin',"if((RST !== 1'b0) & (ss_frozen !== 1'b1)) begin"),
       ('x-unused-product-bit','regs_m <= {mul_result[31], mul_result[29:15]};','regs_m <= {mul_result[31], mul_result[29:15]} ^ {16{mul_result[30] & ~mul_result[30]}};')]
     for label,before,after in mutations:
@@ -245,7 +312,7 @@ def proof(output):
     save(output/'preprocessor-configurations.json',configs);save(output/'full-state-results.json',results)
     sums=[sha(p.read_bytes())+'  '+p.relative_to(output).as_posix() for p in sorted(output.rglob('*')) if p.is_file() and p.name!='SHA256SUMS']
     (output/'SHA256SUMS').write_text('\n'.join(sums)+'\n')
-    (output/'verified.txt').write_text('Complete32bitactualM/Nwriter transitions/observations proved forbinary andunrestrictedX in4targetconfigs witharbitrarycurrentstate; noinitializationadded;fullreset/productpacking/restorepreserved;11badsource and4observation counterexamples. No temporal skips/assumptions/wholemapped/timing/hardwareclaim.\n')
+    (output/'verified.txt').write_text('Complete32bitactualM/Nwriter transitions/observations proved forbinary andunrestrictedX in4targetconfigs witharbitrarycurrentstate; noinitializationadded;fullreset/productpacking/restorepreserved;11badsource and4observation counterexamples;4directedIcarusX/Zpositivechecksandactualcasexsimulationnegative. No temporal skips/assumptions/wholemapped/timing/hardwareclaim.\n')
 
 def baseline(output):
     output.mkdir(parents=True, exist_ok=False)

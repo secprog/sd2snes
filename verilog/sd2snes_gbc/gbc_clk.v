@@ -140,10 +140,10 @@ localparam [3:0]  LOCK_FRAMES = 4'd8;
 // K2 stays inside [1669004,1702720], including Exact's 1675446.
 // Keeping the stored rate unsigned avoids synthesizing three redundant bits.
 localparam K2_BITS=21, DIFF_BITS=18, ERR_BITS=17, KI_BITS=14,
-           KI_NEXT_BITS=16, P_BITS=21;
+           KI_NEXT_BITS=14, P_BITS=16, ABS_BITS=10;
 `else
 localparam K2_BITS=24, DIFF_BITS=19, ERR_BITS=19, KI_BITS=18,
-           KI_NEXT_BITS=18, P_BITS=22;
+           KI_NEXT_BITS=18, P_BITS=22, ABS_BITS=17;
 `endif
 `ifdef MK2
 // Every committed rate, including Exact, lies in 0x19778c..0x19fb40.
@@ -241,18 +241,18 @@ reg               frozen_q;     // this update only republishes K2_NOM + K_i
 reg               locked_q;     // lock state this update is allowed to slew at
 reg  signed [DIFF_BITS-1:0] diff_r; // dot - ALVO, before the modular reduction
 reg  signed [ERR_BITS-1:0] err_q;   // dots, [-35112, +35112)
-reg  [16:0]       err_abs_q;
+reg  [ABS_BITS-1:0] err_abs_q;
 reg  signed [KI_BITS-1:0] ki_r;        // the integral term, in LSB of K2
 reg  signed [KI_NEXT_BITS-1:0] ki_next_r; // ... before its clamp
 reg  signed [P_BITS-1:0] p_term_r;     // kp * err, in LSB of K2
 `ifdef MK2
-// Separate pipeline registers avoid a three-input mux on every target bit.
-// NOM+KI is positive and fits 21 bits. For every 17-bit dot input the next
-// difference is 889030..2251750, positive and fitting 22 unsigned bits.
-// After clamping, only the low 16 rate bits vary. The upper slew bound can
-// cross 0x1a0000, so retain its carry; the lower bound stays above 0x190000.
-reg [20:0] tgt_sum_r;
-reg [21:0] tgt_diff_r;
+// Work relative to 0x190000, the invariant upper rate bits. If the signed
+// error does not fit 12 bits, |kp*err| >= 32768: even KI's +/-4096 cannot
+// bring it inside the +/-16858 clamp. Preserve that decision separately.
+// Otherwise NOM.low+KI-kp*err stays in 10598..84326, fitting 17 unsigned bits.
+reg p_large_r, p_negative_r;
+reg [15:0] tgt_sum_r;
+reg [16:0] tgt_diff_r;
 reg [15:0] tgt_low_r, k2_lo_low_r;
 reg [16:0] k2_hi_low_r;
 `else
@@ -275,8 +275,8 @@ wire signed [18:0] diff_w = $signed({2'b00, dot_q}) - $signed({2'b00, ALVO});
 `ifdef MK2
 // Even an out-of-range 17-bit dot sample gives diff in [-11525,119546].
 // Therefore the negative-wrap arm is unreachable. After the positive wrap
-// err fits signed 17 bits, and err*16 fits signed 21 bits. KI is clamped to
-// +/-4096; its pre-clamp sum fits signed 16 bits for every such sample.
+// err fits signed 17 bits. KI is clamped to +/-4096; the INT2 gate allows
+// only a step up to 127, so every committed pre-clamp sum fits signed 14 bits.
 wire signed [18:0] err_w = (diff_r >= $signed(DOT_HALF)) ? diff_r - $signed(DOT_MOD)
                                                       : diff_r;
 `else
@@ -288,7 +288,15 @@ wire signed [18:0] err_w  = (diff_r >=  $signed(DOT_HALF)) ? diff_r - $signed(DO
 // Integrator step, magnitude first so the shift rounds toward zero.  An
 // arithmetic right shift of a negative error rounds toward -inf, which turns
 // err = -1 into a permanent +1 LSB per frame ratchet on K_i.
+`ifdef MK2
+// Only |err|<512 may update KI, so the committed step is at most 127. Values
+// outside that interval are deliberately ignored by the existing INT2 gate.
+wire [6:0] ki_step_w = err_abs_q[8:2];
+wire abs_large = err_q[16:9] != {8{err_q[9]}};
+wire [9:0] abs_small = err_q[16] ? -err_q[9:0] : err_q[9:0];
+`else
 wire [16:0]        ki_step_w = err_abs_q >> KI_SHIFT;
+`endif
 wire signed [17:0] ki_next_w = err_q[ERR_BITS-1] ? ki_r + $signed({1'b0, ki_step_w})
                                          : ki_r - $signed({1'b0, ki_step_w});
 
@@ -327,6 +335,7 @@ always @(posedge CLK) begin
 `ifdef MK2
     tgt_sum_r <= 0; tgt_diff_r <= 0; tgt_low_r <= 0;
     k2_hi_low_r <= 0; k2_lo_low_r <= 0;
+    p_large_r <= 0; p_negative_r <= 0;
 `else
     tgt_r      <= 24'sd0;
     k2_hi_r    <= 24'sd0;
@@ -372,7 +381,13 @@ always @(posedge CLK) begin
       end
 
       ST_ABS: begin
+`ifdef MK2
+        // All consumers ask only whether the magnitude is below 64 or 512.
+        // Saturating at 512 retains both predicates without a 17-bit negate.
+        err_abs_q <= abs_large ? 10'd512 : abs_small;
+`else
         err_abs_q <= err_q[ERR_BITS-1] ? (~err_q[16:0] + 17'd1) : err_q[16:0];
+`endif
         // GBDG +10 is 16 bits and the error is 17; saturate rather than wrap,
         // so a pre-lock error reads as "huge" instead of as its own negation.
         // Not published for a frozen update: the dot counter is stopped with
@@ -391,6 +406,10 @@ always @(posedge CLK) begin
         // there anyway, and keeping it out of the gated branch keeps this
         // state one chain deep.
         ki_next_r <= ki_next_w;
+`ifdef MK2
+        p_large_r <= !frozen_q && (err_q[16:11] != {6{err_q[11]}});
+        p_negative_r <= err_q[16];
+`endif
 
         if (frozen_q) begin
           // Frozen: republish K2_NOM + K_i and touch nothing else.  The phase
@@ -427,7 +446,7 @@ always @(posedge CLK) begin
 
       ST_TGT1: begin
 `ifdef MK2
-        tgt_sum_r <= $signed({1'b0, K2_NOM[22:0]}) + $signed(ki_r);
+        tgt_sum_r <= $signed({1'b0, K2_NOM[15:0]}) + $signed(ki_r);
 `else
         tgt_r <= $signed({1'b0, K2_NOM[22:0]}) + $signed(ki_r);
 `endif
@@ -445,8 +464,9 @@ always @(posedge CLK) begin
 
       ST_CLAMP: begin
 `ifdef MK2
-        tgt_low_r <= (tgt_diff_r < K2_MIN) ? K2_MIN[15:0]
-                   : (tgt_diff_r > K2_MAX) ? K2_MAX[15:0] : tgt_diff_r[15:0];
+        tgt_low_r <= p_large_r ? (p_negative_r ? K2_MAX[15:0] : K2_MIN[15:0])
+                   : (tgt_diff_r < {1'b0,K2_MIN[15:0]}) ? K2_MIN[15:0]
+                   : (tgt_diff_r > {1'b0,K2_MAX[15:0]}) ? K2_MAX[15:0] : tgt_diff_r[15:0];
 `else
         tgt_r <= (tgt_r < K2_MIN) ? K2_MIN : (tgt_r > K2_MAX) ? K2_MAX : tgt_r;
 `endif

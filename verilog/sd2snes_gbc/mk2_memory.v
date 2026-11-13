@@ -61,16 +61,16 @@ module gbc_oam_positions #(parameter SLOTS=10)(input CLK, CLEAR, WRITE, CONSUME,
   // Apply the sentinel after selecting a byte. Masking every stored position
   // would put an eight-bit mux in front of each slot and its lookup comparator.
   assign Q=valid_slots[RADDR] ? positions[RADDR*8 +: 8] : 8'hf0;
-  function [4:0] first_match;
+  function [4:0] select_first_slot;
     input [SLOTS-1:0] hits;
     integer lookup;
     begin
-      first_match={1'b0,4'hf};
+      select_first_slot={1'b0,4'hf};
       for(lookup=SLOTS-1;lookup>=0;lookup=lookup-1)
-        if(hits[lookup]) first_match={1'b1,lookup[3:0]};
+        if(hits[lookup]) select_first_slot={1'b1,lookup[3:0]};
     end
   endfunction
-  assign {FOUND,MATCH}=first_match(match_slots);
+  assign {FOUND,MATCH}=select_first_slot(match_slots);
 endmodule
 
 // Per-row enables avoid a variable bit write becoming a wide feedback mux.

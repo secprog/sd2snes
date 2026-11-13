@@ -23,9 +23,11 @@ module gbc_snapshot_tb;
   reg mf_valid=0;
   reg [3:0] mf_kind=0;
   integer palette_writes, published_writes;
+  wire [8:0] command_match = EF && ADDR[7:0]<9 ? (9'd1 << ADDR[7:0]) : 9'd0;
 
   gbc_bridge dut(.CLK(CLK),.RST(RST),.SNES_WR_end(WR),.SNES_ADDR(ADDR),
     .DATA_IN(DIN),.VIEW_ENABLE(VIEW),.EF_ENABLE(EF),.DATA_OUT(DOUT),
+    .CMD_MATCH(command_match),
     .FB_MEM_ACK(FB_ACK),.FB_MEM_Q(8'd0),.CE1(1'b0),.BUS_EDGE(1'b0),
     .STARVATION(starvation),.DILATION(16'd0),.P1I(2'b11),
     .PPU_DOT_EDGE(1'b0),.PPU_VSYNC_EDGE(1'b0),.LCD_ON(1'b1),.COMPAT(COMPAT),

@@ -31,6 +31,9 @@ module sgb(
   input  [7:0]  DATA_IN,
   input         VIEW_ENABLE,   // $E0-$E3 read
   input         EF_ENABLE,     // $EF00xx write
+`ifdef MK2
+  input [8:0]   CMD_MATCH,     // retimed address-only decode, aligned to SNES_ADDR
+`endif
   output [7:0]  DATA_OUT,
 
 `ifdef GBC_EXTERNAL_FB
@@ -469,6 +472,9 @@ gbc_bridge bridge(
   .DATA_IN(DATA_IN),
   .VIEW_ENABLE(VIEW_ENABLE),
   .EF_ENABLE(EF_ENABLE),
+`ifdef MK2
+  .CMD_MATCH(CMD_MATCH),
+`endif
   .DATA_OUT(DATA_OUT),
 `ifdef GBC_EXTERNAL_FB
   .FB_MEM_REQ(FB_MEM_REQ), .FB_MEM_WR(FB_MEM_WR), .FB_MEM_ADDR(FB_MEM_ADDR),

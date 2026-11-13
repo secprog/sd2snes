@@ -196,6 +196,13 @@ reg free_strobe = 0;
 reg ram_free_strobe = 0;
 
 wire [23:0] SNES_ADDR = (SNES_ADDRr[6] & SNES_ADDRr[5]);
+`ifdef MK2
+// Retimed two stages ahead of the existing deglitch output, not two clocks
+// after it: MATCH describes exactly the same address as SNES_ADDR each cycle.
+wire [8:0] gbc_cmd_match;
+gbc_command_decode command_decode(.CLK(CLK2),
+  .ADDR_EARLY(SNES_ADDRr[4] & SNES_ADDRr[3]), .MATCH(gbc_cmd_match));
+`endif
 wire [7:0] SNES_PA = (SNES_PAr[6] & SNES_PAr[5]);
 wire [7:0] SNES_DATA_IN = (SNES_DATAr[3] & SNES_DATAr[2]);
 
@@ -434,6 +441,9 @@ sgb snes_sgb (
   .DATA_IN(SGB_SNES_DATA_IN),
   .VIEW_ENABLE(gbc_view_enable),
   .EF_ENABLE(gbc_ef_enable),
+`ifdef MK2
+  .CMD_MATCH(gbc_cmd_match),
+`endif
   .DATA_OUT(SGB_SNES_DATA_OUT),
 `ifdef GBC_EXTERNAL_FB
   .FB_MEM_REQ(FB_MEM_REQ), .FB_MEM_WR(FB_MEM_WR), .FB_MEM_ADDR(FB_MEM_ADDR),
@@ -1134,4 +1144,20 @@ assign SNES_DATABUS_DIR = (~SNES_READ | (~SNES_PARD & (r213f_enable)))
 
 assign SNES_IRQ = 1'b0;
 
+endmodule
+
+// $EF0000..08 are the bridge command strobes. Split their address-only decode
+// across two existing address-delay clocks, leaving the write-end strobe and
+// data on their original cycle. No bus-stability assumption is needed.
+module gbc_command_decode(input CLK, input [23:0] ADDR_EARLY,
+                          output reg [8:0] MATCH=0);
+  reg page_match=0;
+  reg [8:0] byte_match=0;
+  integer command;
+  always @(posedge CLK) begin
+    page_match <= ADDR_EARLY[23:8] == 16'hef00;
+    for(command=0; command<9; command=command+1)
+      byte_match[command] <= ADDR_EARLY[7:0] == command;
+    MATCH <= byte_match & {9{page_match}};
+  end
 endmodule

@@ -43,6 +43,35 @@ def main():
         subprocess.run([args.vvp, str(clock)], check=True, timeout=60)
         if args.clock_only:
             return
+        # Include the production address delay assignments, early-stage tap,
+        # and decoder module. Compare to decoding the original final address,
+        # even when raw pins change every clock instead of holding a bus cycle.
+        main_source = (root / "verilog/sd2snes_gbc/main.v").read_text()
+        address_shift = re.findall(r"^\s*SNES_ADDRr\[\d\] <=[^;]+;", main_source, re.M)
+        if len(address_shift) != 7:
+            raise RuntimeError("SNES address delay pipeline changed")
+        address_wire = re.search(r"wire \[23:0\] SNES_ADDR =[^;]+;", main_source)[0]
+        command_start = main_source.index("gbc_command_decode command_decode(")
+        command_instance = main_source[command_start:main_source.index(");", command_start)+2]
+        command_module = main_source[main_source.index("module gbc_command_decode("):]
+        command_source = Path(tmp) / "command_actual.v"
+        command_source.write_text('''
+module gbc_command_actual(input CLK2, input [23:0] SNES_ADDR_IN,
+ output [23:0] ADDRESS, output [8:0] MATCH);
+ reg [23:0] SNES_ADDRr [6:0];
+ wire [8:0] gbc_cmd_match;
+''' + address_wire + "\n" + command_instance
+            + "\nassign ADDRESS=SNES_ADDR; assign MATCH=gbc_cmd_match;\n"
+            + "always @(posedge CLK2) begin\n" + "\n".join(address_shift)
+            + "\nend\nendmodule\n" + command_module)
+        commands = Path(tmp) / "commands.vvp"
+        compile_commands = [args.iverilog, "-g2012", "-s", "gbc_command_tb",
+                            "-o", str(commands), str(command_source),
+                            str(root / "tests/rtl/gbc_command_tb.v")]
+        if args.ivl_base:
+            compile_commands += ["-B", args.ivl_base]
+        subprocess.run(compile_commands, check=True)
+        subprocess.run([args.vvp, str(commands)], check=True, timeout=60)
         # Compile the production read function AND its actual sequential call
         # sites, including OPR_I holds. The test oracle is the old flat table.
         cpu = (root / "verilog/sd2snes_gbc/sgb_cpu.v").read_text()
@@ -105,7 +134,6 @@ module gbc_operand_actual(input CLK,
         subprocess.run([args.vvp, str(out)], check=True, timeout=60)
         # Exercise the production SRAM controller itself, rather than a second
         # implementation of its arbitration. Unrelated MCU/PSRAM inputs are idle.
-        main_source = (root / "verilog/sd2snes_gbc/main.v").read_text()
         begin = main_source.index("parameter ST_RAM_IDLE")
         end = main_source.index("assign mcu_rdy_int", begin)
         end = main_source.index(";", end) + 1

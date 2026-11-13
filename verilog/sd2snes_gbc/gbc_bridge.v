@@ -125,6 +125,9 @@ module gbc_bridge(
   input  [7:0]  DATA_IN,
   input         VIEW_ENABLE,     // $E0-$E3
   input         EF_ENABLE,       // $EF00xx
+`ifdef MK2
+  input [8:0]   CMD_MATCH,       // address-only decode aligned to SNES_ADDR
+`endif
   output [7:0]  DATA_OUT,
 
 `ifdef GBC_EXTERNAL_FB
@@ -238,6 +241,17 @@ parameter [7:0] GBDG_REV = 8'h02;
 // register is one address and there is no word case to consider.
 wire        ef_wr = EF_ENABLE & SNES_WR_end;
 
+`ifdef MK2
+wire        wr_pad_lo   = SNES_WR_end & CMD_MATCH[0];
+wire        wr_pad_hi   = SNES_WR_end & CMD_MATCH[1];
+wire        wr_commit   = SNES_WR_end & CMD_MATCH[2];
+wire        wr_go       = SNES_WR_end & CMD_MATCH[3];
+wire        wr_sync     = SNES_WR_end & CMD_MATCH[4];
+wire        wr_consumed = SNES_WR_end & CMD_MATCH[5];
+wire        wr_c6ctl    = SNES_WR_end & CMD_MATCH[6];
+wire        wr_c6rowdn  = SNES_WR_end & CMD_MATCH[7];
+wire        wr_prepare  = SNES_WR_end & CMD_MATCH[8];
+`else
 wire        wr_pad_lo   = ef_wr & (SNES_ADDR[7:0] == 8'h00);
 wire        wr_pad_hi   = ef_wr & (SNES_ADDR[7:0] == 8'h01);
 wire        wr_commit   = ef_wr & (SNES_ADDR[7:0] == 8'h02);
@@ -246,6 +260,8 @@ wire        wr_sync     = ef_wr & (SNES_ADDR[7:0] == 8'h04);
 wire        wr_consumed = ef_wr & (SNES_ADDR[7:0] == 8'h05);
 wire        wr_c6ctl    = ef_wr & (SNES_ADDR[7:0] == 8'h06);   // C6_CTL  (section 14.2)
 wire        wr_c6rowdn  = ef_wr & (SNES_ADDR[7:0] == 8'h07);   // ROW_DONE (section 14.2)
+wire        wr_prepare  = ef_wr & (SNES_ADDR[7:0] == 8'h08);
+`endif
 
 // Counter mailbox, $EF0010-$EF001B: six 16-bit words, word i at $EF0010+2i
 // (lo) / +2i+1 (hi).  Not a strobe -- plain data the bridge holds for the MCU
@@ -838,7 +854,7 @@ c6_fb c6fb (
   .STAT_OFF(SNES_ADDR[7:0]), .STAT_BYTE(c6_stat_byte), .STAT_HIT(c6_stat_hit),
   .COLW_N(colw_status),
 `ifdef GBC_EXTERNAL_FB
-  .PREPARE_WR(ef_wr && SNES_ADDR[7:0] == 8'h08 && DATA_IN < 8'd18),
+  .PREPARE_WR(wr_prepare && DATA_IN < 8'd18),
   .FB_MEM_REQ(FB_MEM_REQ), .FB_MEM_WR(FB_MEM_WR), .FB_MEM_ADDR(FB_MEM_ADDR),
   .FB_MEM_DATA(FB_MEM_DATA), .FB_MEM_ACK(FB_MEM_ACK), .FB_MEM_Q(FB_MEM_Q),
 `endif

@@ -45,8 +45,9 @@
 //                address it belongs to.
 //   cycle N+2  : the composed byte is in view_data_r, which is DATA_OUT.
 //
-// Mk.II additionally registers C6 dirty bytes and READY (+$92); those status
-// reads take two clocks. They remain inside the <=3-clock window below.
+// Mk.II pipelines the status byte and its select before the final view mux.
+// Normal status reads take two clocks; C6 dirty/READY bytes already have an
+// internal register and take three. All remain inside the window below.
 // Two cycles for the views of $E0-$E3.  The STATUS BLOCK is the one exception
 // below that and takes ONE cycle: it reads no RAM, so there is nothing to wait
 // for, and $E2:0200 is the byte every liveness check reads.  The FRAMEBUFFER
@@ -1601,6 +1602,19 @@ end
 // right one either way (see the header, THE READ PIPELINE).
 reg [7:0] view_data_r;
 
+`ifdef MK2
+// Split the address/status decode from the final view mux. On Spartan-3 the
+// combined path was the longest synthesis path (SNES_ADDRr -> view_data_r).
+// Both byte and select are delayed together. The wire-$04 contract permits
+// three clocks, including the extra register on C6 dirty and READY status.
+reg status_select_r;
+reg [7:0] status_byte_r;
+always @(posedge CLK) begin
+  status_select_r <= sel_stat & ~sel_craw;
+  status_byte_r <= status_byte;
+end
+`endif
+
 always @(posedge CLK) begin
   view_data_r <= 8'h00;
   // The FB byte goes FIRST: it is the deepest path into this register (the
@@ -1609,7 +1623,11 @@ always @(posedge CLK) begin
   // selects one branch only, so the order is not observable -- except as the
   // "three cycles for the whole window" of the header.
   if (s1_fb_r)                   view_data_r <= c6_view_byte;
+`ifdef MK2
+  else if (status_select_r)      view_data_r <= status_byte_r;
+`else
   else if (sel_stat & ~sel_craw) view_data_r <= status_byte;
+`endif
   else if (view_sel_d1)          view_data_r <= view_byte;
 end
 

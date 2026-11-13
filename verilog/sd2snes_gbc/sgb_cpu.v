@@ -1367,13 +1367,7 @@ wire [15:0] dec_data;
 // PC with bypass
 wire [15:0] ifd_pc = EXE_IFD_redirect ? EXE_IFD_target : PC_r;
 
-`ifdef MK2
-dec_table dec (
-  .clka(CLK),       // input clka
-  .addra(dec_addr), // input [7 : 0] addra
-  .douta(dec_data)  // output [15 : 0] douta
-);
-`endif
+// Mk.II shares this ROM with HRAM; the instance is in the MCT section.
 `ifdef MK3
 dec_table dec (
   .clock(CLK),        // input clock
@@ -4064,18 +4058,10 @@ wire [7:0]  dbg_hram_rddata;
 wire [7:0]  dbg_hram_wrdata;
 
 `ifdef MK2
-gbc_small_ram #(.ABITS(7), .READ_B(0)) hram (
-  .clka(CLK), // input clka
-  .wea(hram_wren), // input [0 : 0] wea
-  .addra(hram_address), // input [6 : 0] addra
-  .dina(hram_wrdata), // input [7 : 0] dina
-  .douta(hram_rddata), // output [7 : 0] douta
-  .clkb(CLK), // input clkb
-  .web(dbg_hram_wren), // input [0 : 0] web
-  .addrb(dbg_hram_address), // input [6 : 0] addrb
-  .dinb(dbg_hram_wrdata), // input [7 : 0] dinb
-  .doutb(dbg_hram_rddata) // output [7 : 0] doutb
-);
+gbc_decode_hram decode_hram(.CLK(CLK), .DEC_ADDR(dec_addr), .DEC_Q(dec_data),
+  .HRAM_WE(hram_wren), .HRAM_ADDR(hram_address), .HRAM_DATA(hram_wrdata),
+  .HRAM_Q(hram_rddata));
+assign dbg_hram_rddata = 8'd0; // SGB_MCU_ACCESS is disabled on Mk.II.
 `endif
 `ifdef MK3
 hram hram (

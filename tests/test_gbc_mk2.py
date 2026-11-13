@@ -92,6 +92,21 @@ module gbc_sram_arb_model(
             compile_snapshots += ["-B", args.ivl_base]
         subprocess.run(compile_snapshots, check=True)
         subprocess.run([args.vvp, str(snapshots)], check=True, timeout=60)
+        coe = (root / "verilog/sd2snes_sgb/ip/mk2/dec_table.coe").read_text()
+        radix = int(re.search(r"memory_initialization_radix\s*=\s*(\d+)", coe)[1])
+        vector = re.search(r"memory_initialization_vector\s*=\s*([^;]+);", coe, re.S)[1]
+        decoder = [int(value.strip(), radix) for value in vector.split(",") if value.strip()]
+        if len(decoder) != 256 or any(value >= 65536 for value in decoder):
+            raise RuntimeError("unexpected canonical CPU decoder shape")
+        (Path(tmp) / "decode_reference.hex").write_text("\n".join(f"{v:04x}" for v in decoder))
+        decode_hram = Path(tmp) / "decode-hram.vvp"
+        compile_decode = [args.iverilog, "-g2012", "-s", "gbc_decode_hram_tb",
+                          "-o", str(decode_hram), str(root / "tests/rtl/gbc_decode_hram_tb.v"),
+                          str(root / "verilog/sd2snes_gbc/mk2_decode_hram.v")]
+        if args.ivl_base:
+            compile_decode += ["-B", args.ivl_base]
+        subprocess.run(compile_decode, check=True)
+        subprocess.run([args.vvp, str(decode_hram)], cwd=tmp, check=True, timeout=60)
         # Compile the existing, independent SGB audio implementation with zero
         # PCM data, then compare every cartridge output against the GBC DAC.
         reference = Path(tmp) / "dac_ref.v"

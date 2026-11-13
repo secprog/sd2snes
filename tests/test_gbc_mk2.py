@@ -277,6 +277,25 @@ module gbc_address_actual(input CLK,
             compile_addresses += ["-B", args.ivl_base]
         subprocess.run(compile_addresses, check=True)
         subprocess.run([args.vvp, str(addresses)], cwd=tmp, check=True, timeout=60)
+        starvation_start = cpu.index("`ifdef MK2\nlocalparam STARVATION_BITS=")
+        starvation_end = cpu.index("assign STARVATION = starvation_r;", starvation_start)
+        starvation_end += len("assign STARVATION = starvation_r;")
+        starvation_source = Path(tmp) / "starvation_actual.v"
+        starvation_source.write_text('''
+module gbc_starvation_actual(input CLK,cpu_ireset_r,CLK_BUS_EDGE,mct_conflict_r,
+ input [7:0] mct_state_r, input [2:0] mct_settle_r,
+ input [1:0] dma_cred_r, output [15:0] STARVATION);
+ localparam ST_MCT_DEC=8'h02,ST_MCT_EXT=8'h40,ST_MCT_END=8'h80;
+''' + cpu[starvation_start:starvation_end] + "\nendmodule\n")
+        for board in ("MK2", "MK3"):
+            starvation = Path(tmp) / ("starvation-" + board + ".vvp")
+            compile_starvation = [args.iverilog, "-g2012", "-D" + board,
+                                  "-s", "gbc_starvation_tb", "-o", str(starvation),
+                                  str(starvation_source), str(root / "tests/rtl/gbc_starvation_tb.v")]
+            if args.ivl_base:
+                compile_starvation += ["-B", args.ivl_base]
+            subprocess.run(compile_starvation, check=True)
+            subprocess.run([args.vvp, str(starvation)], check=True, timeout=60)
         row_flags = Path(tmp) / "row-flags.vvp"
         compile_flags = [args.iverilog, "-g2012", "-s", "gbc_row_flags_tb", "-o", str(row_flags),
                          str(root / "tests/rtl/gbc_row_flags_tb.v"),

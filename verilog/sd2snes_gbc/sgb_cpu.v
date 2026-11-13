@@ -4526,16 +4526,22 @@ assign DILATION = dilation_r;
 //   unspent at the next edge is the DMA owing an OAM byte, which is the only
 //   way the transfer can outlast its 160 M-cycles.
 //
-// The count is exported to GBDG +0C and has to read 0 on hardware; GBDG +1C
-// (DILATION) says how often the regime that would have produced it was met.
-reg  [15:0] starvation_r;
+// The diagnostic is exported to GBDG +0C and has to read 0 on hardware.
+// Mk.II retains a sticky fault flag: no player consumes the count, and any
+// nonzero value is a failure. Mk.III retains the original saturating count.
+`ifdef MK2
+localparam STARVATION_BITS=1;
+`else
+localparam STARVATION_BITS=16;
+`endif
+reg [STARVATION_BITS-1:0] starvation_r;
 wire        sys_access_in_flight = ((|(mct_state_r & (ST_MCT_DEC | ST_MCT_EXT | ST_MCT_END)) & ~mct_conflict_r)
                                     | |mct_settle_r)
                                  | (|dma_cred_r);
 always @(posedge CLK) begin
-  if (cpu_ireset_r)                          starvation_r <= 16'd0;
+  if (cpu_ireset_r)                          starvation_r <= 0;
   else if (CLK_BUS_EDGE & sys_access_in_flight & ~&starvation_r)
-                                             starvation_r <= starvation_r + 16'd1;
+                                             starvation_r <= starvation_r + 1'b1;
 end
 assign STARVATION = starvation_r;
 

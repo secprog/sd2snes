@@ -142,7 +142,7 @@ module gbc_bridge(
   // GB core
   input         CE1,             // 1x clock enable (free-running liveness counter)
   input         BUS_EDGE,        // GB M-cycle edge, for reset alignment
-  input  [15:0] STARVATION,      // sgb_cpu: bus edges that caught a PSRAM access still in flight (GBDG +0C)
+  input  [15:0] STARVATION,      // sgb_cpu: late-access count (Mk.II: sticky flag), GBDG +0C
   input  [15:0] DILATION,        // sgb_cpu: M-cycles the GB clock was stretched to fit one (GBDG +1C)
   output        CPU_RST,
   input  [1:0]  P1I,             // GB P1[5:4]: {P15 buttons, P14 d-pad}, active low

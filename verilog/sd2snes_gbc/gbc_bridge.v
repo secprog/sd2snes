@@ -125,6 +125,14 @@ module gbc_bridge(
   input         EF_ENABLE,       // $EF00xx
   output [7:0]  DATA_OUT,
 
+`ifdef GBC_EXTERNAL_FB
+  output        FB_MEM_REQ, FB_MEM_WR,
+  output [18:0] FB_MEM_ADDR,
+  output [7:0]  FB_MEM_DATA,
+  input         FB_MEM_ACK,
+  input  [7:0]  FB_MEM_Q,
+`endif
+
   // GB core
   input         CE1,             // 1x clock enable (free-running liveness counter)
   input         BUS_EDGE,        // GB M-cycle edge, for reset alignment
@@ -209,7 +217,11 @@ module gbc_bridge(
 
 // Wire version.  Bumped whenever a format, address or semantic in the
 // contract changes; the .bi3 and gbc_snes.bin are never shipped apart.
+`ifdef GBC_EXTERNAL_FB
+parameter [7:0] GBC_WIRE_VER = 8'h04; // explicit row-cache prepare/ready handshake
+`else
 parameter [7:0] GBC_WIRE_VER = 8'h03;
+`endif
 // GBDG layout revision (GBDG +1E).  Independent of the wire version: the GBDG
 // is read by the MCU, not by the player, so growing it never forces a reflash
 // of the pair.  $01 = the counter mailbox at +20..+29; $02 = the sixth mailbox
@@ -375,7 +387,7 @@ reg  [31:0] oam_snap_q_r;
 
 // CRAM stays byte-wide: one CGRAM view byte is one palette byte, and which one
 // is pure index arithmetic (the compatibility remap included).
-reg  [7:0]  cram_snap_r[0:255];
+(* ram_style = "distributed" *) reg  [7:0]  cram_snap_r[0:255];
 reg  [7:0]  cram_snap_q_r;
 
 // An M9K powers up at zero (power_up_uninitialized defaults to FALSE), so this
@@ -773,6 +785,11 @@ c6_fb c6fb (
   .SEL(sel_fb), .VADDR(vaddr), .VIEW_BYTE(c6_view_byte),
   .STAT_OFF(SNES_ADDR[7:0]), .STAT_BYTE(c6_stat_byte), .STAT_HIT(c6_stat_hit),
   .COLW_N(colw_pub_r),
+`ifdef GBC_EXTERNAL_FB
+  .PREPARE_WR(ef_wr && SNES_ADDR[7:0] == 8'h08 && DATA_IN < 8'd18),
+  .FB_MEM_REQ(FB_MEM_REQ), .FB_MEM_WR(FB_MEM_WR), .FB_MEM_ADDR(FB_MEM_ADDR),
+  .FB_MEM_DATA(FB_MEM_DATA), .FB_MEM_ACK(FB_MEM_ACK), .FB_MEM_Q(FB_MEM_Q),
+`endif
   .FLAGS(c6_flags), .CL_BYTE(c6_cl),
   .ROWS_DROPPED(c6_rows_dropped), .ROWDONE_BAD(c6_rowdone_bad),
   .CL_SWITCHES(c6_cl_switches), .FRAMES(c6_frames)

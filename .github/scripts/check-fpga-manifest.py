@@ -515,6 +515,10 @@ def main():
         selection = os.environ.get("FPGA_CORES", "").strip()
         if selection:
             requested = set(selection.split(","))
+            # The GBC Mk.II port can be fitted explicitly without advertising
+            # an unqualified core in normal board inventories or release ZIPs.
+            if "mk2:gbc" in requested and "mk2" in selected_fpga:
+                matrix.append({"board": "mk2", "core": "gbc", "extension": "bit"})
             known = {f"{item['board']}:{item['core']}" for item in matrix}
             if requested - known:
                 raise RuntimeError(f"Unknown FPGA targets: {sorted(requested - known)}")

@@ -20,9 +20,13 @@
 //////////////////////////////////////////////////////////////////////////////////
 `include "config.vh"
 
-// This core is Mk.III only: the Spartan-3 has neither the logic nor the block
-// RAM for the CGB delta, and .gbc keeps routing to the SGB core on the Mk.II.
 module main(
+`ifdef MK2
+  output [22:0] ROM_ADDR,
+  output ROM_CE,
+  input MCU_OVR,
+  output p113_out,
+`else
   input SNES_CIC_CLK,
   /* Bus 1: 2x PSRAM, 64Mbit, 16bit, 70ns */
   output [21:0] ROM_ADDR,
@@ -38,6 +42,7 @@ module main(
 `endif
   output PN6_out,
   input  PT5_in,
+`endif
 
   /* input clock */
   input CLKIN,
@@ -112,21 +117,6 @@ wire [1:0] SD_DMA_TGT;
 wire [10:0] SD_DMA_PARTIAL_START;
 wire [10:0] SD_DMA_PARTIAL_END;
 
-wire [10:0] dac_addr;
-wire [2:0] dac_vol_select_out;
-wire [8:0] dac_ptr_addr;
-//wire [7:0] dac_volume;
-wire [7:0] msu_volumerq_out;
-wire [7:0] msu_status_out;
-wire [31:0] msu_addressrq_out;
-wire [15:0] msu_trackrq_out;
-wire [13:0] msu_write_addr;
-wire [13:0] msu_ptr_addr;
-wire [7:0] MSU_SNES_DATA_IN;
-wire [7:0] MSU_SNES_DATA_OUT;
-wire [5:0] msu_status_reset_bits;
-wire [5:0] msu_status_set_bits;
-
 wire [7:0] SGB_SNES_DATA_IN;
 wire [7:0] SGB_SNES_DATA_OUT;
 wire [19:0] SGB_APU_DAT;
@@ -151,6 +141,12 @@ wire       SGB_ROM_WRQ;
 wire       gbc_view_enable;
 wire       gbc_ef_enable;
 wire [15:0] sgb_feat;
+`ifdef GBC_EXTERNAL_FB
+wire FB_MEM_REQ, FB_MEM_WR, FB_MEM_ACK;
+wire [18:0] FB_MEM_ADDR;
+wire [7:0] FB_MEM_DATA;
+reg [7:0] FB_MEM_Q;
+`endif
 
 wire [15:0] featurebits;
 wire feat_cmd_unlock = featurebits[5];
@@ -158,14 +154,8 @@ wire feat_cmd_unlock = featurebits[5];
 wire [23:0] MAPPED_SNES_ADDR;
 wire ROM_ADDR0;
 
-wire [13:0] DBG_msu_address;
-wire DBG_msu_reg_oe_rising;
-wire DBG_msu_reg_oe_falling;
-wire DBG_msu_reg_we_rising;
 wire [2:0] SD_DMA_DBG_clkcnt;
 wire [10:0] SD_DMA_DBG_cyclecnt;
-
-wire [15:0] dsp_feat;
 
 wire [8:0] snescmd_addr_mcu;
 wire [7:0] snescmd_data_out_mcu;
@@ -292,7 +282,6 @@ parameter ROM_CYCLE_LEN = 4'd7;
 reg [8:0] STATE;
 initial STATE = ST_IDLE;
 
-assign MSU_SNES_DATA_IN = BUS_DATA;
 assign SGB_SNES_DATA_IN = BUS_DATA;
 
 sd_dma snes_sd_dma(
@@ -318,53 +307,13 @@ wire SD_DMA_TO_RAM = (SD_DMA_STATUS && (SD_DMA_TGT == 2'b00)) && MCU_RAM;
 
 dac snes_dac(
   .clkin(CLK2),
-  .sysclk(SNES_SYSCLK),
   .mclk_out(DAC_MCLK),
   .lrck_out(DAC_LRCK),
   .sdout(DAC_SDOUT),
-  .we(SD_DMA_TGT==2'b01 ? SD_DMA_SRAM_WE : 1'b1),
-  .pgm_address(dac_addr),
-  .pgm_data(SD_DMA_SRAM_DATA),
-  .DAC_STATUS(DAC_STATUS),
-  .volume(msu_volumerq_out),
   .sgb_apu_dat(SGB_APU_DAT_DAC),
   .sgb_apu_clk_edge(SGB_APU_CLK_EDGE),
-  .vol_latch(msu_volume_latch_out),
-  .vol_select(dac_vol_select_out),
   .sgb_vol_select(sgb_feat[`SGB_FEAT_VOL_BOOST]),
-  .palmode(dac_palmode_out),
-  .play(dac_play),
-  .reset(dac_reset),
-  .dac_address_ext(dac_ptr_addr)
-);
-
-msu snes_msu (
-  .clkin(CLK2),
-  .enable(msu_enable),
-  .pgm_address(msu_write_addr),
-  .pgm_data(SD_DMA_SRAM_DATA),
-  .pgm_we(SD_DMA_TGT==2'b10 ? SD_DMA_SRAM_WE : 1'b1),
-  .reg_addr(SNES_ADDR[2:0]),
-  .reg_data_in(MSU_SNES_DATA_IN),
-  .reg_data_out(MSU_SNES_DATA_OUT),
-  .reg_oe_falling(SNES_RD_start),
-  .reg_oe_rising(SNES_RD_end),
-  .reg_we_rising(SNES_WR_end),
-  .status_out(msu_status_out),
-  .volume_out(msu_volumerq_out),
-  .volume_latch_out(msu_volume_latch_out),
-  .addr_out(msu_addressrq_out),
-  .track_out(msu_trackrq_out),
-  .status_reset_bits(msu_status_reset_bits),
-  .status_set_bits(msu_status_set_bits),
-  .status_reset_we(msu_status_reset_we),
-  .msu_address_ext(msu_ptr_addr),
-  .msu_address_ext_write(msu_addr_reset),
-  .DBG_msu_reg_oe_rising(DBG_msu_reg_oe_rising),
-  .DBG_msu_reg_oe_falling(DBG_msu_reg_oe_falling),
-  .DBG_msu_reg_we_rising(DBG_msu_reg_we_rising),
-  .DBG_msu_address(DBG_msu_address),
-  .DBG_msu_address_ext_write_rising(DBG_msu_address_ext_write_rising)
+  .reset(SGB_reset | SNES_reset_strobe)
 );
 
 spi snes_spi(
@@ -485,6 +434,10 @@ sgb snes_sgb (
   .VIEW_ENABLE(gbc_view_enable),
   .EF_ENABLE(gbc_ef_enable),
   .DATA_OUT(SGB_SNES_DATA_OUT),
+`ifdef GBC_EXTERNAL_FB
+  .FB_MEM_REQ(FB_MEM_REQ), .FB_MEM_WR(FB_MEM_WR), .FB_MEM_ADDR(FB_MEM_ADDR),
+  .FB_MEM_DATA(FB_MEM_DATA), .FB_MEM_ACK(FB_MEM_ACK), .FB_MEM_Q(FB_MEM_Q),
+`endif
   
   // ROM interface
   .ROM_BUS_RDY(SGB_ROM_RDY),
@@ -585,23 +538,6 @@ mcu_cmd snes_mcu_cmd(
   .SD_DMA_PARTIAL_END(SD_DMA_PARTIAL_END),
   .SD_DMA_START_MID_BLOCK(SD_DMA_START_MID_BLOCK),
   .SD_DMA_END_MID_BLOCK(SD_DMA_END_MID_BLOCK),
-  .dac_addr_out(dac_addr),
-  .DAC_STATUS(DAC_STATUS),
-  .dac_play_out(dac_play),
-  .dac_reset_out(dac_reset),
-  .dac_vol_select_out(dac_vol_select_out),
-  .dac_palmode_out(dac_palmode_out),
-  .dac_ptr_out(dac_ptr_addr),
-  .msu_addr_out(msu_write_addr),
-  .MSU_STATUS(msu_status_out),
-  .msu_status_reset_out(msu_status_reset_bits),
-  .msu_status_set_out(msu_status_set_bits),
-  .msu_status_reset_we(msu_status_reset_we),
-  .msu_volumerq(msu_volumerq_out),
-  .msu_addressrq(msu_addressrq_out),
-  .msu_trackrq(msu_trackrq_out),
-  .msu_ptr_out(msu_ptr_addr),
-  .msu_reset_out(msu_addr_reset),
   .rtc_data_in(SGB_RTC_DAT),
   .rtc_data_out(MCU_RTC_DAT),
   .rtc_pgm_we(MCU_RTC_WE),
@@ -628,8 +564,7 @@ mcu_cmd snes_mcu_cmd(
   .snescmd_data_in(snescmd_data_in_mcu),
   .cheat_pgm_idx_out(cheat_pgm_idx),
   .cheat_pgm_data_out(cheat_pgm_data),
-  .cheat_pgm_we_out(cheat_pgm_we),
-  .dsp_feat_out(dsp_feat)
+  .cheat_pgm_we_out(cheat_pgm_we)
 );
 
 address snes_addr(
@@ -646,8 +581,6 @@ address snes_addr(
   .IS_WRITABLE(IS_WRITABLE),
   //.SAVERAM_MASK(SAVERAM_MASK),
   //.ROM_MASK(ROM_MASK),
-  //MSU-1
-  .msu_enable(msu_enable),
   .gbc_view_enable(gbc_view_enable),
   .gbc_ef_enable(gbc_ef_enable),
   .r213f_enable(r213f_enable),
@@ -742,8 +675,7 @@ always @(posedge CLK2) irq_match <= {SNES_ADDR[23:1],1'b0} == 24'h00FFEE;
 // the 512KB SRAM, and the view is what the SNES is asking for there.
 assign SNES_DATA = (r213f_enable & ~SNES_PARD & ~r213f_forceread) ? r213fr
                    :(~SNES_READ ^ (r213f_forceread & r213f_enable & ~SNES_PARD))
-                                ? ( msu_enable ? MSU_SNES_DATA_OUT
-                                  : gbc_view_enable ? SGB_SNES_DATA_OUT  // GBC view read
+                                ? ( gbc_view_enable ? SGB_SNES_DATA_OUT  // GBC view read
                                   : (cheat_hit & ~feat_cmd_unlock) ? cheat_data_out
                                   : ((snescmd_unlock | feat_cmd_unlock) & snescmd_enable) ? snescmd_dout
                                   : RAM_DATA // the RAM module holds up to 512KB
@@ -779,6 +711,22 @@ wire SGB_ROM_RD_HIT = |(STATE & (ST_SGB_ROM_RD_ADDR | ST_SGB_ROM_RD_END));
 wire SGB_ROM_WR_HIT = |(STATE & (ST_SGB_ROM_WR_ADDR | ST_SGB_ROM_WR_END));
 wire SGB_ROM_HIT    = SGB_ROM_RD_HIT | SGB_ROM_WR_HIT;
 
+`ifdef MK2
+my_dcm snes_dcm(.CLKIN(CLKIN), .CLKFX(CLK2), .LOCKED(DCM_LOCKED), .RST(DCM_RST));
+assign ROM_ADDR = SD_DMA_TO_ROM ? MCU_ADDR[23:1]
+                : MCU_HIT ? ROM_ADDRr[23:1] : SGB_ROM_ADDRr[23:1];
+assign ROM_ADDR0 = SD_DMA_TO_ROM ? MCU_ADDR[0]
+                 : MCU_HIT ? ROM_ADDRr[0] : SGB_ROM_ADDRr[0];
+assign ROM_CE = 1'b0;
+assign p113_out = 1'b0;
+snescmd_buf snescmd(
+  .clka(CLK2), .wea(SNES_WR_end & snescmd_enable),
+  .addra(snescmd_we_cheat ? snescmd_addr_cheat : SNES_ADDR[8:0]),
+  .dina(snescmd_we_cheat ? snescmd_data_cheat : SNES_DATA), .douta(snescmd_dout),
+  .clkb(CLK2), .web(snescmd_we_mcu), .addrb(snescmd_addr_mcu),
+  .dinb(snescmd_data_out_mcu), .doutb(snescmd_data_in_mcu)
+);
+`else
 pll snes_pll(
   .inclk0(CLKIN),
   .c0(CLK2),
@@ -810,6 +758,7 @@ snescmd_buf snescmd (
   .data_b(snescmd_data_out_mcu), // input [7 : 0] dinb
   .q_b(snescmd_data_in_mcu) // output [7 : 0] doutb
 );
+`endif
 
 // OE always active. Overridden by WE when needed.
 assign ROM_OE = 1'b0;
@@ -990,15 +939,25 @@ assign ROM_BLE = !ROM_ADDR0 && !(!SD_DMA_TO_ROM && SGB_ROM_HIT && SGB_ROM_WORDr)
 //--------------
 // RAM Pipeline
 //--------------
-parameter ST_RAM_IDLE            = 5'b00001;
-parameter ST_RAM_MCU_RD_ADDR     = 5'b00010;
-parameter ST_RAM_MCU_RD_END      = 5'b00100;
-parameter ST_RAM_MCU_WR_ADDR     = 5'b01000;
-parameter ST_RAM_MCU_WR_END      = 5'b10000;
+parameter ST_RAM_IDLE            = 8'b00000001;
+parameter ST_RAM_MCU_RD_ADDR     = 8'b00000010;
+parameter ST_RAM_MCU_RD_END      = 8'b00000100;
+parameter ST_RAM_MCU_WR_ADDR     = 8'b00001000;
+parameter ST_RAM_MCU_WR_END      = 8'b00010000;
+`ifdef GBC_EXTERNAL_FB
+parameter ST_RAM_FB_RD_ADDR      = 8'b00100000;
+parameter ST_RAM_FB_WR_ADDR      = 8'b01000000;
+parameter ST_RAM_FB_END          = 8'b10000000;
+reg [18:0] fb_addr_r;
+reg [7:0] fb_data_r;
+wire fb_wr_hit = |(RAM_STATE & ST_RAM_FB_WR_ADDR);
+wire fb_hit = |(RAM_STATE & (ST_RAM_FB_RD_ADDR | ST_RAM_FB_WR_ADDR));
+assign FB_MEM_ACK = |(RAM_STATE & ST_RAM_FB_END);
+`endif
 
 parameter RAM_CYCLE_LEN = 4'd5;
 
-reg [4:0] RAM_STATE; initial RAM_STATE = ST_RAM_IDLE;
+reg [7:0] RAM_STATE; initial RAM_STATE = ST_RAM_IDLE;
 reg [3:0] ST_RAM_DELAYr;
 
 assign ram_free_slot = SNES_PULSE_end | ram_free_strobe;
@@ -1054,6 +1013,14 @@ always @(posedge CLK2) begin
           RAM_STATE <= ST_RAM_MCU_WR_ADDR;
           ST_RAM_DELAYr <= RAM_CYCLE_LEN;
         end
+`ifdef GBC_EXTERNAL_FB
+        else if(FB_MEM_REQ && !SD_DMA_TO_RAM) begin
+          RAM_STATE <= FB_MEM_WR ? ST_RAM_FB_WR_ADDR : ST_RAM_FB_RD_ADDR;
+          ST_RAM_DELAYr <= RAM_CYCLE_LEN;
+          fb_addr_r <= FB_MEM_ADDR;
+          fb_data_r <= FB_MEM_DATA;
+        end
+`endif
       end
     end
     ST_RAM_MCU_RD_ADDR: begin
@@ -1065,16 +1032,32 @@ always @(posedge CLK2) begin
       ST_RAM_DELAYr <= ST_RAM_DELAYr - 1;
       if(ST_RAM_DELAYr == 0) RAM_STATE <= ST_RAM_MCU_WR_END;
     end
+`ifdef GBC_EXTERNAL_FB
+    ST_RAM_FB_RD_ADDR, ST_RAM_FB_WR_ADDR: begin
+      ST_RAM_DELAYr <= ST_RAM_DELAYr - 1'b1;
+      if (RAM_STATE == ST_RAM_FB_RD_ADDR) FB_MEM_Q <= RAM_DATA;
+      if (ST_RAM_DELAYr == 0) RAM_STATE <= ST_RAM_FB_END;
+    end
+    ST_RAM_FB_END: RAM_STATE <= ST_RAM_IDLE;
+`endif
     ST_RAM_MCU_RD_END, ST_RAM_MCU_WR_END: begin
       RAM_STATE <= ST_RAM_IDLE;
     end
   endcase
 end
 
-assign RAM_ADDR = (SD_DMA_TO_RAM) ? MCU_ADDR[18:0] : MCU_RAM_HIT ? RAM_ADDRr[18:0] : MAPPED_SNES_ADDR[18:0];
+assign RAM_ADDR = (SD_DMA_TO_RAM) ? MCU_ADDR[18:0] : MCU_RAM_HIT ? RAM_ADDRr[18:0]
+`ifdef GBC_EXTERNAL_FB
+                : fb_hit ? fb_addr_r
+`endif
+                : MAPPED_SNES_ADDR[18:0];
 
 assign RAM_DATA[7:0] = (SD_DMA_TO_RAM ? (!MCU_WRITE_1 ? MCU_DOUT : 8'bZ)
+`ifdef GBC_EXTERNAL_FB
+                                      : fb_wr_hit ? fb_data_r
+`else
                                       : (ROM_HIT & ~SNES_WRITE) ? SNES_DATA
+`endif
                                       : MCU_RAM_WR_HIT ? MCU_DOUT
                                       : 8'bZ
                        );
@@ -1083,6 +1066,9 @@ assign RAM_DATA[7:0] = (SD_DMA_TO_RAM ? (!MCU_WRITE_1 ? MCU_DOUT : 8'bZ)
 assign RAM_WE = (SD_DMA_TO_RAM ? MCU_WRITE 
                                : (ROM_HIT & IS_SAVERAM & SNES_CPU_CLK) ? SNES_WRITE
                                : MCU_RAM_WE_HIT ? 1'b0
+`ifdef GBC_EXTERNAL_FB
+                               : fb_wr_hit ? 1'b0
+`endif
                                : 1'b1
                 );
 
@@ -1108,8 +1094,7 @@ assign mcu_rdy_int = RQ_MCU_RDYr & RQ_RAM_MCU_RDYr & RQ_SGB_MCU_RDYr;
 // Both bridge windows live in ROMSEL territory (banks $C0-$FF assert /CART for
 // the whole bank), so the generic IS_ROM term below already turns the buffer
 // around for a $E0-$E3 read and leaves it pointing inward for an $EF write.
-assign SNES_DATABUS_OE = msu_enable & ~(SNES_READ_narrow & SNES_WRITE) ? 1'b0 :
-                         snescmd_enable & ~(SNES_READ_narrow & SNES_WRITE) ? ~(snescmd_unlock | feat_cmd_unlock) :
+assign SNES_DATABUS_OE = snescmd_enable & ~(SNES_READ_narrow & SNES_WRITE) ? ~(snescmd_unlock | feat_cmd_unlock) :
                          (r213f_enable & ~SNES_PARD) ? 1'b0 :
                          snoop_4200_enable & ~SNES_WRITE ? 1'b0 :
                          ( (IS_ROM & SNES_ROMSEL)

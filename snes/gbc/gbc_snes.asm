@@ -237,7 +237,11 @@
 ; additive), so every table this player publishes with fb_state = 0 is byte
 ; for byte the v1.6 one -- tests/host/run_gbc_player.sh proves it against the
 ; phase-4/5 goldens.  See THE FRAMEBUFFER MODE below.
+!GBC_MK2 ?= 0
 !GBC_VER      = $03
+if !GBC_MK2
+!GBC_VER      = $04
+endif
 
 ; ---------------------------------------------------------------------------
 ; Offline harness hook.  Default 0 = the device build; with it the file below
@@ -8646,6 +8650,25 @@ GbcFbRowBits:
     sec                         ; nothing dirty: only the ROW_DONE
     rts
 GbcFbRowSome:
+if !GBC_MK2
+    ; Wire $04: the external framebuffer must prepare this frozen row in
+    ; the planar cache before ANY span DMA. Polling the bridge leaves SRAM
+    ; available to the prefetcher. A bounded wait preserves the backlog if
+    ; the bridge cannot deliver; the live capacity guard runs AFTER the wait.
+    lda.b $42
+    ldx.w #$0008
+    jsr GbcEfPut
+    ldx.w #$0400
+GbcFbCacheWait:
+    lda.l !GBC_STAT_LONG+$92
+    cmp.b $42
+    beq GbcFbCacheReady
+    dex
+    bne GbcFbCacheWait
+    clc
+    rts
+GbcFbCacheReady:
+endif
     ; --- the row's ticket: the live V guard, once per row with something
     ;     to send (see GbcFbDrain) -------------------------------------------
     jsr GbcCapacity             ; A16 = what still fits, slack held back

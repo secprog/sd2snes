@@ -44,6 +44,49 @@ concurrency:
   cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 jobs:
+  gbc-checks:
+    if: inputs.build == 'fpga' && contains(inputs.fpga_cores, 'gbc')
+    name: Check GBC framebuffer, GB audio and both SNES players
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/checkout@v6
+        with:
+          repository: RPGHacker/asar
+          ref: 6a6dbdaed8cb773e583052ce4f66375bd896c3a1
+          path: .ci-tools/asar-src
+      - name: Prepare hosted simulation and assembly tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends iverilog cmake g++
+          cmake -S .ci-tools/asar-src/src -B .ci-tools/asar-build -DCMAKE_BUILD_TYPE=Release \
+            -DASAR_GEN_EXE=ON -DASAR_GEN_DLL=OFF -DASAR_GEN_LIB=OFF \
+            -DASAR_GEN_EXE_TEST=OFF -DASAR_GEN_DLL_TEST=OFF
+          cmake --build .ci-tools/asar-build --target asar-standalone --parallel 2
+      - name: Execute pixel, SRAM backpressure, reset and GB audio comparisons
+        run: |
+          set -o pipefail
+          python3 tests/test_gbc_mk2.py | tee "$RUNNER_TEMP/gbc-rtl.log"
+      - name: Assemble and validate both wire protocols and existing player behavior
+        run: |
+          set -o pipefail
+          export ASAR="$GITHUB_WORKSPACE/.ci-tools/asar-build/asar/bin/asar"
+          make -C snes/gbc all mk2 harness check ASAR="$ASAR" | tee "$RUNNER_TEMP/gbc-assembly.log"
+          python3 snes/gbc/selfcheck.py -v misc/gbc_snes_mk2.bin
+          GBC_BIN_REQUIRED=1 bash tests/host/run_gbc_player.sh | tee "$RUNNER_TEMP/gbc-player.log"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gbc-player-and-rtl-checks
+          path: |
+            ${{ runner.temp }}/gbc-*.log
+            misc/gbc_snes.bin
+            misc/gbc_snes_mk2.bin
+          retention-days: 14
+
   package-contract:
     if: inputs.build != 'fpga'
     name: Check firmware and overlay package contracts
@@ -182,6 +225,9 @@ jobs:
             verilog/*/*.bld
             verilog/*/*.bgn
             verilog/*/*.twr
+            verilog/*/*.pcf
+            verilog/*/*.xst
+            verilog/*/*.prj
             verilog/*/*.unroutes
             verilog/*/output_files/*.rpt
             verilog/*/output_files/*.summary

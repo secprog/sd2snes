@@ -85,6 +85,11 @@ fpga: fpga-mk2 fpga-mk3
 fpga-mk2: $(MK2FPGA) $(MK2MINI)
 fpga-mk3: $(MK3FPGA) $(MK3MINI)
 
+# Explicit experimental build only. Promote into MK2CORES after a native fit,
+# timing closure, matching MCU build and console validation have succeeded.
+verilog/sd2snes_gbc/fpga_gbc.bit: | host-tools
+	$(MAKE) -C verilog/sd2snes_gbc mk2
+
 # CI obtains its per-core matrix and verifies artifacts from these same lists.
 list-fpga-mk2:
 	@printf '%s\n' $(MK2CORES) mini

@@ -101,6 +101,15 @@ module c6_fb(
   output            STAT_HIT,
   input      [15:0] COLW_N,        // published by the bridge (status +90..91)
 
+`ifdef GBC_EXTERNAL_FB
+  input             PREPARE_WR,   // wire $04: prepare row WR_DATA in the DMA cache
+  output            FB_MEM_REQ, FB_MEM_WR,
+  output     [18:0] FB_MEM_ADDR,
+  output     [7:0]  FB_MEM_DATA,
+  input             FB_MEM_ACK,
+  input      [7:0]  FB_MEM_Q,
+`endif
+
   // GBDG (contract section 10)
   output     [7:0]  FLAGS,         // = status +58
   output     [7:0]  CL_BYTE,       // = status +5D
@@ -224,6 +233,41 @@ wire        wr_en    = en_eff_r & (~row_is_frozen | thaw_now);
 reg  [63:0] acc_r;
 wire [63:0] acc_nx = {acc_r[55:0], px8};
 
+`ifdef GBC_EXTERNAL_FB
+reg         wr0_r, wr_last0_r;
+reg [4:0]   wr_row_r, wr_col_r;
+reg [2:0]   wr_line_r;
+wire        wr2_r, wr_last2_r, wr_diff_r;
+wire [4:0]  wr_row2_r, wr_col2_r;
+wire [7:0]  cache_ready_row;
+wire        fb_overflow;
+reg         prepare_r;
+reg [4:0]   prepare_row_r;
+always @(posedge CLK) begin
+  wr0_r <= !RST && !c6_reset && !c6_off && px_vis && wr_en && (&PX_X[2:0]);
+  if (px_vis && wr_en) acc_r <= acc_nx;
+  if (px_vis && wr_en && (&PX_X[2:0])) begin
+    wr_last0_r <= px_last;
+    wr_row_r <= px_row;
+    wr_col_r <= PX_X[7:3];
+    wr_line_r <= PX_Y[2:0];
+  end
+  prepare_r <= PREPARE_WR && !RST;
+  if (PREPARE_WR) prepare_row_r <= WR_DATA[4:0];
+end
+c6_sram storage(
+  .CLK(CLK), .RST(RST | c6_reset | c6_off),
+  .WR(wr0_r), .WR_ROW(wr_row_r), .WR_COL(wr_col_r), .WR_LINE(wr_line_r),
+  .WR_LAST(wr_last0_r), .WR_PIXELS(acc_r),
+  .COMMIT(wr2_r), .COMMIT_ROW(wr_row2_r), .COMMIT_COL(wr_col2_r),
+  .COMMIT_LAST(wr_last2_r), .COMMIT_DIFF(wr_diff_r), .OVERFLOW(fb_overflow),
+  .PREPARE(prepare_r), .PREPARE_ROW(prepare_row_r), .STRETCH(ctl_stretch_r),
+  .FROZEN(row_frozen_r), .INVALIDATE(rd_mask),
+  .VADDR(VADDR), .VIEW_BYTE(VIEW_BYTE), .READY_ROW(cache_ready_row),
+  .MEM_REQ(FB_MEM_REQ), .MEM_WR(FB_MEM_WR), .MEM_ADDR(FB_MEM_ADDR),
+  .MEM_DATA(FB_MEM_DATA), .MEM_ACK(FB_MEM_ACK), .MEM_Q(FB_MEM_Q)
+);
+`else
 reg         wr0_r, wr1_r, wr2_r;
 reg         wr_last0_r, wr_last1_r, wr_last2_r;
 reg         wr_diff_r;
@@ -260,6 +304,7 @@ always @(posedge CLK) begin
   wr_col2_r  <= wr_col_r;
   wr_row2_r  <= wr_row_r;
 end
+`endif
 
 //-------------------------------------------------------------------
 // ROW_DONE decode ($EF0007)
@@ -385,6 +430,7 @@ endgenerate
 //-------------------------------------------------------------------
 // the two memories (even / odd cell columns)
 //-------------------------------------------------------------------
+`ifndef GBC_EXTERNAL_FB
 wire [10:0] rd_addr0, rd_addr1;
 
 c6_fb_ram fb0 (
@@ -483,6 +529,7 @@ always @(*) begin
 end
 
 assign VIEW_BYTE = s1_oor_r ? 8'h00 : vb;
+`endif
 
 //-------------------------------------------------------------------
 // status bytes (section 14.5), all live
@@ -509,7 +556,11 @@ endgenerate
 wire [5:0]  didx  = STAT_OFF[7] ? {2'b10, STAT_OFF[3:0]} : {1'b0, STAT_OFF[4:0]};
 wire        dhit  = (STAT_OFF >= 8'h60) & (STAT_OFF <= 8'h8C);
 
+`ifdef GBC_EXTERNAL_FB
+assign      STAT_HIT = (STAT_OFF >= 8'h58) & (STAT_OFF <= 8'h93);
+`else
 assign      STAT_HIT = (STAT_OFF >= 8'h58) & (STAT_OFF <= 8'h91);
+`endif
 always @(*) begin
   case (STAT_OFF)
     8'h58:   STAT_BYTE = flags;
@@ -524,6 +575,10 @@ always @(*) begin
     8'h8F:   STAT_BYTE = {6'd0, row_clid_r[17:16]};
     8'h90:   STAT_BYTE = COLW_N[7:0];
     8'h91:   STAT_BYTE = COLW_N[15:8];
+`ifdef GBC_EXTERNAL_FB
+    8'h92:   STAT_BYTE = cache_ready_row; // $ff until requested row is complete
+    8'h93:   STAT_BYTE = {7'd0,fb_overflow}; // sticky: never silently serve a torn row
+`endif
     default: STAT_BYTE = dhit ? dbytes[didx] : 8'h00;
   endcase
 end
@@ -548,6 +603,7 @@ endmodule
 // array.  Unregistered outputs, like every other RAM in this core; the read
 // side registers port B itself (see above).
 //-------------------------------------------------------------------
+`ifndef GBC_EXTERNAL_FB
 module c6_fb_ram(
   input         clock,
   input  [10:0] address_a,
@@ -602,3 +658,4 @@ module c6_fb_ram(
     altsyncram_component.width_byteena_b = 1,
     altsyncram_component.wrcontrol_wraddress_reg_b = "CLOCK0";
 endmodule
+`endif

@@ -22,19 +22,23 @@
 `ifndef _config_vh
 `define _config_vh
 
-// The GBC core is Mk.III only (EP4CE15).  There is no MK2 branch here: the
-// Spartan-3 of the Mk.II has neither the logic nor the block RAM for the CGB
-// delta, and .gbc keeps routing to the SGB core on that board.
+// Mk.II uses external SRAM for C6 storage and a single planar DMA row cache.
+// Its wire-$04 player is built separately: the Mk.III wire-$03 image cannot
+// request that cache and must fail the version handshake on a Mk.II core.
+`ifdef MK2
+  `define GBC_EXTERNAL_FB
+`endif
 
-// MSU_AUDIO is load-bearing even though this core has no MSU-1: dac.v only
-// instantiates its CIC decimator (and therefore its cartridge audio path)
-// under this define.  Dropping it silences the GB APU.
-`define MSU_AUDIO
+// dac.v contains only the GB APU decimator and the cartridge DAC serializer.
+// No MSU-1 PCM interpolator, buffer, mixer, or SNES register window is built.
 
 // Debug pipe from the MCU into GB state (VRAM/OAM/HRAM/regs/GBDG) over USB.
-// This is the read path the contract's PSRAM map relies on for
-// 0x808000-0x80BFFF, 0x80FE00+ and 0x810000 (GBDG).
-`define SGB_MCU_ACCESS
+// On Mk.III this is the read path the contract's PSRAM map relies on for
+// 0x808000-0x80BFFF, 0x80FE00+ and 0x810000 (GBDG). Mk.II omits it to save
+// logic and to give the small LUT memories a single write port.
+`ifndef MK2
+  `define SGB_MCU_ACCESS
+`endif
 
 // Link port.  Kept: the blargg/mooneye test ROMs report their verdict on it and
 // it is the only text channel the core has.

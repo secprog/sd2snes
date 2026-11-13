@@ -1,0 +1,230 @@
+`timescale 1ns / 1ps
+// Mk.II C6 storage. The complete, UNCHANGED BBGGGRRR image lives in the
+// cartridge SRAM at $70000..$78fff (18 rows, 2048 bytes/row). Each row has
+// 20 tiles of 64 chunky bytes; the remaining 12 tile slots are unused.
+//
+// A 16-word distributed FIFO absorbs the PPU's bursts. A word is committed
+// only after all eight read/compare/write transactions complete. In particular
+// the last-word response, rather than enqueueing it, freezes the row.
+//
+// $EF0008 prepares one FROZEN row. SRAM is read in the background and a single
+// 2 KiB block RAM receives SNES planar bytes, including the existing 5:8
+// stretch. The player waits for status $92 == row before starting DMA. A cache
+// miss NEVER returns old pixels. ROW_DONE invalidates the cache before thaw.
+// MEM_REQ is held, with address/data stable, until MEM_ACK; an arbiter may
+// delay it arbitrarily. Reset cancels requests and invalidates all cache tags.
+module c6_sram(
+  input CLK, RST,
+  input WR,
+  input [4:0] WR_ROW, WR_COL,
+  input [2:0] WR_LINE,
+  input WR_LAST,
+  input [63:0] WR_PIXELS,
+  output reg COMMIT,
+  output reg [4:0] COMMIT_ROW, COMMIT_COL,
+  output reg COMMIT_LAST, COMMIT_DIFF,
+  output reg OVERFLOW,
+
+  input PREPARE,
+  input [4:0] PREPARE_ROW,
+  input STRETCH,
+  input [17:0] FROZEN,
+  input [17:0] INVALIDATE,
+  input [15:0] VADDR,
+  output [7:0] VIEW_BYTE,
+  output [7:0] READY_ROW,
+
+  output reg MEM_REQ, MEM_WR,
+  output reg [18:0] MEM_ADDR,
+  output reg [7:0] MEM_DATA,
+  input MEM_ACK,
+  input [7:0] MEM_Q
+);
+  // No reset on the arrays: RAM contents have no validity without their tags.
+  (* ram_style = "distributed" *) reg [77:0] fifo [0:15];
+  reg [4:0] wp, rp;
+  wire empty = wp == rp;
+  wire full = (wp[4] != rp[4]) && (wp[3:0] == rp[3:0]);
+  // {last, row, col, line, eight pixels}, oldest pixel in bits 63:56.
+  wire [77:0] head = fifo[rp[3:0]];
+  reg [77:0] work;
+  reg [2:0] byte_index;
+  reg different;
+
+  reg cache_valid, cache_stretch, cache_active, cache_discard;
+  reg [4:0] cache_row;
+  reg prepare_pending;
+  reg [4:0] request_row;
+  reg request_stretch;
+  reg [4:0] column;
+  reg [2:0] line, pixel, plane;
+  reg [63:0] pixels;
+  reg cache_we;
+  reg [10:0] cache_addr;
+  reg [7:0] cache_data;
+  wire [7:0] cache_q;
+  // Source x for this output tile. Stretch is exactly [0,0,1,2,2,3,4,4].
+  wire [7:0] start_x = cache_stretch
+      ? ({1'b0,column,2'b00} + {3'b000,column}) : {column,3'b000};
+  wire [7:0] source_x = start_x + {5'd0,pixel};
+  wire [18:0] source_addr = {3'b111,cache_row,source_x[7:3],line,source_x[2:0]};
+  wire invalidating = INVALIDATE[cache_row];
+  assign READY_ROW = cache_valid && !invalidating && !OVERFLOW
+                   ? {3'b000,cache_row} : 8'hff;
+  reg view_ok;
+  always @(posedge CLK)
+    view_ok <= cache_valid && !invalidating && !OVERFLOW
+            && VADDR[15:11] == cache_row
+            && (cache_stretch || VADDR[10:6] < 20);
+  assign VIEW_BYTE = view_ok ? cache_q : 8'h00;
+
+  c6_row_cache cache(.CLK(CLK), .WE(cache_we), .WADDR(cache_addr),
+                     .DATA(cache_data), .RADDR(VADDR[10:0]), .Q(cache_q));
+
+  function [7:0] planar;
+    input [63:0] data;
+    input [2:0] p;
+    input stretch;
+    integer k;
+    reg [7:0] b;
+    reg [7:0] raw;
+    begin
+      for (k=0; k<8; k=k+1) begin
+        b=data[63-8*k -: 8];
+        raw[7-k]=b[p];
+      end
+      planar=stretch ? {raw[7],raw[7],raw[6],raw[5],raw[5],raw[4],raw[3],raw[3]} : raw;
+    end
+  endfunction
+
+  localparam IDLE=0, WRITE_READ=1, WRITE_STORE=2, CACHE_READ=3, CACHE_PLANES=4;
+  reg [2:0] state;
+  always @(posedge CLK) begin
+    COMMIT <= 0;
+    cache_we <= 0;
+    if (RST) begin
+      wp <= 0; rp <= 0; OVERFLOW <= 0;
+      MEM_REQ <= 0; MEM_WR <= 0; MEM_ADDR <= 0; MEM_DATA <= 0;
+      cache_valid <= 0; cache_row <= 0; cache_stretch <= 0;
+      cache_active <= 0; cache_discard <= 0;
+      prepare_pending <= 0; request_row <= 0; request_stretch <= 0;
+      state <= IDLE; byte_index <= 0; different <= 0;
+      column <= 0; line <= 0; pixel <= 0; plane <= 0; pixels <= 0;
+      work <= 0; COMMIT_ROW <= 0; COMMIT_COL <= 0;
+      COMMIT_LAST <= 0; COMMIT_DIFF <= 0;
+    end else begin
+      if (WR) begin
+        if (full) OVERFLOW <= 1;
+        else begin
+          fifo[wp[3:0]] <= {WR_LAST,WR_ROW,WR_COL,WR_LINE,WR_PIXELS};
+          wp <= wp + 1'b1;
+        end
+      end
+      if (invalidating || STRETCH != cache_stretch) begin
+        cache_valid <= 0;
+        cache_discard <= 1;
+      end
+      if (PREPARE && PREPARE_ROW < 18 && FROZEN[PREPARE_ROW]) begin
+        if (!((cache_valid || (cache_active && !cache_discard))
+            && cache_row == PREPARE_ROW && cache_stretch == STRETCH)) begin
+          request_row <= PREPARE_ROW;
+          request_stretch <= STRETCH;
+          prepare_pending <= 1;
+        end
+      end
+      case (state)
+        IDLE: begin
+          // Producer first. An idle PPU (HBlank/frozen row) lets prefetch run;
+          // cache reads yield at each output tile, so neither side loses data.
+          if (!empty) begin
+            work <= head; byte_index <= 0; different <= 0;
+            MEM_ADDR <= {3'b111,head[76:64],3'b000};
+            MEM_WR <= 0; MEM_REQ <= 1; state <= WRITE_READ;
+          end else if (cache_active) state <= CACHE_READ;
+          else if (prepare_pending) begin
+            prepare_pending <= 0; cache_valid <= 0;
+            cache_active <= 1; cache_discard <= 0;
+            cache_row <= request_row; cache_stretch <= request_stretch;
+            column <= 0; line <= 0; pixel <= 0; plane <= 0;
+            state <= CACHE_READ;
+          end
+        end
+        WRITE_READ: if (MEM_ACK) begin
+          different <= different || MEM_Q != work[63:56];
+          MEM_REQ <= 0; state <= WRITE_STORE;
+        end
+        WRITE_STORE: begin
+          if (!MEM_REQ) begin
+            MEM_WR <= 1; MEM_DATA <= work[63:56]; MEM_REQ <= 1;
+          end else if (MEM_ACK) begin
+            MEM_REQ <= 0;
+            if (byte_index == 7) begin
+              rp <= rp + 1'b1;
+              COMMIT <= 1; COMMIT_ROW <= work[76:72];
+              COMMIT_COL <= work[71:67]; COMMIT_LAST <= work[77];
+              COMMIT_DIFF <= different;
+              state <= IDLE;
+            end else begin
+              work[63:0] <= {work[55:0],8'd0};
+              byte_index <= byte_index + 1'b1;
+              MEM_ADDR <= MEM_ADDR + 1'b1;
+              MEM_WR <= 0; MEM_REQ <= 1; state <= WRITE_READ;
+            end
+          end
+        end
+        CACHE_READ: begin
+          if (!MEM_REQ) begin
+            MEM_ADDR <= source_addr; MEM_WR <= 0; MEM_REQ <= 1;
+          end else if (MEM_ACK) begin
+            MEM_REQ <= 0;
+            // Fill the five/eight source bytes into the high end of pixels.
+            case(pixel)
+              0: pixels[63:56] <= MEM_Q;
+              1: pixels[55:48] <= MEM_Q;
+              2: pixels[47:40] <= MEM_Q;
+              3: pixels[39:32] <= MEM_Q;
+              4: pixels[31:24] <= MEM_Q;
+              5: pixels[23:16] <= MEM_Q;
+              6: pixels[15:8] <= MEM_Q;
+              7: pixels[7:0] <= MEM_Q;
+            endcase
+            if (pixel == (cache_stretch ? 4 : 7)) begin
+              pixel <= 0; plane <= 0; state <= CACHE_PLANES;
+            end else pixel <= pixel + 1'b1;
+          end
+        end
+        CACHE_PLANES: begin
+          cache_we <= 1;
+          cache_addr <= {column,plane[2:1],line,plane[0]};
+          cache_data <= planar(pixels,plane,cache_stretch);
+          if (plane == 7) begin
+            plane <= 0;
+            if (line == 7 && column == (cache_stretch ? 31 : 19)) begin
+              // Last write reaches the RAM on the following edge. Publication
+              // also waits that edge (IDLE), never an uninitialised last byte.
+              cache_active <= 0; state <= IDLE;
+            end else begin
+              if (line == 7) begin line <= 0; column <= column + 1'b1; end
+              else line <= line + 1'b1;
+              state <= IDLE;
+            end
+          end else plane <= plane + 1'b1;
+        end
+      endcase
+      if (state == IDLE && cache_we && !cache_active && !prepare_pending)
+        cache_valid <= FROZEN[cache_row] && !invalidating && !cache_discard
+                     && STRETCH == cache_stretch;
+    end
+  end
+endmodule
+
+// One 2048x8 simple dual-port RAMB16. Registered read, no output register.
+// Keep the portable model identical to the primitive's READ_FIRST timing.
+module c6_row_cache(input CLK, WE, input [10:0] WADDR,
+                    input [7:0] DATA, input [10:0] RADDR, output reg [7:0] Q);
+  (* ram_style = "block" *) reg [7:0] ram [0:2047];
+  always @(posedge CLK) begin
+    if (WE) ram[WADDR] <= DATA;
+    Q <= ram[RADDR];
+  end
+endmodule

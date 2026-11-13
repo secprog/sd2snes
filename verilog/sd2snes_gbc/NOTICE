@@ -30,6 +30,38 @@ GBC-CORE-CONTRACT.md.
                 read by the SNES as 8bpp tiles in bank $E4 -- for the scenes
                 whose per-line palette traffic the view/log path cannot carry.
 
+  c6_sram.v     (Mk.II, wire $04) stores the same quantised 160x144 pixels in
+                external SRAM at $70000-$78fff. A 2 KiB planar row cache
+                serves native or 5:8 stretched SNES DMA reads. The player
+                writes row 0..17 to $EF0008, waits for status +$92 to equal
+                that row, then uses the existing $E4 view and ROW_DONE.
+                Status +$93 bit 0 reports a sticky producer FIFO overflow;
+                overflow invalidates the cache rather than exposing torn data.
+
+The GBC configuration contains no SA-1 instance. It also no longer contains
+MSU-1 hardware: the data/register interface, PCM buffer/interpolator, mixer
+and MCU controls have been removed. dac.v retains the GB APU's original CIC
+filter, volume boost, saturation and I2S serializer on both boards.
+
+Mk.II status
+------------
+This is an experimental port, excluded from normal Mk.II packages and MCU
+routing until native implementation and console validation are complete.
+The original SGB core remains the normal Mk.II Game Boy core. The Mk.II GBC
+port keeps both VRAM banks, the colour pipeline, HDMA and double speed. Small
+memories use LUT RAM; the optional MCU state-debug window is omitted there.
+The player image must remain below SRAM $70000, reserved for video storage.
+
+Build and verify on GitHub Actions (Build firmware, FPGA mode):
+  fpga_cores = mk2:gbc,mk3:gbc
+  ignore_timing = false
+The explicit mk2:gbc selector runs the experimental ISE build without adding
+it to production inventories. The same run executes tests/test_gbc_mk2.py,
+assembles both player variants, and runs the existing SNES-player tests.
+It uploads native resource/timing reports and the two player images.
+Wire $04 uses gbc_snes_mk2.bin; wire $03 keeps gbc_snes.bin. A mismatched pair
+fails the existing version check. No additional image quantisation is used.
+
 
 Block RAM rules
 ---------------

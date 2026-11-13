@@ -518,7 +518,6 @@ set_global_assignment -name VERILOG_FILE gbc_clk.v
 set_global_assignment -name VERILOG_FILE sgb.v
 set_global_assignment -name VERILOG_FILE spi.v
 set_global_assignment -name VERILOG_FILE sd_dma.v
-set_global_assignment -name VERILOG_FILE msu.v
 set_global_assignment -name VERILOG_FILE mcu_cmd.v
 set_global_assignment -name VERILOG_FILE clk_test.v
 set_global_assignment -name VERILOG_FILE main.v
@@ -527,7 +526,6 @@ set_global_assignment -name VERILOG_FILE cheat.v
 set_global_assignment -name SDC_FILE main.sdc
 set_global_assignment -name VERILOG_FILE address.v
 set_global_assignment -name QIP_FILE ip/mk3/dec_table.qip
-set_global_assignment -name QIP_FILE ip/mk3/dac_buf.qip
 set_global_assignment -name QIP_FILE ip/mk3/pll.qip
 set_global_assignment -name QIP_FILE ip/mk3/snescmd_buf.qip
 set_global_assignment -name VERILOG_FILE sgb_cpu.v

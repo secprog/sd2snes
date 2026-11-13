@@ -825,7 +825,7 @@ wire [6:0]  c6_cram_addr;
 wire        cram_b_busy = CRAM_RD_REQ | c6_cram_req;
 wire [6:0]  cram_b_addr = CRAM_RD_REQ ? CRAM_RD_ADDR : c6_cram_req ? c6_cram_addr : cram_dbg_addr;
 
-reg  [7:0]  cram_r[0:127];
+(* ram_style = "distributed" *) reg  [7:0]  cram_r[0:127];
 reg  [7:0]  cram_q_a_r;
 reg  [7:0]  cram_q_b_r;
 reg         cram_b_busy_d1_r;
@@ -2500,7 +2500,7 @@ wire        dbg_oam_free = ~OAM_RD_REQ & ~oam_rd_req_d1_r;
 assign OAM_RD_DATA = dbg_oam_rddata;
 
 `ifdef MK2
-oam oam (
+gbc_small_ram #(.ABITS(8)) oam (
   .clka(CLK), // input clka
   .wea(oam_wren), // input [0 : 0] wea
   .addra(oam_address), // input [7 : 0] addra
@@ -4028,7 +4028,7 @@ wire [7:0]  dbg_hram_rddata;
 wire [7:0]  dbg_hram_wrdata;
 
 `ifdef MK2
-hram hram (
+gbc_small_ram #(.ABITS(7)) hram (
   .clka(CLK), // input clka
   .wea(hram_wren), // input [0 : 0] wea
   .addra(hram_address), // input [6 : 0] addra

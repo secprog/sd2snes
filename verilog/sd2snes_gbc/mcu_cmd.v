@@ -53,27 +53,6 @@ module mcu_cmd(
   output reg SD_DMA_START_MID_BLOCK,
   output reg SD_DMA_END_MID_BLOCK,
 
-  // DAC
-  output [10:0] dac_addr_out,
-  input DAC_STATUS,
-  output reg dac_play_out = 0,
-  output reg dac_reset_out = 0,
-  output reg [2:0] dac_vol_select_out = 3'b000,
-  output reg dac_palmode_out = 0,
-  output reg [8:0] dac_ptr_out = 0,
-
-  // MSU data
-  output [13:0] msu_addr_out,
-  input [7:0] MSU_STATUS,
-  output [5:0] msu_status_reset_out,
-  output [5:0] msu_status_set_out,
-  output msu_status_reset_we,
-  input [31:0] msu_addressrq,
-  input [15:0] msu_trackrq,
-  input [7:0] msu_volumerq,
-  output [13:0] msu_ptr_out,
-  output msu_reset_out,
-
   input  [55:0] rtc_data_in,
   output [55:0] rtc_data_out,
   output rtc_pgm_we,
@@ -108,9 +87,6 @@ module mcu_cmd(
   output reg [31:0] cheat_pgm_data_out,
   output reg cheat_pgm_we_out,
 
-  // DSP core features
-  output reg [15:0] dsp_feat_out = 16'h0000,
-
   // SGB core features
   output reg [15:0] sgb_feat_out = 16'h0000
 );
@@ -131,15 +107,6 @@ clk_test snes_clk_test (
 
 reg [3:0] MAPPER_BUF;
 reg [23:0] ADDR_OUT_BUF;
-reg [10:0] DAC_ADDR_OUT_BUF;
-reg [7:0] DAC_VOL_OUT_BUF;
-reg [13:0] MSU_ADDR_OUT_BUF;
-reg [13:0] MSU_PTR_OUT_BUF;
-reg [5:0] msu_status_set_out_buf;
-reg [5:0] msu_status_reset_out_buf;
-reg msu_status_reset_we_buf = 0;
-reg MSU_RESET_OUT_BUF;
-
 reg [7:0] group_out_buf; initial group_out_buf = 8'hFF;
 reg [7:0] index_out_buf; initial index_out_buf = 8'hFF;
 reg [7:0] value_out_buf; initial value_out_buf = 8'hFF;
@@ -167,13 +134,9 @@ reg [7:0] feat_tmp;
 
 reg [7:0] sgb_feat_tmp;
 
-reg DAC_STATUSr;
 reg SD_DMA_STATUSr;
-reg [7:0] MSU_STATUSr;
 always @(posedge clk) begin
-  DAC_STATUSr <= DAC_STATUS;
   SD_DMA_STATUSr <= SD_DMA_STATUS;
-  MSU_STATUSr <= MSU_STATUS;
 end
 
 reg SD_DMA_PARTIALr;
@@ -197,8 +160,6 @@ assign spi_data_out = MCU_DATA_IN_BUF;
 
 initial begin
   ADDR_OUT_BUF = 0;
-  DAC_ADDR_OUT_BUF = 0;
-  MSU_ADDR_OUT_BUF = 0;
   SD_DMA_ENr = 0;
   MAPPER_BUF = 0;
   SD_DMA_PARTIALr = 0;
@@ -208,8 +169,6 @@ end
 always @(posedge clk) begin
   snescmd_we_out <= 1'b0;
   cheat_pgm_we_out <= 1'b0;
-  dac_reset_out <= 1'b0;
-  MSU_RESET_OUT_BUF <= 1'b0;
 
   if (cmd_ready) begin
     case (cmd_data[7:4])
@@ -298,46 +257,6 @@ always @(posedge clk) begin
           end
         endcase
       end
-      8'he0:
-        case (spi_byte_cnt)
-          32'h2: begin
-            msu_status_set_out_buf <= param_data[5:0];
-          end
-          32'h3: begin
-            msu_status_reset_out_buf <= param_data[5:0];
-            msu_status_reset_we_buf <= 1'b1;
-          end
-          32'h4:
-            msu_status_reset_we_buf <= 1'b0;
-        endcase
-`ifdef MSU_AUDIO
-      8'he1: // pause DAC
-        dac_play_out <= 1'b0;
-      8'he2: // resume DAC
-        dac_play_out <= 1'b1;
-      8'he3: // reset DAC (set DAC playback address = 0)
-        case (spi_byte_cnt)
-          32'h2:
-            dac_ptr_out[8] <= param_data[0];
-          32'h3: begin
-            dac_ptr_out[7:0] <= param_data;
-            dac_reset_out <= 1'b1; // reset by default value, see above
-          end
-        endcase
-`endif
-`ifdef MSU_DATA
-      8'he4: // reset MSU read buffer pointer
-        case (spi_byte_cnt)
-          32'h2: begin
-            MSU_PTR_OUT_BUF[13:8] <= param_data[5:0];
-            MSU_PTR_OUT_BUF[7:0] <= 8'h0;
-          end
-          32'h3: begin
-            MSU_PTR_OUT_BUF[7:0] <= param_data;
-            MSU_RESET_OUT_BUF <= 1'b1;
-          end
-        endcase
-`endif
       8'he5:
         case (spi_byte_cnt)
           32'h2:
@@ -359,13 +278,6 @@ always @(posedge clk) begin
           32'h9:
             rtc_pgm_we_buf <= 1'b0;
         endcase
-`ifdef MSU_AUDIO
-      8'hec:
-        begin // set DAC properties
-          dac_vol_select_out <= param_data[2:0];
-          dac_palmode_out <= param_data[7];
-        end
-`endif
       8'hed:
         case (spi_byte_cnt)
           32'h2: feat_tmp <= param_data;
@@ -412,32 +324,7 @@ end
 always @(posedge clk) begin
   if(param_ready && cmd_data[7:4] == 4'h0)  begin
     case (cmd_data[1:0])
-`ifdef MSU_AUDIO
-      2'b01: begin
-        case (spi_byte_cnt)
-          32'h2: begin
-            DAC_ADDR_OUT_BUF[10:8] <= param_data[2:0];
-            DAC_ADDR_OUT_BUF[7:0] <= 8'b0;
-          end
-          32'h3:
-            DAC_ADDR_OUT_BUF[7:0] <= param_data;
-        endcase
-      end
-`endif
-`ifdef MSU_DATA
-      2'b10: begin
-        case (spi_byte_cnt)
-          32'h2: begin
-            MSU_ADDR_OUT_BUF[13:8] <= param_data[5:0];
-            MSU_ADDR_OUT_BUF[7:0] <= 8'b0;
-          end
-          32'h3: begin
-            MSU_ADDR_OUT_BUF[7:0] <= param_data;
-          end
-        endcase
-      end
-`endif
-      default:
+      2'b00:
         case (spi_byte_cnt)
           32'h2: begin
             ADDR_OUT_BUF[23:16] <= param_data;
@@ -456,12 +343,6 @@ always @(posedge clk) begin
   ) begin
     case (SD_DMA_TGTr)
       2'b00: ADDR_OUT_BUF <= ADDR_OUT_BUF + 1;
-`ifdef MSU_AUDIO
-      2'b01: DAC_ADDR_OUT_BUF <= DAC_ADDR_OUT_BUF + 1;
-`endif
-`ifdef MSU_DATA
-      2'b10: MSU_ADDR_OUT_BUF <= MSU_ADDR_OUT_BUF + 1;
-`endif
     endcase
   end
 end
@@ -500,32 +381,10 @@ always @(posedge clk) begin
     else if (cmd_data[7:0] == 8'hF0)
       MCU_DATA_IN_BUF <= 8'hA5;
     else if (cmd_data[7:0] == 8'hF1)
-      case (spi_byte_cnt[0])
-        1'b1: // buffer status (1st byte)
-          MCU_DATA_IN_BUF <= {SD_DMA_STATUSr, DAC_STATUSr, MSU_STATUSr[7], 5'b0};
-        1'b0: // control status (2nd byte)
-          MCU_DATA_IN_BUF <= {1'b0, MSU_STATUSr[6:0]};
-      endcase
-    else if (cmd_data[7:0] == 8'hF2)
-      case (spi_byte_cnt)
-        32'h1:
-          MCU_DATA_IN_BUF <= msu_addressrq[31:24];
-        32'h2:
-          MCU_DATA_IN_BUF <= msu_addressrq[23:16];
-        32'h3:
-          MCU_DATA_IN_BUF <= msu_addressrq[15:8];
-        32'h4:
-          MCU_DATA_IN_BUF <= msu_addressrq[7:0];
-      endcase
-    else if (cmd_data[7:0] == 8'hF3)
-      case (spi_byte_cnt)
-        32'h1:
-          MCU_DATA_IN_BUF <= msu_trackrq[15:8];
-        32'h2:
-          MCU_DATA_IN_BUF <= msu_trackrq[7:0];
-      endcase
-    else if (cmd_data[7:0] == 8'hF4)
-      MCU_DATA_IN_BUF <= msu_volumerq;
+      // Preserve the generic status layout. Unsupported audio/data bits are 0.
+      MCU_DATA_IN_BUF <= spi_byte_cnt[0] ? {SD_DMA_STATUSr,7'b0} : 8'h00;
+    else if (cmd_data[7:0] == 8'hF2 || cmd_data[7:0] == 8'hF3 || cmd_data[7:0] == 8'hF4)
+      MCU_DATA_IN_BUF <= 8'h00;
     else if (cmd_data[7:0] == 8'hFE)
       case (spi_byte_cnt)
         32'h1:
@@ -591,14 +450,6 @@ assign mcu_write = SD_DMA_STATUS
                    : 1'b1;
 
 assign addr_out = ADDR_OUT_BUF;
-assign dac_addr_out = DAC_ADDR_OUT_BUF;
-assign msu_addr_out = MSU_ADDR_OUT_BUF;
-assign msu_status_reset_we = msu_status_reset_we_buf;
-assign msu_status_reset_out = msu_status_reset_out_buf;
-assign msu_status_set_out = msu_status_set_out_buf;
-assign msu_reset_out = MSU_RESET_OUT_BUF;
-assign msu_ptr_out = MSU_PTR_OUT_BUF;
-
 //assign bsx_regs_reset_we = bsx_regs_reset_we_buf;
 //assign bsx_regs_reset_out = bsx_regs_reset_out_buf;
 //assign bsx_regs_set_out = bsx_regs_set_out_buf;

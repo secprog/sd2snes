@@ -5,6 +5,8 @@ module gbc_snapshot_tb;
   reg CLK=0, RST=1, WR=0, VIEW=0, EF=0, LY0=0, COMPAT=0;
   reg [23:0] ADDR=0;
   reg [7:0] DIN=0, LCDC=8'h87;
+  reg FB_ACK=0, PIXEL=0;
+  reg [7:0] PX_X=0,PX_Y=0;
   wire [7:0] DOUT, OADDR;
   wire [6:0] CADDR;
   wire OREQ, CREQ;
@@ -17,10 +19,10 @@ module gbc_snapshot_tb;
 
   gbc_bridge dut(.CLK(CLK),.RST(RST),.SNES_WR_end(WR),.SNES_ADDR(ADDR),
     .DATA_IN(DIN),.VIEW_ENABLE(VIEW),.EF_ENABLE(EF),.DATA_OUT(DOUT),
-    .FB_MEM_ACK(1'b0),.FB_MEM_Q(8'd0),.CE1(1'b0),.BUS_EDGE(1'b0),
+    .FB_MEM_ACK(FB_ACK),.FB_MEM_Q(8'd0),.CE1(1'b0),.BUS_EDGE(1'b0),
     .STARVATION(16'd0),.DILATION(16'd0),.P1I(2'b11),
     .PPU_DOT_EDGE(1'b0),.PPU_VSYNC_EDGE(1'b0),.LCD_ON(1'b1),.COMPAT(COMPAT),
-    .C6_PX_VALID(1'b0),.C6_PX_X(8'd0),.C6_PX_Y(8'd0),.C6_PX_BGR(15'd0),
+    .C6_PX_VALID(PIXEL),.C6_PX_X(PX_X),.C6_PX_Y(PX_Y),.C6_PX_BGR(15'd0),
     .TAP_VRAM_WE(1'b0),.TAP_VRAM_BANK(1'b0),.TAP_VRAM_ADDR(13'd0),
     .TAP_OAM_WE(1'b0),.TAP_CRAM_WE(1'b0),.TAP_CRAM_IDX(7'd0),.TAP_CRAM_DATA(8'd0),
     .TAP_LY0(LY0),.TAP_VBLANK(1'b0),.TAP_LY(8'd0),.TAP_LCDC(LCDC),
@@ -40,6 +42,15 @@ module gbc_snapshot_tb;
   end
   task tick;
     begin #4; CLK=1; #1; CLK=0; #5; end
+  endtask
+  task read_status(input [23:0] a, input [7:0] expected);
+    begin
+      // Wire $04 permits up to three clocks for the full view window.
+      VIEW=1; ADDR=a; tick; tick; tick;
+      if(DOUT !== expected)
+        $fatal(1,"C6 status address=%h got=%h expected=%h",a,DOUT,expected);
+      checks=checks+1;
+    end
   endtask
   task command(input [7:0] a);
     begin VIEW=0; EF=1; ADDR={16'hef00,a}; WR=1; tick; WR=0; EF=0; end
@@ -163,6 +174,35 @@ module gbc_snapshot_tb;
       remember; check_views;
     end
     $display("PASS: shared snapshot RAM, coherent publication, two-cycle views and copy reset (%0d bytes)",checks);
+    // Real bridge/row/cache handshake, including alternating the registered
+    // READY status with ordinary status and dirty bytes. SRAM content is zero;
+    // its electrical timing/backpressure are exercised by gbc_sram_bus_tb.
+    FB_ACK=1; DIN=3; command(8'h06); repeat(4) tick;
+    LY0=1; tick; LY0=0; repeat(4) tick;
+    for(i=0;i<1280;i=i+1) begin
+      PX_X=i%160; PX_Y=i/160; PIXEL=1; tick;
+      PIXEL=0; repeat(19) tick;
+    end
+    repeat(200) tick;
+    read_status(24'he2025a,1);
+    read_status(24'he20292,8'hff);
+    DIN=0; command(8'h08);
+    VIEW=1; ADDR=24'he20292; repeat(3) tick; i=0;
+    while(DOUT!==0 && i<20000) begin tick; i=i+1; end
+    if(DOUT!==0) $fatal(1,"C6 row cache never became ready");
+    read_status(24'he20200,4);
+    read_status(24'he20260,8'hff);
+    read_status(24'he20292,0);
+    DIN=18; command(8'h07); // Invalid release must not invalidate row 0.
+    read_status(24'he20292,0);
+    DIN=0; command(8'h07);
+    read_status(24'he20292,8'hff);
+    read_status(24'he20260,0);
+    read_status(24'he20261,0);
+    read_status(24'he20262,8'hf0);
+    read_status(24'he20263,8'hff);
+    read_status(24'he20292,8'hff);
+    $display("PASS: complete C6 bridge prepare/ready/release and mixed status latency");
     $finish;
   end
 endmodule

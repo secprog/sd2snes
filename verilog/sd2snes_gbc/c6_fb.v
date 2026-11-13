@@ -247,6 +247,10 @@ reg [2:0]   wr_line_r;
 wire        wr2_r, wr_last2_r, wr_diff_r;
 wire [4:0]  wr_row2_r, wr_col2_r;
 wire [7:0]  cache_ready_row;
+// READY depends on the row-release decode and the cache tag. Register it
+// before the status mux; the complete SNES view still settles in <=3 clocks.
+reg [7:0] cache_ready_status;
+always @(posedge CLK) cache_ready_status <= cache_ready_row;
 wire        fb_overflow;
 reg         prepare_r;
 reg [4:0]   prepare_row_r;
@@ -626,7 +630,7 @@ always @(*) begin
     8'h90:   STAT_BYTE = COLW_N[7:0];
     8'h91:   STAT_BYTE = COLW_N[15:8];
 `ifdef GBC_EXTERNAL_FB
-    8'h92:   STAT_BYTE = cache_ready_row; // $ff until requested row is complete
+    8'h92:   STAT_BYTE = cache_ready_status; // $ff until requested row is complete
     8'h93:   STAT_BYTE = {7'd0,fb_overflow}; // sticky: never silently serve a torn row
 `endif
     default: STAT_BYTE = dhit ? dirty_byte : 8'h00;

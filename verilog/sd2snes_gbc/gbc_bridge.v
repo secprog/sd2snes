@@ -45,6 +45,8 @@
 //                address it belongs to.
 //   cycle N+2  : the composed byte is in view_data_r, which is DATA_OUT.
 //
+// Mk.II additionally registers C6 dirty bytes and READY (+$92); those status
+// reads take two clocks. They remain inside the <=3-clock window below.
 // Two cycles for the views of $E0-$E3.  The STATUS BLOCK is the one exception
 // below that and takes ONE cycle: it reads no RAM, so there is nothing to wait
 // for, and $E2:0200 is the byte every liveness check reads.  The FRAMEBUFFER

@@ -1074,6 +1074,12 @@ wire        d_map_hit = TAP_VRAM_WE & (TAP_VRAM_ADDR[12:11] == 2'b11);
 // of any view and must not cost 4 KB of map traffic.  They still count as REGS.
 wire        snap_msel   = snap_publish & ((|((pd_lcdc_r ^ sn_lcdc_r) & 8'h01))
                                        |  (pd_compat_r != sn_compat_r));
+`ifdef MK2
+// GbcRegs re-applies the published registers every frame. GbcFoldDirty only
+// consumes MSEL/OAM/CRAM (masks $10 and $03), so the separate REGS difference
+// flag and its comparisons carry no information to the Mk.II renderer.
+wire        snap_regs   = 1'b0;
+`else
 wire        snap_regs   = snap_publish & ((pd_lcdc_r != sn_lcdc_r) | (pd_scx_r  != sn_scx_r)
                                     |  (pd_scy_r  != sn_scy_r)  | (pd_wx_r   != sn_wx_r)
                                     |  (pd_wy_r   != sn_wy_r)   | (pd_bgp_r  != sn_bgp_r)
@@ -1082,6 +1088,7 @@ wire        snap_regs   = snap_publish & ((pd_lcdc_r != sn_lcdc_r) | (pd_scx_r  
                                     |  (pd_compat_r != sn_compat_r)
                                     |  (pd_lcd_on_r != sn_lcd_on_r)
                                     |  (pd_first_frame_r != sn_first_frame_r));
+`endif
 // The OAM view also moves when LCDC.0/.1/.2 or compat move, because visibility,
 // the 8x16 tile pairing and the priority/palette encoding all read them.
 wire        snap_oam    = snap_publish & (oam_snap_diff_r
@@ -1513,8 +1520,14 @@ always @(*) begin
     8'h07:   status_byte = sn_bgp_r;
     8'h08:   status_byte = sn_obp0_r;
     8'h09:   status_byte = sn_obp1_r;
+`ifdef MK2
+    // The player does not consume these copies. CPU priority, double speed,
+    // and the published SPEED2X flag retain their original implementation.
+    8'h0A,8'h0B: status_byte = 0;
+`else
     8'h0A:   status_byte = sn_opri_r;
     8'h0B:   status_byte = sn_key1_r;
+`endif
     8'h0C:   status_byte = ly_sync_r;
 `ifdef MK2
     8'h0D:   status_byte = 0; // unused by the player; SEQ remains at +0E/+0F

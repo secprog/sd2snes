@@ -5,6 +5,7 @@ module gbc_snapshot_tb;
   reg CLK=0, RST=1, WR=0, VIEW=0, EF=0, LY0=0, COMPAT=0;
   reg [23:0] ADDR=0;
   reg [7:0] DIN=0, LCDC=8'h87;
+  reg [7:0] SCX=0;
   reg FB_ACK=0, PIXEL=0;
   reg VWE=0, VBANK=0;
   reg [12:0] VADDR=0;
@@ -32,9 +33,9 @@ module gbc_snapshot_tb;
     .TAP_VRAM_WE(VWE),.TAP_VRAM_BANK(VBANK),.TAP_VRAM_ADDR(VADDR),
     .TAP_OAM_WE(1'b0),.TAP_CRAM_WE(1'b0),.TAP_CRAM_IDX(7'd0),.TAP_CRAM_DATA(8'd0),
     .TAP_LY0(LY0),.TAP_VBLANK(1'b0),.TAP_LY(8'd0),.TAP_LCDC(LCDC),
-    .TAP_SCX(8'd0),.TAP_SCY(8'd0),.TAP_WX(8'd0),.TAP_WY(8'd0),
-    .TAP_BGP(8'h1b),.TAP_OBP0(8'h6c),.TAP_OBP1(8'h93),.TAP_OPRI(8'd0),
-    .TAP_KEY0(8'd0),.TAP_KEY1(8'd0),.TAP_VBK(8'd0),.TAP_SVBK(8'd0),
+    .TAP_SCX(SCX),.TAP_SCY(8'd0),.TAP_WX(8'd0),.TAP_WY(8'd0),
+    .TAP_BGP(8'h1b),.TAP_OBP0(8'h6c),.TAP_OBP1(8'h93),.TAP_OPRI(8'hff),
+    .TAP_KEY0(8'd0),.TAP_KEY1(8'hff),.TAP_VBK(8'd0),.TAP_SVBK(8'd0),
     .TAP_SPEED_REQ(1'b0),.TAP_MF_VALID(mf_valid),.TAP_MF_KIND(mf_kind),
     .TAP_MF_IDX(6'd0),.TAP_MF_VALUE(8'd0),.TAP_MF_LY(8'd0),
     .TAP_MF_BEFORE_MODE3(1'b0),.VRAM0_B_DATA(8'd0),.VRAM1_B_DATA(8'd0),
@@ -220,6 +221,17 @@ module gbc_snapshot_tb;
       remember; check_views;
     end
     $display("PASS: shared snapshot RAM, coherent publication, two-cycle views and copy reset (%0d bytes)",checks);
+    // Register snapshots still update even though the player ignores REGS
+    // dirt and the raw OPRI/KEY1 diagnostic copies on wire $04.
+    for(i=0;i<8;i=i+1) begin
+      SCX=1<<i; LY0=1; tick; LY0=0; repeat(163) tick;
+      read_status(24'he20203,SCX);
+      read_status(24'he2020a,0); read_status(24'he2020b,0);
+      command(2);
+      if(dut.dirty_misc_pub_r[2] !== 0) $fatal(1,"unused REGS flag is not zero");
+      if(dut.status_flags0[3] !== 1) $fatal(1,"SPEED2X flag was removed");
+      command(5);
+    end
     // Real bridge/row/cache handshake, including alternating the registered
     // READY status with ordinary status and dirty bytes. SRAM content is zero;
     // its electrical timing/backpressure are exercised by gbc_sram_bus_tb.

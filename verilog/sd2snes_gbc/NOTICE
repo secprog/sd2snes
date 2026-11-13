@@ -53,9 +53,11 @@ obj-mk2-gbc directory, so it cannot reuse production objects. The GBC route
 never selects the SGB/MSU variant. The Mk.II GBC port keeps both VRAM banks,
 the colour pipeline, HDMA and double speed. Small
 memories use LUT RAM; the optional MCU state-debug window is omitted there.
-Wire $04 also omits status counters unused by the SNES player: +$0D, +$59,
+Wire $04 also omits status fields unused by the SNES player: +$0A/+$0B,
++$0D, +$59,
 +$5E, and the +$30..+$3F debug mirror read zero, except +$3C/+$3D retain
-the bus-starvation counter for board validation. The functional SEQ,
+the bus-starvation counter for board validation. DIRTY_MISC.REGS is zero:
+the player applies register snapshots unconditionally. The functional SEQ,
 LOG_OVF, row-freeze, dirty, palette and cache-ready/overflow fields remain.
 COLW_N saturates at 256 on Mk.II: the player tests only >=96 and >=256,
 so additional count precision cannot change its rendering-mode policy.

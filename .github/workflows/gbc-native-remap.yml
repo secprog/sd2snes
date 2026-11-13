@@ -21,7 +21,7 @@ on:
         type: choice
         required: true
         default: fixed-mux-sat
-        options: [fixed-mux-sat, compare-sat, fixed-mux-resub, lut4-resub, fixed-mux-area, lut4-area, fixed-mux, lut4]
+        options: [fixed-mux-sat, compare-sat, lut4-sat, fixed-mux-resub, lut4-resub, fixed-mux-area, lut4-area, fixed-mux, lut4]
 
 permissions:
   contents: read

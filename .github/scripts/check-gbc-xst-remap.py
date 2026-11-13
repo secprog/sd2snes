@@ -157,6 +157,8 @@ profiles = (("fixed-mux", False, None),
              "; &get -m -n; &mfs2 -K 4; &put; lutpack -S 1"),
             ("fixed-mux-sat-area", False, "strash; " + resub + area_tail +
              "; &get -m -n; &mfs2 -K 4 -a; &put; lutpack -S 1"),
+            ("lut4-sat", True, "strash; " + resub + area_tail +
+             "; &get -m -n; &mfs2 -K 4; &put; lutpack -S 1"),
             ("compare-resub", False, "strash; " + resub + area_tail),
             ("compare-sat", False, "strash; " + resub + area_tail +
              "; &get -m -n; &mfs2 -K 4; &put; lutpack -S 1"))

@@ -156,7 +156,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        profile: [fixed-mux-sat, compare-sat]
+        profile: [lut4-sat]
     uses: ./.github/workflows/gbc-native-remap.yml
     with:
       native_run: ${{ inputs.mk2_run_id }}

@@ -186,9 +186,9 @@ module gbc_pixel_ram #(parameter WIDTH=4)(input CLK, WE,
   assign READ_Q = pixels[RADDR];
 endmodule
 
-// 18 rows of 20 dirty cells. Even/odd rows have separate dual-port LUT RAMs:
-// the producer can read-modify-write one row while the SNES reads both rows
-// touched by a packed status byte. Tags give every row an immediate all-zero
+// 18 rows of 20 dirty cells. Five four-bit column groups use dual-port LUT
+// RAMs: a write updates just one nibble, while the SNES reads the two nibbles
+// touched by its packed status byte. Tags give every row an immediate all-zero
 // or all-one default after reset/restart/ROW_DONE, without resetting the RAM.
 // SET wins over CLEAR, including a simultaneous update of that same row.
 module c6_dirty_ram(input CLK, RST, ALL, SET, input [4:0] ROW, COL,
@@ -197,11 +197,10 @@ module c6_dirty_ram(input CLK, RST, ALL, SET, input [4:0] ROW, COL,
   wire [17:0] clear_rows = CLEAR | {18{RST}};
   wire set_ok = SET && ROW < 18 && COL < 20;
   wire [17:0] set_rows = set_ok ? (18'd1 << ROW) : 18'd0;
-  wire [19:0] col_mask = 20'd1 << COL;
-  wire [39:0] write_q, read_q;
-  wire [19:0] old_word = write_q[ROW[0]*20 +: 20];
-  wire [19:0] base_word = clear_rows[ROW] ? 20'd0
-                       : valid[ROW] ? old_word : {20{default_one[ROW]}};
+  wire [19:0] write_q, read_q;
+  wire [3:0] old_nibble = write_q[COL[4:2]*4 +: 4];
+  wire [3:0] base_nibble = clear_rows[ROW] ? 4'd0
+                         : valid[ROW] ? old_nibble : {4{default_one[ROW]}};
 
   // Five status bytes contain exactly two 20-cell rows. A small constant
   // lookup avoids a divider and reads one even/odd pair in parallel.
@@ -240,34 +239,41 @@ module c6_dirty_ram(input CLK, RST, ALL, SET, input [4:0] ROW, COL,
   wire [3:0] pair_index = read_sel[6:3];
   wire [4:0] even_row = {pair_index,1'b0};
   wire [4:0] odd_row = {pair_index,1'b1};
-  wire [19:0] even_bits = valid[even_row] ? read_q[19:0]
-                       : {20{default_one[even_row]}};
-  wire [19:0] odd_bits = valid[odd_row] ? read_q[39:20]
-                      : {20{default_one[odd_row]}};
-  genvar parity;
+  wire [2:0] part=read_sel[2:0];
+  genvar group;
   generate
-    for(parity=0; parity<2; parity=parity+1) begin : g_rows
-      (* ram_style = "distributed" *) reg [19:0] rows [0:8];
+    for(group=0; group<5; group=group+1) begin : g_columns
+      (* ram_style = "distributed" *) reg [3:0] rows [0:17];
+      wire read_odd=(group==0) ? part>=2 : part>=3;
+      wire selected=COL[4:2]==group;
+      // The first write materializes the default in every column group.
+      // Later writes need only the selected nibble; one row-valid bit still
+      // covers all five groups, including SET coincident with CLEAR.
       always @(posedge CLK)
-        if(set_ok && !ALL && ROW[0] == parity)
-          rows[ROW[4:1]] <= base_word | col_mask;
-      assign write_q[parity*20 +: 20] = rows[ROW[4:1]];
-      assign read_q[parity*20 +: 20] = rows[pair_index];
+        if(set_ok && !ALL && (selected || !valid[ROW] || clear_rows[ROW]))
+          rows[ROW] <= base_nibble | (selected ? (4'd1 << COL[1:0]) : 4'd0);
+      assign write_q[group*4 +: 4] = rows[ROW];
+      assign read_q[group*4 +: 4] = rows[{pair_index,read_odd}];
     end
   endgenerate
   always @(posedge CLK) begin
     valid <= ALL ? 18'd0 : ((valid & ~clear_rows) | set_rows);
     default_one <= ALL ? 18'h3ffff : (default_one & ~clear_rows);
   end
+  reg [7:0] raw_byte;
+  wire [4:0] low_row=part>=3 ? odd_row : even_row;
+  wire [4:0] high_row=part>=2 ? odd_row : even_row;
   always @(*) begin
-    case(read_sel[2:0])
-      0: BYTE=even_bits[7:0];
-      1: BYTE=even_bits[15:8];
-      2: BYTE={odd_bits[3:0],even_bits[19:16]};
-      3: BYTE=odd_bits[11:4];
-      4: BYTE=odd_bits[19:12];
-      default: BYTE=0;
+    case(part)
+      0: raw_byte={read_q[7:4],read_q[3:0]};
+      1: raw_byte={read_q[15:12],read_q[11:8]};
+      2: raw_byte={read_q[3:0],read_q[19:16]};
+      3: raw_byte={read_q[11:8],read_q[7:4]};
+      4: raw_byte={read_q[19:16],read_q[15:12]};
+      default: raw_byte=0;
     endcase
+    BYTE=part>4 ? 8'd0 : {valid[high_row] ? raw_byte[7:4] : {4{default_one[high_row]}},
+                         valid[low_row] ? raw_byte[3:0] : {4{default_one[low_row]}}};
   end
 endmodule
 // Three 512x32 RAMB16s rather than a power-of-two-rounded 2048x32 array.

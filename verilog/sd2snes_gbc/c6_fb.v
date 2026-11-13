@@ -321,7 +321,13 @@ wire        rd_one     = rowdone_wr_r & (wr_data_r < 8'd18);
 wire [4:0]  rd_row     = wr_data_r[4:0];
 wire        rd_hit_one = rd_one & row_frozen_r[rd_row];
 wire        rd_bad     = rowdone_wr_r & ~rd_all & ~rd_hit_one;
+`ifdef GBC_EXTERNAL_FB
+// Gate each decoded bit with its own frozen flag. Indexing FROZEN first and
+// then decoding the result creates two cascaded row muxes on READY/status.
+assign rd_mask = row_frozen_r & ({18{rd_all}} | ({18{rd_one}} & (18'd1 << rd_row)));
+`else
 assign rd_mask = rd_all ? row_frozen_r : (rd_hit_one ? (18'd1 << rd_row) : 18'd0);
+`endif
 
 //-------------------------------------------------------------------
 // rows, dirty, CL, counters

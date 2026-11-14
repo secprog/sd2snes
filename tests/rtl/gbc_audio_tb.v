@@ -16,8 +16,11 @@ module gbc_audio_tb;
     .dac_address_ext(9'd0),.play(1'b0),.reset(reset),.palmode(1'b0),
     .sdout(ref_sd),.mclk_out(ref_mc),.lrck_out(ref_lr),.sclk_out(ref_sc));
   reg [19:0] random_state=20'habcde;
+  reg [27:0] expected_stage;
   integer n,b,ones=0,channel,stage,until_ce=0,warmup=1024;
   always @(negedge clk) begin
+    // Let the driver change APU data before checking combinational operands.
+    #1;
     if(!reset) begin
       for(channel=0;channel<2;channel=channel+1) begin
         if(dut.sgb_co[2][channel] !== reference.sgb_co[2][channel])
@@ -27,6 +30,17 @@ module gbc_audio_tb;
             if(dut.sgb_io[stage][channel] !== reference.sgb_io[stage][channel]
                || dut.sgb_ci[stage][channel] !== reference.sgb_ci[stage][channel])
               $fatal(1,"CIC stage state differs after complete rotation");
+        case(dut.sgb_cicstate)
+          dut.ST4_INT1: expected_stage=reference.sgb_io[0][channel]+reference.sgb_bufi[channel];
+          dut.ST5_INT2: expected_stage=reference.sgb_io[1][channel]+reference.sgb_io[0][channel];
+          dut.ST6_INT3: expected_stage=reference.sgb_io[2][channel]+reference.sgb_io[1][channel];
+          dut.ST1_COMB1: expected_stage=reference.sgb_io[2][channel]-reference.sgb_ci[0][channel];
+          dut.ST2_COMB2: expected_stage=reference.sgb_co[0][channel]-reference.sgb_ci[1][channel];
+          dut.ST3_COMB3: expected_stage=reference.sgb_co[1][channel]-reference.sgb_ci[2][channel];
+          default: expected_stage=dut.sgb_filter_result[channel];
+        endcase
+        if(dut.sgb_filter_result[channel] !== expected_stage)
+          $fatal(1,"shared CIC stage differs state=%h channel=%0d",dut.sgb_cicstate,channel);
       end
     end
   end

@@ -57,20 +57,23 @@ assign sgb_bufi[0] = {{(`SGB_CIC_BITS-10){sgb_apu_dat[9]}}, sgb_apu_dat[9:0]};
 `ifdef MK2
 // The existing controller already visits each stage on a different clock.
 // Rotate the three state words so every visit uses the same add/subtract
-// hardware. After the third visit their original order is restored. The
+// hardware. A shared work register carries each stage's result into the
+// next; INT3 also supplies COMB1, so both operations use one arithmetic
+// unit per channel. After the third visit the state order is restored. The
 // final comb output still changes only at ST3, preserving I2S sample timing.
 // CE1 is at least 19 clocks apart (gbc_clk); all six visits finish within 7.
 reg [(`SGB_CIC_BITS-1):0] sgb_comb_work[1:0];
-wire [(`SGB_CIC_BITS-1):0] sgb_int_input[1:0], sgb_comb_input[1:0];
-wire [(`SGB_CIC_BITS-1):0] sgb_int_sum[1:0], sgb_comb_difference[1:0];
+wire sgb_comb_phase = sgb_cicstate == ST1_COMB1 || sgb_cicstate == ST2_COMB2
+                      || sgb_cicstate == ST3_COMB3;
+wire [(`SGB_CIC_BITS-1):0] sgb_filter_input[1:0], sgb_filter_history[1:0];
+wire [(`SGB_CIC_BITS-1):0] sgb_filter_result[1:0];
 genvar channel;
 generate for(channel=0; channel<2; channel=channel+1) begin : g_cic_arithmetic
-  assign sgb_int_input[channel] = sgb_cicstate == ST4_INT1
-                               ? sgb_bufi[channel] : sgb_io[2][channel];
-  assign sgb_int_sum[channel] = sgb_io[0][channel] + sgb_int_input[channel];
-  assign sgb_comb_input[channel] = sgb_cicstate == ST1_COMB1
-                                ? sgb_io[2][channel] : sgb_comb_work[channel];
-  assign sgb_comb_difference[channel] = sgb_comb_input[channel] - sgb_ci[0][channel];
+  assign sgb_filter_input[channel] = sgb_cicstate == ST4_INT1
+                                  ? sgb_bufi[channel] : sgb_comb_work[channel];
+  assign sgb_filter_history[channel] = sgb_comb_phase ? sgb_ci[0][channel] : sgb_io[0][channel];
+  assign sgb_filter_result[channel] = sgb_filter_input[channel]
+       + (sgb_filter_history[channel] ^ {`SGB_CIC_BITS{sgb_comb_phase}}) + sgb_comb_phase;
 end endgenerate
 `endif
 
@@ -100,15 +103,16 @@ always @(posedge clkin) begin
       for (i = 0; i < 2; i = i + 1) begin
         sgb_io[0][i] <= sgb_io[1][i];
         sgb_io[1][i] <= sgb_io[2][i];
-        sgb_io[2][i] <= sgb_int_sum[i];
+        sgb_io[2][i] <= sgb_filter_result[i];
+        sgb_comb_work[i] <= sgb_filter_result[i];
       end
     if (sgb_cicstate == ST1_COMB1 || sgb_cicstate == ST2_COMB2 || sgb_cicstate == ST3_COMB3)
       for (i = 0; i < 2; i = i + 1) begin
         sgb_ci[0][i] <= sgb_ci[1][i];
         sgb_ci[1][i] <= sgb_ci[2][i];
-        sgb_ci[2][i] <= sgb_comb_input[i];
-        sgb_comb_work[i] <= sgb_comb_difference[i];
-        if (sgb_cicstate == ST3_COMB3) sgb_co[2][i] <= sgb_comb_difference[i];
+        sgb_ci[2][i] <= sgb_filter_input[i];
+        sgb_comb_work[i] <= sgb_filter_result[i];
+        if (sgb_cicstate == ST3_COMB3) sgb_co[2][i] <= sgb_filter_result[i];
       end
 `endif
     case(sgb_cicstate)

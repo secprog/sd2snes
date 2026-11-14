@@ -1,176 +1,44 @@
-name: Validate DSPX stack repair and strict timing
+name: Validate one DSPX DMA4 placement change with unchanged RTL
 on:
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
 concurrency:
-  group: dspx-stack-timing-${{ github.ref }}
+  group: dspx-dma-placement-${{ github.ref }}
   cancel-in-progress: false
-
 env:
   PYTHONDONTWRITEBYTECODE: '1'
-  IGNORE_TIMING: '0'
-  BASELINE: 689f3a2a4006d4aff66e343bd12be772eedad190
-
 jobs:
-  proof:
-    name: Prove current DSPX stack integration and all changed state
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-      - name: Authenticate current source boundary before tools
-        run: |
-          set -euo pipefail
-          report="$RUNNER_TEMP/dspx-stack-only-proof"
-          mkdir -p "$report"
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test "$(git rev-parse "$BASELINE:verilog")" = c2e332a461e38c60b144e08ece1d62b949bb8db2
-          git diff --name-only "$BASELINE" HEAD > "$report/changed-paths.txt"
-          printf '%s\n' .github/scripts/check-dspx-strict-timing.py .github/scripts/prepare-dspx-stack-only-proof.py \
-            .github/workflows/validate-dspx-stack-timing.yml verilog/sd2snes_dsp/upd77c25.v \
-            | LC_ALL=C sort > "$report/expected-changed-paths.txt"
-          cmp "$report/expected-changed-paths.txt" "$report/changed-paths.txt"
-          test "$(git hash-object --no-filters verilog/sd2snes_dsp/upd77c25.v)" = 6660fc95958e6eb0117d2018c1897257fb0b6cc2
-          test "$(git hash-object --no-filters .github/scripts/post-sync-evidence.py)" = fdb60667eb015c3769b2adc452864396ff64e9e7
-          python3 .github/scripts/post-sync-evidence.py snapshot "$GITHUB_WORKSPACE" "$report/source-before"
-          git diff "$BASELINE" HEAD -- verilog > "$report/production-change.diff"
-          printf 'Source head: %s\nBaseline: %s\n' "$GITHUB_SHA" "$BASELINE" > "$report/identity.txt"
-      - name: Exercise strict report parser against setup, hold and constraint mutations
-        run: |
-          set -euo pipefail
-          python3 .github/scripts/check-dspx-strict-timing.py --self-test "$RUNNER_TEMP/dspx-stack-only-proof/timing-parser-controls.json"
-      - name: Install and identify hosted proof tools
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends yosys iverilog
-          report="$RUNNER_TEMP/dspx-stack-only-proof"
-          yosys -V | tee "$report/tool-version.txt"
-          grep -F 'Yosys 0.33 (git sha1 2584903a060)' "$report/tool-version.txt"
-          iverilog -V > "$report/iverilog-version.txt" 2>&1
-          grep -F 'Icarus Verilog version 12.0' "$report/iverilog-version.txt"
-      - name: Bind exact current source and prepare complete stack models
-        run: |
-          set -euo pipefail
-          python3 .github/scripts/prepare-dspx-stack-only-proof.py "$RUNNER_TEMP/dspx-stack-only-proof"
-      - name: Audit all state bits and prove their observation ordering
-        run: |
-          set -euo pipefail
-          cd "$RUNNER_TEMP/dspx-stack-only-proof"
-          sha256sum --check SHA256SUMS
-          variants=(gold gate bad-data bad-run bad-restore bad-reset bad-push bad-strobe bad-lane bad-word bad-prefix bad-return bad-high-half bad-low-half bad-cpu-permit bad-x-call-data bad-x-restore-data bad-x-write-mask bad-x-address bad-x-high-address bad-x-cpu-guard)
-          for variant in "${variants[@]}"; do
-            mkdir "$variant"
-            cp "$variant.v" "$variant/model.v"
-            (
-              cd "$variant"
-              # Do not optimize away X-sensitive controls or dynamic memory
-              # semantics with opt_expr or the general memory pipeline.
-              yosys -l preparation.log -p 'read_verilog -sv -formal model.v; hierarchy -check -top stack_model; flatten; proc -ifx -noopt; check -assert; memory_memx; memory_collect; memory_map; dffunmap; setundef -undriven -undef; opt_clean; check -assert; write_json state.json'
-              model_name=gate
-              if [[ "$variant" == gold ]]; then model_name=gold; fi
-              python3 "$GITHUB_WORKSPACE/.github/scripts/cut-dsp-stack-case-state.py" \
-                state.json transition.json "$model_name" | tee state-audit.log
-              yosys -l state-view.log -p "read_json transition.json; hierarchy -check -top $model_name; sat -verify -enable_undef -prove state_view_ok 1 -show-inputs -show state_view_ok -timeout 180"
-              grep -F 'SAT proof finished - no model found: SUCCESS!' state-view.log
-              if [[ "$variant" == gold ]]; then
-                result=0
-                yosys -l state-view-mutant.log -p 'read_json state-view-mutant.json; hierarchy -check -top gold; sat -verify -enable_undef -set-def-inputs -prove state_view_ok 1 -show-inputs -show state_view_ok -dump_json state-view-mutant-counterexample.json -timeout 180' || result=$?
-                test "$result" -ne 0
-                grep -F 'SAT proof finished - model found: FAIL!' state-view-mutant.log
-                test -s state-view-mutant-counterexample.json
-              fi
-            )
-          done
-
-      - name: Prove strict state and reads and require real binary and X counterexamples
-        run: |
-          set -euo pipefail
-          cd "$RUNNER_TEMP/dspx-stack-only-proof"
-          for mode in binary xstate; do
-            if [[ "$mode" == binary ]]; then
-              variants=(gate bad-data bad-run bad-restore bad-reset bad-push bad-strobe bad-lane bad-word bad-prefix bad-return bad-high-half bad-low-half bad-cpu-permit bad-x-call-data bad-x-restore-data bad-x-write-mask bad-x-address bad-x-high-address bad-x-cpu-guard)
-              input_flags='-set-def-inputs'
-            else
-              variants=(bad-x-call-data bad-x-restore-data bad-x-write-mask bad-x-address bad-x-high-address bad-x-cpu-guard gate)
-              input_flags=''
-            fi
-            for variant in "${variants[@]}"; do
-              cat > "$variant/prove-$mode.ys" <<YOSYS
-          read_json ../gold/transition.json
-          read_json transition.json
-          miter -equiv -make_assert -make_outputs -make_outcmp gold gate miter
-          hierarchy -check -top miter
-          flatten -wb
-          hierarchy -check -top miter
-          opt_clean
-          check -assert
-          write_json miter-$mode.json
-          sat -verify -enable_undef $input_flags -prove-asserts -show-inputs -show-outputs -dump_json counterexample-$mode.json -timeout 300
-          YOSYS
-              result=0
-              (cd "$variant" && yosys -l "proof-$mode.log" -s "prove-$mode.ys") || result=$?
-              test -s "$variant/miter-$mode.json"
-              if [[ "$variant" == gate || ( "$variant" == bad-x-* && "$mode" == binary ) ]]; then
-                test "$result" -eq 0
-                grep -F 'SAT proof finished - no model found: SUCCESS!' "$variant/proof-$mode.log"
-              else
-                test "$result" -ne 0
-                grep -F 'SAT proof finished - model found: FAIL!' "$variant/proof-$mode.log"
-                test -s "$variant/counterexample-$mode.json"
-              fi
-            done
-          done
-          sha256sum --check SHA256SUMS
-          printf 'Fresh current-baseline stack-only decoder component proof: all176 stack transitions and both reads match for common binary and unrestricted Yosys-X state/inputs; thirteen binary and six binary-equivalent X mutations produced counterexamples. Component proof only; the dependent native job independently checks actual timing. No whole-FPGA equivalence or hardware result.\n' \
-            | tee verified.txt >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Require unchanged full proof checkout and index
-        if: always()
-        run: |
-          set -euo pipefail
-          report="$RUNNER_TEMP/dspx-stack-only-proof"
-          python3 .github/scripts/post-sync-evidence.py snapshot "$GITHUB_WORKSPACE" "$report/source-after"
-          cmp "$report/source-before.json" "$report/source-after.json"
-          cmp "$report/source-before-index.txt" "$report/source-after-index.txt"
-      - name: Retain complete proof models, state audits, miters and witnesses
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: dspx-stack-only-proof
-          path: ${{ runner.temp }}/dspx-stack-only-proof/
-          if-no-files-found: error
-          retention-days: 14
-
   native:
-    name: Build one strict DSPX implementation with unchanged constraints
-    needs: proof
+    name: Build one strict DSPX implementation with unchanged timing constraints
     runs-on: ubuntu-22.04
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: actions/download-artifact@v4
-        with:
-          name: dspx-stack-only-proof
-          path: ${{ runner.temp }}/accepted-proof/
-      - name: Bind native checkout to this run's successful proof
+      - name: Bind unchanged RTL and exact two new physical LOC constraints
         run: |
           set -euo pipefail
           report="$RUNNER_TEMP/dspx-native"
           mkdir -p "$report"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test "$(git hash-object --no-filters verilog/sd2snes_dsp/upd77c25.v)" = 6660fc95958e6eb0117d2018c1897257fb0b6cc2
-          test -s "$RUNNER_TEMP/accepted-proof/verified.txt"
-          (cd "$RUNNER_TEMP/accepted-proof" && sha256sum --check SHA256SUMS)
+          test "$(git hash-object --no-filters .github/scripts/validate-dspx-dma-placement.py)" = cd18db59f30c46afe343b311f6d238c8aab9c713
+          test "$(git hash-object --no-filters .github/scripts/post-sync-evidence.py)" = fdb60667eb015c3769b2adc452864396ff64e9e7
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/main.v)" = 82c29e4d6a6b3a3f894d810bbc69e3fd9915b019
+          test "$(git hash-object --no-filters verilog/sd2snes_dsp/upd77c25.v)" = 0374661e4196db07b7206ff31b691004cfb53f74
+          python3 .github/scripts/validate-dspx-dma-placement.py source "$GITHUB_WORKSPACE" "$report/source-contract.json"
           python3 .github/scripts/post-sync-evidence.py snapshot "$GITHUB_WORKSPACE" "$report/source-before"
-          cmp "$report/source-before.json" "$RUNNER_TEMP/accepted-proof/source-before.json"
-          cmp "$report/source-before-index.txt" "$RUNNER_TEMP/accepted-proof/source-before-index.txt"
+          python3 .github/scripts/validate-dspx-dma-placement.py self-test "$report/placement-controls.json"
+          python3 .github/scripts/check-dspx-strict-timing.py --self-test "$report/strict-report-controls.json"
           printf 'Source head: %s\nIGNORE_TIMING=0\nDefault DSPX MAP/PAR cost table=68\n' "$GITHUB_SHA" > "$report/identity.txt"
+      - name: Download exact adopted baseline timing reports
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/validate-dspx-dma-placement.py baseline "$RUNNER_TEMP/dspx-baseline"
       - name: Exercise existing hosted source and owned-container evidence controls
         run: |
           set -euo pipefail
@@ -186,6 +54,70 @@ jobs:
           python3 .github/scripts/post-sync-evidence.py snapshot "$GITHUB_WORKSPACE" "$RUNNER_TEMP/dspx-native/source-after-ip"
           cmp "$RUNNER_TEMP/dspx-native/source-before.json" "$RUNNER_TEMP/dspx-native/source-after-ip.json"
           cmp "$RUNNER_TEMP/dspx-native/source-before-index.txt" "$RUNNER_TEMP/dspx-native/source-after-ip-index.txt"
+      - name: Generate one original MAP checkpoint before any PAR invocation
+        id: map
+        run: |
+          set -euo pipefail
+          report="$RUNNER_TEMP/dspx-native"
+          name="dspx-map-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          image=sha256:5e3bbb00649997abca8843b1d82d8529eda99a0f2868d37ad9777e0ad5fd50e8
+          test ! -e verilog/sd2snes_dspx/main_map.ncd
+          test ! -e verilog/sd2snes_dspx/main.ncd
+          docker image inspect "$image" > "$report/map-image.json"
+          docker create --name "$name" --user 0:0 --network bridge --mac-address 08:00:27:68:c9:35 \
+            --volume "$GITHUB_WORKSPACE:/work" --workdir /work --env ISE_CTABLE= --env IGNORE_TIMING=0 \
+            --entrypoint /bin/bash "$image" -c \
+            'exec make -j2 -C verilog/sd2snes_dspx main_map.ncd HOST=LINUX XILINX_ENV= IGNORE_TIMING=0' > "$report/map-container-id.txt"
+          docker inspect "$name" > "$report/map-container-created.json"
+          docker start "$name" > "$report/map-start.txt"
+          docker inspect "$name" > "$report/map-container-started.json"
+          set +e
+          docker logs --follow "$name" 2>&1 | tee "$report/map-build.log"
+          log_status=("${PIPESTATUS[@]}")
+          docker wait "$name" > "$report/map-exit.txt"
+          wait_status=$?
+          docker inspect "$name" > "$report/map-container-finished.json"
+          inspect_status=$?
+          set -e
+          printf 'log=%s tee=%s wait=%s inspect=%s\n' "${log_status[0]}" "${log_status[1]}" "$wait_status" "$inspect_status" > "$report/map-collection-exits.txt"
+          python3 - "$report/map-container-started.json" "$report/map-container-finished.json" "$image" <<'PY'
+          import json, sys
+          x,=json.load(open(sys.argv[1])); y,=json.load(open(sys.argv[2]))
+          assert x['Image']==y['Image']==sys.argv[3]
+          assert x['Config']['Entrypoint']==['/bin/bash']
+          assert x['Config']['Cmd']==['-c','exec make -j2 -C verilog/sd2snes_dspx main_map.ncd HOST=LINUX XILINX_ENV= IGNORE_TIMING=0']
+          assert x['Config']['User']=='0:0' and x['Config']['WorkingDir']=='/work'
+          assert x['HostConfig']['NetworkMode']=='bridge'
+          assert x['NetworkSettings']['Networks']['bridge']['MacAddress']=='08:00:27:68:c9:35'
+          env=dict(v.split('=',1) for v in x['Config']['Env'])
+          assert env['IGNORE_TIMING']=='0' and env['ISE_CTABLE']==''
+          assert not any(k.startswith('MAKE') for k in env)
+          assert x['State']['Running'] is True and y['State']['Running'] is False
+          assert y['State']['ExitCode']==0 and not y['State']['OOMKilled']
+          PY
+          test "${log_status[0]}" = 0 && test "${log_status[1]}" = 0
+          test "$wait_status" = 0 && test "$inspect_status" = 0
+          test "$(cat "$report/map-exit.txt")" = 0
+          test ! -e verilog/sd2snes_dspx/main.ncd
+      - name: Fail closed on actual MAP packing and hard PCF location before original PAR
+        id: placement
+        run: |
+          set -euo pipefail
+          report="$RUNNER_TEMP/dspx-native"
+          physical="$RUNNER_TEMP/dspx-dma-placement-physical-raw"
+          mkdir "$physical"
+          docker run --rm --user 0:0 --network bridge --mac-address 08:00:27:68:c9:35 \
+            --volume "$GITHUB_WORKSPACE:/work:ro" --volume "$physical:/physical" \
+            --workdir /work/verilog/sd2snes_dspx --entrypoint /bin/bash \
+            sha256:5e3bbb00649997abca8843b1d82d8529eda99a0f2868d37ad9777e0ad5fd50e8 \
+            -c 'set -euo pipefail; xdl -ncd2xdl main_map.ncd /physical/map.xdl' \
+            > "$report/map-export.log" 2>&1
+          python3 .github/scripts/validate-dspx-dma-placement.py collect "$physical/map.xdl" \
+            verilog/sd2snes_dspx "$RUNNER_TEMP/dspx-baseline" "$report/physical"
+          python3 .github/scripts/post-sync-evidence.py snapshot "$GITHUB_WORKSPACE" "$report/source-after-map"
+          cmp "$report/source-before.json" "$report/source-after-map.json"
+          cmp "$report/source-before-index.txt" "$report/source-after-map-index.txt"
+          sha256sum --check "$report/ip/generated-products.sha256" > "$report/physical/ip-pre-par-check.txt"
       - name: Run the original strict DSPX build once and retain its real exit
         id: native
         run: |
@@ -193,6 +125,8 @@ jobs:
           report="$RUNNER_TEMP/dspx-native"
           name="dspx-native-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
           image=sha256:5e3bbb00649997abca8843b1d82d8529eda99a0f2868d37ad9777e0ad5fd50e8
+          test -s "$report/physical/placement-result.json"
+          python3 .github/scripts/validate-dspx-dma-placement.py inputs verilog/sd2snes_dspx "$report/physical"
           docker image inspect "$image" > "$report/native-image.json"
           docker create --name "$name" --user 0:0 --network bridge --mac-address 08:00:27:68:c9:35 \
             --volume "$GITHUB_WORKSPACE:/work" --workdir /work --env ISE_CTABLE= --env IGNORE_TIMING=0 \
@@ -238,7 +172,7 @@ jobs:
           root, output = Path('verilog/sd2snes_dspx'), Path(sys.argv[1])
           rows = []
           for path in sorted(root.iterdir()):
-              if path.is_file() and path.suffix in ('.syr','.par','.mrp','.psr','.bld','.bgn','.twr','.unroutes','.pcf','.xst','.prj','.ut','.tsi'):
+              if path.is_file() and path.suffix in ('.syr','.par','.mrp','.psr','.bld','.bgn','.twr','.unroutes','.pcf','.xst','.prj','.ut','.tsi','.ucf'):
                   assert not path.is_symlink()
                   raw = path.read_bytes()
                   raw.decode('utf-8')
@@ -258,6 +192,17 @@ jobs:
           sha256sum --check "$report/ip/generated-products.sha256" > "$report/ip-final-check.txt"
           find verilog/sd2snes_dsp/ip/mk2/build -type f -print0 | sort -z | xargs -0 sha256sum > "$report/ip-final-products.sha256"
           cmp "$report/ip/generated-products.sha256" "$report/ip-final-products.sha256"
+          printf 'Full source/index/IP immutability verified\n' > "$report/integrity-verified.txt"
+      - name: Require exact prechecked mapped inputs after original native continuation
+        if: always() && steps.native.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/validate-dspx-dma-placement.py inputs verilog/sd2snes_dspx "$RUNNER_TEMP/dspx-native/physical"
+      - name: Measure improvement while retaining actual strict timing failures
+        if: always() && steps.native.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/validate-dspx-dma-placement.py analyze "$RUNNER_TEMP/dspx-native" "$RUNNER_TEMP/dspx-baseline"
       - name: Require routed zero-score setup and hold with exact native options and PCF
         run: |
           set -euo pipefail
@@ -274,11 +219,11 @@ jobs:
           (report/'strict-timing-result.json').write_text(json.dumps(result,indent=2)+'\n')
           print(json.dumps(result,indent=2))
           PY
-      - name: Upload complete proof-bound native text evidence
+      - name: Upload complete source-bound native text evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: dspx-strict-native-reports
+          name: dspx-dma-placement-native-reports
           path: ${{ runner.temp }}/dspx-native/
           if-no-files-found: error
           retention-days: 14
@@ -286,24 +231,42 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: dspx-evidence-controls-result
+          name: dspx-dma-placement-evidence-controls
           path: ${{ runner.temp }}/dspx-evidence-controls/self-test-results.json
           if-no-files-found: warn
           retention-days: 14
       - name: Upload candidate FPGA only after all strict gates pass
         uses: actions/upload-artifact@v4
         with:
-          name: dspx-strict-timing-candidate
+          name: dspx-dma-placement-strict-candidate
           path: |
             verilog/sd2snes_dspx/fpga_dspx.bit
             ${{ runner.temp }}/dspx-native/strict-timing-result.json
           if-no-files-found: error
           retention-days: 14
-      - name: Remove only this job's completed container
+      - name: Retain implementation for future read-only hosted inspection
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dspx-dma-placement-design-github-only
+          path: |
+            verilog/sd2snes_dspx/main_map.ncd
+            verilog/sd2snes_dspx/main.ncd
+            verilog/sd2snes_dspx/main.ngd
+            verilog/sd2snes_dspx/main.ngc
+            verilog/sd2snes_dspx/main.pcf
+            verilog/sd2snes_dsp/ip/mk2/build/*.ngc
+            verilog/sd2snes_dsp/ip/mk2/build/*.v
+            ${{ runner.temp }}/dspx-dma-placement-physical-raw/map.xdl
+          if-no-files-found: error
+          retention-days: 14
+      - name: Remove only this job's completed containers
         if: always()
         run: |
-          name="dspx-native-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
-          if docker container inspect "$name" >/dev/null 2>&1; then
-            running=$(docker inspect --format '{{.State.Running}}' "$name")
-            if [[ "$running" == false ]]; then docker rm "$name"; fi
-          fi
+          for kind in map native; do
+            name="dspx-$kind-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+            if docker container inspect "$name" >/dev/null 2>&1; then
+              running=$(docker inspect --format '{{.State.Running}}' "$name")
+              if [[ "$running" == false ]]; then docker rm "$name"; fi
+            fi
+          done

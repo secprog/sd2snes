@@ -151,17 +151,6 @@ kv_gbc_sync:
 .word $0001, !text_gbc_exact : .byt ^text_gbc_exact
 .word $ffff
 
-; mfunc_isenabled_gbc -- greying predicate of the Game Boy core selector.
-; MkII always uses the GB/GBC core, while MkIII honours GbcMode.
-; Carry set = drawn disabled. COSMETIC only, like every mfunc_isenabled_*
-; (menu_check_disabled_func only picks a palette). Entered by rtl from
-; menu_check_disabled_func with A in 8 bits, which is also why it may live in $C1.
-mfunc_isenabled_gbc:
-  .as
-  lda @ST_IS_MK2
-  cmp #$01                   ; C = 1 for any non-zero flag (Mk.II)
-  rtl
-
 kv_screensaver_timeout:
 .word $0001, !text_1min : .byt ^text_1min
 .word $0002, !text_2min : .byt ^text_2min

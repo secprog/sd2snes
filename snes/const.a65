@@ -550,7 +550,7 @@ mdesc_sgb_spr_increase            .byt "Increase number of supported visible spr
 mdesc_sgb_volume_boost            .byt "Set volume boost for SGB audio if its too quiet", 0
 mdesc_sgb_clock                   .byt "Adjusts the SGB clock (timing)", 0
 mdesc_sgb_bios                    .byt "Select a SGB firmware/BIOS version", 0
-mdesc_gbc_mode                    .byt "Core for Game Boy games: SGB or GBC. Mk.III only", 0
+mdesc_gbc_mode                    .byt "Core for Game Boy games: Auto, Prefer SGB or Prefer GBC", 0
 mdesc_gbc_sync                    .byt "Genlock: smooth. Exact: real speed, may skip frames", 0
 mdesc_gbc_stretch                 .byt "Hi-colour screens fill 256x192", 0
 mdesc_gb_rotate                   .byt "SNES B is the Game Boy A and Y is the B. SGB and GBC", 0

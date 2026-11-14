@@ -575,8 +575,8 @@ menu_enttab_sgb:
  .byt  0,0,0
 
 ; Game Boy Color core (GbcMode / GbcSync / GbcStretch, CFG+$1D1/$1D2/$1D4). They
-; sit with the SGB rows because MkIII can choose between the two cores for .gb/.gbc.
-; MkII always uses the GB/GBC core, so only the core selector is greyed there.
+; sit with the SGB rows because both boards can choose either core for .gb/.gbc.
+; Auto is the default on both boards; SGB remains available for its enhancements.
 ; Sync and stretch apply to the GBC player on both boards.
  .byt  MTYPE_VALUE
  .word !mtext_gbc_mode
@@ -590,8 +590,7 @@ menu_enttab_sgb:
  .byt  ^mdesc_gbc_mode
  .byt  0,0,0
  .byt  0,0,0
- .word !(mfunc_isenabled_gbc-1)
- .byt  ^(mfunc_isenabled_gbc-1)
+ .byt  0,0,0
 
  .byt  MTYPE_VALUE
  .word !mtext_gbc_sync

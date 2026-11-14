@@ -14,8 +14,8 @@
    SGBFW (boot ROM), SGBSR (SNES-side image), fpga_sgbfeat (CHIPFEAT $EF) and
    sgb_romprops.core_is_gbc -- so every consumer downstream keeps working unchanged.
 
-   Mk.II routes all Game Boy images to fpga_gbc.bit and its wire-$05 player.
-   Mk.III retains the configurable SGB/GBC policy and its wire-$03 player.
+   Both boards default to Auto selection between their separate SGB and GBC
+   cores. Mk.II pairs fpga_gbc.bit with wire $05; Mk.III GBC uses wire $03.
 
    sgb.h has to be included before this header (it defines sgb_romprops_t), the way
    sgb.h itself relies on smc.h for snes_romprops_t.
@@ -49,7 +49,7 @@
 /* Both dumps are exactly this long; a file of another size is a different ROM. */
 #define GBC_BOOT_SIZE   2304
 
-/* CFG.gbc_mode (config.yml "GbcMode") -- MkIII core selection; MkII always uses GBC.
+/* CFG.gbc_mode (config.yml "GbcMode") -- SGB/GBC core selection on both boards.
    $0143 bit 7 marks an image the CGB understands: $80 = dual (runs on both),
    $C0 = CGB-only.  Do not renumber: the value is the clamp max in cfg.c. */
 typedef enum {

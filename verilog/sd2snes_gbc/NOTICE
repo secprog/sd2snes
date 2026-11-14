@@ -55,10 +55,13 @@ the existing write gate and read-before-write sample behavior are preserved.
 
 Mk.II status
 ------------
-The fitted GB/GBC core is now the default for all Mk.II Game Boy images,
-including existing configurations. The package replaces fpga_sgb.bit and
-fpga_sgb_msu.bit with fpga_gbc.bit and includes its wire-$05 SNES player and
-accepted SameBoy boot ROM/license. No opt-in MCU flag is required.
+Mk.II and Mk.III use the same default Auto SGB/GBC selection: a .gbc extension
+or CGB-capable header selects GBC; other Game Boy images select SGB. Prefer SGB
+and Prefer GBC remain available globally and per game. Mk.II packages retain
+fpga_sgb.bit and fpga_sgb_msu.bit alongside fpga_gbc.bit, its wire-$05 SNES
+player and the accepted SameBoy boot ROM/license. Only one core is loaded at
+a time, so retaining SGB does not add logic to the fitted GBC image.
+No opt-in MCU flag is required.
 The user accepted the measured -0.832 ns setup miss on 2026-11-14. The image
 and Mk.II packages are marked timing-unverified; console stability has not
 been established. The selected profile is gate-lut4-delay-satlut, seed 11,

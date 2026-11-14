@@ -23,8 +23,8 @@ MENU_ASSETS := $(addprefix misc/,classic.thm menu.spc sfx_cursor.pcm sfx_confirm
 FPGAPATH := verilog
 MK2EXT := bit
 MK3EXT := bi3
-# MkII uses the fitted GB/GBC core instead of the old SGB variants.
-MK2CORES := atari base basex bootleg col20 cx4 dsp dspx gbc gsu gsu3 obc1 sa1 sdd1 spc7110 st0011 st0018 test xc
+# MkII keeps its SGB variants alongside the fitted GB/GBC core; Auto selects at load.
+MK2CORES := atari base basex bootleg col20 cx4 dsp dspx gbc gsu gsu3 obc1 sa1 sdd1 sgb sgb_msu spc7110 st0011 st0018 test xc
 # Both MkIII MCU variants load these same Cyclone IV images.
 MK3CORES := a26 base bootleg col20 cx4 dsp gbc gsu gsu3 nes nes_k nes_mmc3 nes_mmc5 obc1 sa1 sdd1 sgb sms spc7110 st0011 st0018 test xc
 

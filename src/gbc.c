@@ -6,8 +6,8 @@
 
    gbc.c: route a Game Boy image to the FPGA_GBC core. See gbc.h for the model.
 
-   Mk.II uses the GB/GBC core for every Game Boy image, with its wire-$05
-   player. Mk.III retains its existing configurable SGB/GBC selection.
+   Both boards use the same configurable SGB/GBC selection, defaulting to
+   Auto. Mk.II uses the wire-$05 GBC player; Mk.III retains wire $03.
 */
 
 #include <string.h>
@@ -35,14 +35,11 @@ _Static_assert(sizeof(GBC_PLAYER_FILE_STR) <= sizeof(SGBSR),
    BOTH .gb and .gbc in as Game Boy images -- what is decided here is only which of
    the two cores runs them, so this is a plain extension test, not a second
    definition of "is a Game Boy file". */
-#ifndef CONFIG_MK2
 static uint8_t gbc_ext_is_gbc(const uint8_t *filename) {
   if (!filename) return 0;
   char *dot = strrchr((char*)filename, '.');
   return (dot && !strcasecmp(dot + 1, "gbc")) ? 1 : 0;
 }
-
-#endif
 
 void gbc_id(sgb_romprops_t *props, uint8_t *filename) {
   /* Not a Game Boy image at all: sgb_id() left everything zeroed and there is
@@ -54,12 +51,6 @@ void gbc_id(sgb_romprops_t *props, uint8_t *filename) {
   uint8_t cgb = props->header.name[15];
   uint8_t want_gbc;
 
-#ifdef CONFIG_MK2
-  /* The fitted GB/GBC implementation replaces the old MkII GB-only core.
-     Apply this to existing configurations too, including GbcMode=Auto. */
-  (void)filename;
-  want_gbc = 1;
-#else
   switch (CFG.gbc_mode) {
     case GBC_MODE_PREFER_SGB:
       /* Keep the SGB (borders, its own colourisation) wherever it can run the
@@ -77,7 +68,6 @@ void gbc_id(sgb_romprops_t *props, uint8_t *filename) {
       want_gbc = (gbc_ext_is_gbc(filename) || (cgb & 0x80)) ? 1 : 0;
       break;
   }
-#endif
   if (!want_gbc) return;
 
   props->core_is_gbc = 1;

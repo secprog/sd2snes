@@ -1279,8 +1279,8 @@ static uint32_t load_stage_consoles(load_ctx_t *c) {
   /* GBC routing: a POLICY pass over what sgb_id() just parsed (gbc.h).  It runs
      BEFORE sgb_update_file because it may swap SGBFW/SGBSR for the GBC boot ROM and
      player -- the file that gets opened below, and the ones the pre-checks in
-     load_check_prereqs then f_stat.  No-op on the mk2 (stub) and for a plain DMG
-     image, which keeps booting the SGB. */
+     load_check_prereqs then f_stat. Both boards honour GbcMode; Auto leaves a
+     plain DMG image on SGB unless its filename has a .gbc extension. */
   gbc_id(&sgb_romprops, sgb_filename);
   /* SGB SNES BIOS (sgbN_snes.bin, or gbc_snes.bin on the GBC core) missing ->
      message + NACK (else the menu would hang in game_handshake waiting for an

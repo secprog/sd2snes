@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[2]
 # project files. Legacy NES/SMS .xise files do not make their MCU loaders work
 # on MkII. New core directories require an explicit board-support audit here.
 EXCLUDED = {
-    "mk2": {"a26", "nes", "nes_k", "nes_mmc3", "nes_mmc5", "sms", "sgb", "sgb_msu"},
+    "mk2": {"a26", "nes", "nes_k", "nes_mmc3", "nes_mmc5", "sms"},
     "mk3": {"atari", "basex", "dspx", "sgb_msu"},
 }
 EXT = {"mk2": "bit", "mk3": "bi3"}
@@ -275,10 +275,10 @@ def inventory_self_test():
     """Exercise the real inventory reader on complete synthetic board trees only."""
     # Independent expected paths make omissions from production constants visible.
     fpga_names = {
-        "mk2": "atari base basex bootleg col20 cx4 dsp dspx gbc gsu gsu3 obc1 sa1 sdd1 spc7110 st0011 st0018 test xc mini".split(),
+        "mk2": "atari base basex bootleg col20 cx4 dsp dspx gbc gsu gsu3 obc1 sa1 sdd1 sgb sgb_msu spc7110 st0011 st0018 test xc mini".split(),
         "mk3": "a26 base bootleg col20 cx4 dsp gbc gsu gsu3 nes nes_k nes_mmc3 nes_mmc5 obc1 sa1 sdd1 sgb sms spc7110 st0011 st0018 test xc mini".split(),
     }
-    if {board: len(names) for board, names in fpga_names.items()} != {"mk2": 20, "mk3": 24}:
+    if {board: len(names) for board, names in fpga_names.items()} != {"mk2": 22, "mk3": 24}:
         raise RuntimeError("Incomplete synthetic FPGA inventory")
     counts = {"positive": 0, "negative": 0}
     for board, firmware, suffix, menu in (("mk2", "firmware.img", "img", "menu.bin"),
@@ -367,7 +367,7 @@ def inventory_self_test():
             foreign_overlay = scratch / obj / f"ovl1.{foreign_suffix}"
             overlay.rename(foreign_overlay)
             rejected("foreign board overlay suffix cannot replace required suffix")
-    if counts != {"positive": 3, "negative": 196}:
+    if counts != {"positive": 3, "negative": 198}:
         raise RuntimeError(f"Incomplete inventory controls: {counts}")
     print("Package inventory controls: " + json.dumps(counts, sort_keys=True))
 

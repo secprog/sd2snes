@@ -233,8 +233,11 @@ module c6_dirty_ram(input CLK, RST, ALL, SET, input [4:0] ROW, COL,
   // The caller supplies CLEAR[ROW] directly from its command comparison.
   // Re-selecting that bit from the decoded 18-row vector adds a long mux
   // path before the RAM write. Reset and SET-over-CLEAR priority are intact.
-  wire [19:0] base_word = (RST || CLEAR_WRITE_ROW) ? 20'd0
-                         : valid[ROW] ? write_word : {20{default_one[ROW]}};
+  // Share the row/reset decisions before the twenty data-bit functions.
+  // Each final bit is (saved & use_saved) | use_default | column_mask.
+  wire use_saved = valid[ROW] && !RST && !CLEAR_WRITE_ROW;
+  wire use_default = default_one[ROW] && !valid[ROW] && !RST && !CLEAR_WRITE_ROW;
+  wire [19:0] base_word = (write_word & {20{use_saved}}) | {20{use_default}};
   wire [19:0] read_even = even_rows[BIDX[6:3]], read_odd = odd_rows[BIDX[6:3]];
   reg [7:0] read_byte, mask_byte;
   always @(posedge CLK) begin

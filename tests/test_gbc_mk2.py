@@ -200,10 +200,11 @@ module gbc_wave_actual(input CLK,cpu_ireset_r,REG_req_val,REG_req_dbg,
         period_source.write_text(period_defines + '''
 module gbc_apu_period_actual(input [7:0] REG_NR10_r, REG_NR43_r,
  input [10:0] apu_square1_sweep_freq_r,
- output [15:0] sweep, output [21:0] noise);
+ output [15:0] sweep, output sweep_overflow, output [21:0] noise);
 ''' + cpu[sweep_start:cpu.index("wire [12:0] apu_square1_period", sweep_start)]
             + cpu[noise_start:cpu.index("wire [4:0] apu_noise_output", noise_start)]
-            + "\nassign sweep=apu_square1_sweep_freq_next; assign noise=apu_noise_period;\nendmodule\n")
+            + "\nassign sweep=apu_square1_sweep_freq_next; assign sweep_overflow=apu_sweep_overflow;"
+            + " assign noise=apu_noise_period;\nendmodule\n")
         periods = Path(tmp) / "apu-periods.vvp"
         compile_periods = [args.iverilog, "-g2012", "-DMK2", "-s", "gbc_apu_period_tb",
                            "-o", str(periods), str(period_source),

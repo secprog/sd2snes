@@ -26,12 +26,21 @@ with tempfile.TemporaryDirectory(prefix="gbc-dirty-clear-proof-") as tmp:
         if connection not in instance:
             raise RuntimeError("The production RAM no longer uses the proved clear interface")
     ram = (root / "verilog/sd2snes_gbc/mk2_memory.v").read_text()
-    if not re.search(r"base_word\s*=\s*\(RST \|\| CLEAR_WRITE_ROW\) \? 20'd0", ram):
-        raise RuntimeError("The production RAM clear/reset equation changed")
-    body = '''module check(input rowdone_wr_r, input [7:0] wr_data_r,
- input [4:0] wr_row2_r, input [17:0] row_frozen_r, output equivalent);
+    for name in ("use_saved", "use_default", "base_word"):
+        definitions.append(re.search(r"wire\s+(?:\[[^\]]+\]\s+)?" + name + r"\s*=.*?;", ram, re.S)[0])
+    body = '''module check(input rowdone_wr_r, RST, input [7:0] wr_data_r,
+ input [4:0] wr_row2_r, input [17:0] row_frozen_r, valid, default_one,
+ input [19:0] write_word, output equivalent);
+wire [4:0] ROW = wr_row2_r;
+wire CLEAR_WRITE_ROW = dirty_write_clear;
 ''' + "\n".join(definitions)
-    body += "\nassign equivalent = wr_row2_r >= 18 || dirty_write_clear == rd_mask[wr_row2_r];\nendmodule\n"
+    body += '''
+wire [19:0] reference_word = (RST || rd_mask[ROW]) ? 20'd0
+                           : valid[ROW] ? write_word : {20{default_one[ROW]}};
+assign equivalent = ROW >= 18 || ((dirty_write_clear == rd_mask[ROW])
+                                  && (base_word == reference_word));
+endmodule
+'''
     for negative in (False, True):
         candidate = body
         if negative:
@@ -51,5 +60,5 @@ with tempfile.TemporaryDirectory(prefix="gbc-dirty-clear-proof-") as tmp:
                 raise RuntimeError("SAT accepted the wrong-row control\n" + log)
         elif result.returncode or "SUCCESS" not in log:
             raise RuntimeError("Direct dirty-write clear equivalence failed\n" + log)
-    print("PASS: direct dirty-write clear matches every valid row and command; "
+    print("PASS: direct dirty-write clear and shared data masks match every valid row, command and stored bit; "
           "SAT rejects the wrong-row control")

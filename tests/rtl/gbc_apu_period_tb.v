@@ -3,6 +3,7 @@ module gbc_apu_period_tb;
   reg [7:0] REG_NR10_r=0, REG_NR43_r=0;
   reg [10:0] apu_square1_sweep_freq_r=0;
   wire [15:0] sweep;
+  wire sweep_overflow;
   wire [21:0] noise;
   reg [15:0] old_sweep, delta;
   reg [21:0] old_noise;
@@ -17,13 +18,13 @@ module gbc_apu_period_tb;
         delta=frequency >> control[2:0];
         old_sweep=control[3] ? frequency-delta : frequency+delta;
         #1;
-        if(sweep !== old_sweep || noise !== old_noise)
+        if(sweep !== old_sweep || sweep_overflow !== (|old_sweep[15:11]) || noise !== old_noise)
           $fatal(1,"APU period mismatch NR10/NR43=%h frequency=%d sweep=%h/%h noise=%h/%h",
                  control,frequency,sweep,old_sweep,noise,old_noise);
         checks=checks+1;
       end
     end
-    $display("PASS: all APU sweep and noise period inputs (%0d combinations)",checks);
+    $display("PASS: all APU sweep, direct overflow and noise period inputs (%0d combinations)",checks);
     $finish;
   end
 endmodule

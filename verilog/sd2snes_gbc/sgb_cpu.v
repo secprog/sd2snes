@@ -3746,8 +3746,27 @@ wire [7:0] apu_sweep_scale = 8'h80 >> REG_NR10_r[`NR10_SWEEP_SHIFT];
 wire [15:0] apu_square1_sweep_freq_next = REG_NR10_r[`NR10_SWEEP_NEG]
     ? ({5'h00,apu_square1_sweep_freq_r} - {5'h00,apu_sweep_product[17:7]})
     : ({5'h00,apu_square1_sweep_freq_r} + {5'h00,apu_sweep_product[17:7]});
+// For x in 0..2047, subtraction cannot overflow. Addition overflows exactly
+// when x >= ceil(2048 * 2^shift / (2^shift + 1)). Checking those constant
+// thresholds avoids putting the multiplier and adder on the channel-enable
+// path. The full frequency result and the overflow check's clock are intact.
+reg apu_sweep_add_overflow;
+always @* begin
+  case (REG_NR10_r[`NR10_SWEEP_SHIFT])
+    0: apu_sweep_add_overflow = apu_square1_sweep_freq_r >= 11'd1024;
+    1: apu_sweep_add_overflow = apu_square1_sweep_freq_r >= 11'd1366;
+    2: apu_sweep_add_overflow = apu_square1_sweep_freq_r >= 11'd1639;
+    3: apu_sweep_add_overflow = apu_square1_sweep_freq_r >= 11'd1821;
+    4: apu_sweep_add_overflow = apu_square1_sweep_freq_r >= 11'd1928;
+    5: apu_sweep_add_overflow = apu_square1_sweep_freq_r >= 11'd1986;
+    6: apu_sweep_add_overflow = apu_square1_sweep_freq_r >= 11'd2017;
+    7: apu_sweep_add_overflow = apu_square1_sweep_freq_r >= 11'd2033;
+  endcase
+end
+wire apu_sweep_overflow = !REG_NR10_r[`NR10_SWEEP_NEG] && apu_sweep_add_overflow;
 `else
 wire [15:0] apu_square1_sweep_freq_next = REG_NR10_r[`NR10_SWEEP_NEG] ? ({5'h00,apu_square1_sweep_freq_r} - ({5'h00,apu_square1_sweep_freq_r} >> REG_NR10_r[`NR10_SWEEP_SHIFT])) : ({5'h00,apu_square1_sweep_freq_r} + ({5'h00,apu_square1_sweep_freq_r} >> REG_NR10_r[`NR10_SWEEP_SHIFT]));
+wire apu_sweep_overflow = |apu_square1_sweep_freq_next[15:11];
 `endif
 
 wire [12:0] apu_square1_period = {REG_NR14_r[`NR14_FREQ_MSB],REG_NR13_r[`NR13_FREQ_LSB],2'b00};
@@ -4110,7 +4129,7 @@ always @(posedge CLK) begin
       end
 
       // check sweep overflow
-      if (apu_square1_sweep_enable_r & |REG_NR10_r[`NR10_SWEEP_SHIFT] & |apu_square1_sweep_freq_next[15:11]) begin
+      if (apu_square1_sweep_enable_r & |REG_NR10_r[`NR10_SWEEP_SHIFT] & apu_sweep_overflow) begin
         apu_square1_enable_r <= 0;
         apu_square1_sweep_enable_r <= 0;
       end

@@ -22,8 +22,11 @@ def run(name, commands, expect_counterexample=False):
     script = report / (name + ".ys")
     script.write_text("\n".join(commands) + "\n")
     log = report / (name + ".log")
+    # The 128-node structural SAT window exceeded the normal five-minute
+    # mapping budget in Actions; keep that larger search bounded separately.
+    timeout = 900 if name == "gate-lut4-satlut128" else 300
     result = subprocess.run(["yosys", "-Q", "-q", "-l", str(log), "-s", str(script)],
-                            timeout=300)
+                            timeout=timeout)
     if expect_counterexample:
         if result.returncode == 0 or "proof did fail" not in log.read_text():
             raise RuntimeError("The deliberately corrupted output was not rejected by SAT")

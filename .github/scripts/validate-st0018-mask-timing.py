@@ -92,7 +92,8 @@ def contract(out):
     require(git("rev-parse", "HEAD").decode().strip() == os.environ["GITHUB_SHA"], "Checkout head")
     require(git("rev-parse", "HEAD^").decode().strip() in
             (BASE, "0ed56b93ad33fc1f87afa8bb1c920f83c89bc414",
-             "d5227a31358c346e7019fc49218da4390a1ec83d"), "Exact reviewed parent chain")
+             "d5227a31358c346e7019fc49218da4390a1ec83d",
+             "52c29908093e9f09292ee7c5c84539fe99539c4f"), "Exact reviewed parent chain")
     require(set(git("diff", "--name-only", BASE, "HEAD").decode().splitlines()) ==
             {CPU, MAKE, SELF, WORKFLOW}, "Exact four-file scope")
     original = git("show", BASE+":"+CPU)
@@ -134,7 +135,8 @@ def cut_state(source, output, model_name):
         kind = cell["type"]
         if kind != "$dff":
             require(kind.startswith("$") and not any(s in kind.lower() for s in ("dff", "latch", "mem"))
-                    and kind != "$ff" and "CLK" not in cell["connections"], "Unexpected hidden state: "+kind)
+                    and kind != "$ff" and not kind.startswith("$any") and kind != "$initstate"
+                    and "CLK" not in cell["connections"], "Unexpected hidden state: "+kind)
             continue
         require(cell["connections"]["CLK"] == module["ports"]["clk"]["bits"] and
                 int(cell["parameters"]["CLK_POLARITY"], 2) == 1, "Original positive clock")
@@ -342,7 +344,9 @@ endmodule
             script=("read_json "+str(out/"gold/transition.json")+"; read_json "+str(folder/"transition.json")+
                     "; read_verilog -sv -formal "+str(out/"miter.v")+
                     "; hierarchy -check -top miter; flatten; opt_clean; check -assert; write_json "+
-                    str(folder/("miter-"+mode+".json"))+
+                    str(folder/("miter-before-"+mode+".json"))+"; "+
+                    ("opt_merge -share_all -keepdc; opt_clean; "*16)+
+                    "check -assert; write_json "+str(folder/("miter-"+mode+".json"))+
                     "; sat -verify -enable_undef "+("-set-def-inputs " if mode=="binary" else "")+
                     "-prove ok 1 -show-inputs -show-outputs -dump_json "+str(witness)+" -timeout 600")
             prefix=folder/("proof-"+mode)
@@ -642,7 +646,7 @@ def union(out):
 def proof_design(out, destination):
     root=Path(out);dest=Path(destination);dest.mkdir(parents=True,exist_ok=True)
     names={"post-proc.json","constant-init.json","state.json","transition.json",
-           "miter-binary.json","miter-xstate.json"}
+           "miter-binary.json","miter-xstate.json","miter-before-binary.json","miter-before-xstate.json"}
     rows=[];total=0
     for path in sorted(root.rglob("*.json")):
         if path.name not in names:continue

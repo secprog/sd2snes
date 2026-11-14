@@ -2540,8 +2540,16 @@ vram vram1 (
 `endif
 
 assign TAP_VRAM_WE   = vram_wren;
+`ifdef MK2
+// PPU/OAM-DMA never write port A. When vram_wren is true the selected
+// address is necessarily HDMA's or the CPU's, and the bank is VBK. Keep
+// the read-only masters out of the bridge's dirty-RAM feedback path.
+assign TAP_VRAM_BANK = REG_VBK_r;
+assign TAP_VRAM_ADDR = HDMA_VRAM_active ? hdma_vram_address : MCT_VRAM_address;
+`else
 assign TAP_VRAM_BANK = vram_bank;
 assign TAP_VRAM_ADDR = vram_address;
+`endif
 
 wire        oam_wren    = DMA_active ? DMA_OAM_req_val  : PPU_MCT_oam_active ? 0           : MCT_OAM_wren;
 wire [7:0]  oam_address = DMA_active ? DMA_OAM_address  : PPU_OAM_active ? PPU_OAM_address : MCT_OAM_address;

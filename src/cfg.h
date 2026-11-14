@@ -228,9 +228,9 @@ typedef struct __attribute__ ((__packed__)) _cfg_block {
      the Super Game Boy can run keeps its border and SGB colourisation), 2 = Prefer GBC (every
      Game Boy image). Read at load time by gbc_id() (src/gbc.c), which rewrites the boot ROM,
      the SNES-side image and the FPGA core for that one load; the enum is gbc_mode_t in gbc.h
-     and the value IS the clamp max in cfg_items[], so do not renumber. mk3-only: the GBC core
-     has no Spartan-3 build, the mk2 stubs ignore this byte and .gb/.gbc keep booting the SGB
-     there (the menu greys the row on a Mk.II). YAML GbcMode + menu "Game Boy Color mode" (SGB
+     and the value IS the clamp max in cfg_items[], so do not renumber. MkIII-only selection:
+     MkII always uses the GB/GBC core for .gb/.gbc, regardless of this byte
+     (the menu greys the selector on a Mk.II). YAML GbcMode + menu "Game Boy Color mode" (SGB
      menu). Default 0. */
   uint8_t  gbc_sync;                /* CFG @ $1D2: how the GBC core clocks the Game Boy --
      0 = Genlock (the GB frame is locked to the SNES frame, 60.0988 Hz / +0.62%, so the SNES
@@ -254,7 +254,7 @@ typedef struct __attribute__ ((__packed__)) _cfg_block {
      hi-colour picture comes out clean; an animated one shows 8-line bands, because the
      stretched frame is too big to refresh whole every frame. Handed to the player through the
      "GBCF" config block of the staged gbc_snes.bin (gbc_stage_config, src/gbc.c), never to
-     the FPGA. mk3-only like the rest of the GBC core. YAML GbcStretch + menu "Game Boy Color
+     the FPGA. Available on both boards. YAML GbcStretch + menu "Game Boy Color
      stretch" (SGB menu). Default 0. */
   uint8_t  onboarding_version;      /* CFG @ $1D5: the version of the first-boot tour
      (ONBOARDING_FILENAME) the user has taken or declined; 0 = never. The gate in snes/main.a65

@@ -575,11 +575,9 @@ menu_enttab_sgb:
  .byt  0,0,0
 
 ; Game Boy Color core (GbcMode / GbcSync / GbcStretch, CFG+$1D1/$1D2/$1D4). They
-; sit with the SGB rows because GbcMode is exactly the choice between the two cores
-; for a .gb/.gbc. The GBC core is Mk.III-only: the mk2 firmware ignores the three
-; bytes (gbc.c stubs) and every Game Boy image keeps booting the SGB there, so
-; mfunc_isenabled_gbc greys the rows on a Mk.II. Greying is COSMETIC (the row stays
-; editable), which is why every description also says "Mk.III only".
+; sit with the SGB rows because MkIII can choose between the two cores for .gb/.gbc.
+; MkII always uses the GB/GBC core, so only the core selector is greyed there.
+; Sync and stretch apply to the GBC player on both boards.
  .byt  MTYPE_VALUE
  .word !mtext_gbc_mode
  .byt  ^mtext_gbc_mode
@@ -607,8 +605,7 @@ menu_enttab_sgb:
  .byt  ^mdesc_gbc_sync
  .byt  0,0,0
  .byt  0,0,0
- .word !(mfunc_isenabled_gbc-1)
- .byt  ^(mfunc_isenabled_gbc-1)
+ .byt  0,0,0
 
  .byt  MTYPE_VALUE
  .word !mtext_gbc_stretch
@@ -622,12 +619,11 @@ menu_enttab_sgb:
  .byt  ^mdesc_gbc_stretch
  .byt  0,0,0
  .byt  0,0,0
- .word !(mfunc_isenabled_gbc-1)
- .byt  ^(mfunc_isenabled_gbc-1)
+ .byt  0,0,0
 
 ; GbRotateButtons (CFG+$1DA): SNES B plays the Game Boy's A, Y alone its B. Both
 ; Game Boy cores honour it (the SGB through a patch of its BIOS, the GBC core through
-; its player), so unlike the three rows above it is NOT greyed on a Mk.II.
+; its player), so it is available on both boards.
  .byt  MTYPE_VALUE
  .word !mtext_gb_rotate
  .byt  ^mtext_gb_rotate

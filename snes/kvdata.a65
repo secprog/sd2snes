@@ -151,12 +151,10 @@ kv_gbc_sync:
 .word $0001, !text_gbc_exact : .byt ^text_gbc_exact
 .word $ffff
 
-; mfunc_isenabled_gbc -- greying predicate of the three Game Boy Color rows of the
-; SGB menu (menudata.a65).  The GBC core has no Spartan-3 build and the Mk.II
-; firmware ignores GbcMode/GbcSync/GbcStretch, so the rows are drawn disabled whenever the
-; board flag ST_IS_MK2 is set.  Carry set = drawn disabled.  COSMETIC only, like
-; every mfunc_isenabled_* (menu_check_disabled_func only picks a palette), hence
-; the "Mk.III only" in every description.  Entered by rtl from
+; mfunc_isenabled_gbc -- greying predicate of the Game Boy core selector.
+; MkII always uses the GB/GBC core, while MkIII honours GbcMode.
+; Carry set = drawn disabled. COSMETIC only, like every mfunc_isenabled_*
+; (menu_check_disabled_func only picks a palette). Entered by rtl from
 ; menu_check_disabled_func with A in 8 bits, which is also why it may live in $C1.
 mfunc_isenabled_gbc:
   .as

@@ -49,7 +49,7 @@
 /* Both dumps are exactly this long; a file of another size is a different ROM. */
 #define GBC_BOOT_SIZE   2304
 
-/* CFG.gbc_mode (config.yml "GbcMode") -- which core a Game Boy image boots on.
+/* CFG.gbc_mode (config.yml "GbcMode") -- MkIII core selection; MkII always uses GBC.
    $0143 bit 7 marks an image the CGB understands: $80 = dual (runs on both),
    $C0 = CGB-only.  Do not renumber: the value is the clamp max in cfg.c. */
 typedef enum {

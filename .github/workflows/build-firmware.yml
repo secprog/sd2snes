@@ -104,6 +104,7 @@ jobs:
           if [[ "$RTL_ONLY" == clock ]]; then args+=(--clock-only); fi
           python3 .github/scripts/check-gbc-board-isolation.py | tee "$RUNNER_TEMP/gbc-board-isolation.log"
           python3 .github/scripts/check-gbc-routing.py | tee "$RUNNER_TEMP/gbc-routing.log"
+          bash tests/host/run_gameopt.sh | tee "$RUNNER_TEMP/gbc-game-settings.log"
           python3 tests/test_gbc_mk2.py "${args[@]}" | tee "$RUNNER_TEMP/gbc-rtl.log"
           python3 .github/scripts/check-gbc-clock-slew.py | tee "$RUNNER_TEMP/gbc-clock-slew-proof.log"
           if [[ "$RTL_ONLY" != clock ]]; then

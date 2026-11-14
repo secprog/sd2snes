@@ -47,8 +47,9 @@ board exclusions, so adding a core cannot silently leave it out of CI.
 MkII uses separate `basex` and `dspx` images for extended mappers and competition
 carts, and separate SGB feature variants. MkIII includes those mapper features
 in its base/DSP images and uses one SGB image. NES, SMS, Atari and GBC loaders
-are MkIII-only; legacy NES/SMS ISE project files do not enable their MkII MCU
-loaders. Other board-specific feature and timing settings are retained.
+are MkIII-only in normal releases; the experimental MkII GBC path below is
+separate. Legacy NES/SMS ISE project files do not enable their MkII MCU loaders.
+Other board-specific feature and timing settings are retained.
 
 Complete board sets are verified before publishing `fpga-mk2` / `fpga-mk3`
 artifacts. Packaging checks the ZIP's exact FPGA list, MCU file and menu,
@@ -77,6 +78,61 @@ with the corresponding hold correction. Other paths keep their normal timing.
 The default `make all` still creates a combined release. `make release
 RELEASE_BOARD=mk2`, `mk3` or `mk3-stm32` packages already-built files for a
 single board. These commands do not bypass FPGA timing or synthesis guards.
+
+## Experimental MkII GBC qualification
+
+The MkII port retains both rendering modes, the complete 160x144 image, C6
+colour conversion and the existing GB audio output. C6 uses external SRAM
+and a planar row cache on MkII. Its wire-$05 player must be paired with the
+MkII core; the MkIII player uses wire $03. Normal MkII releases still select
+SGB. `MK2_GBC_EXPERIMENTAL=1` enables the separate MCU loader policy.
+
+Physical fits have been measured, but the port has not yet passed the
+committed MkII setup-timing requirements. A passing RTL proof or resource
+count alone does not qualify an FPGA image. The remapping workflow generates
+`fpga_gbc.bit` only after native MAP/PAR and TRACE report zero timing errors.
+Console validation is also required before treating this as a supported port.
+
+Use GitHub Actions for all compilation and simulation. First dispatch
+`build-firmware.yml` with `build=fpga`, `fpga_cores=mk2:gbc` and
+`ignore_timing=false`. This runs the RTL/formal checks, assembles both players,
+and exports native synthesis in `fpga-reports-mk2-gbc`, including after the
+expected native capacity failure. To check MkIII too, select
+`fpga_cores=mk2:gbc,mk3:gbc`. `gbc_mcu_check=true` additionally compiles the
+normal and experimental MkII firmware against a freshly built bootstrap.
+Those compiler-check artifacts are not complete SD-card release packages.
+
+After the native artifact is available, dispatch the same registered workflow
+with these inputs:
+
+| Input | Value |
+| --- | --- |
+| `build` | `fpga` |
+| `fpga_cores` | `mk2:gbc` |
+| `gbc_rtl_only` | `all` |
+| `gbc_yosys_check` | `true` |
+| `mk2_run_id` | The native run ID |
+| `gbc_remap_profiles` | For example `["gate-lut4-delay-satlut","gate-lut4-satlut"]` |
+| `placement_seeds` | For example `1,3,7`; empty retains seed 3 |
+
+The checked-out `verilog/` and `utils/` sources must match the native run.
+Each profile proves every combinational boundary before and after serializing
+the candidate EDIF. Fixed registers, RAMs, multipliers, clocks and I/O keep
+their original definitions and connections. The unchanged EDIF reconstruction
+must reproduce the native resource report. Each seed then undergoes its own
+strict implementation checks with the original clock constraints.
+Reports and any qualified image are uploaded as
+`gbc-native-remap-PROFILE-seed-SEED-dup-project`; the reports include source
+and artifact hashes, mapping options, timing reports and the image hash.
+
+The cartridge's FPGA sends audio through its CS4344 DAC to the SNES analogue
+cartridge-audio input (see the [RevF schematic](../pcb/kicad/RevF/pwr_misc.sch)
+and [CS4344 data sheet](https://statics.cirrus.com/pubs/proDatasheet/CS4344-45-48_F2.pdf)).
+The SNES internal sound-chip sample rate therefore does
+not establish a lower precision requirement for this path. The MkII arithmetic
+and filter changes preserve the existing output, checked against the SGB
+reference across every volume setting. MSU-1 is absent from this GBC core;
+SA-1 was never instantiated in it.
 
 `Compare CX4 RTL timing` is a manual diagnostic workflow. It compares the current
 `cx4.v` and `main.v` with both files from sttng's ST0011/ST0018/COL20 reference,

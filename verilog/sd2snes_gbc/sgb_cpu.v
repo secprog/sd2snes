@@ -1898,6 +1898,24 @@ assign      HLT_EXE_rsp = HLT_REQ_sync & ~IFD_EXE_valid;
 reg         dbg_advance_r;
 assign      DBG_advance = dbg_advance_r;
 
+`ifdef MK2
+// A single SP enable and two-way data mux avoids decoding every destination
+// again in each data bit. Preserve the original PC/POP/SP write conditions.
+wire mk2_sp_write = IFD_EXE_decode[`DEC_DST] == `OPR_BC
+                 || IFD_EXE_decode[`DEC_DST] == `OPR_DE
+                 || IFD_EXE_decode[`DEC_DST] == `OPR_AF
+                 || IFD_EXE_decode[`DEC_DST] == `OPR_HL
+                 || IFD_EXE_decode[`DEC_DST] == `OPR_SP
+                 || (IFD_EXE_decode[`DEC_DST] == `OPR_PC && exe_res_sp_mod_r);
+wire [15:0] mk2_sp_write_data = (IFD_EXE_decode[`DEC_DST] == `OPR_SP && !exe_res_sp_mod_r)
+                            ? exe_res_r : exe_res_sp_r;
+always @(posedge CLK) begin
+  if (cpu_ireset_r) SP_r <= 16'h0000;
+  else if (CLK_BUS_EDGE && exe_advance_r && exe_complete_r && mk2_sp_write)
+    SP_r <= mk2_sp_write_data;
+end
+`endif
+
 always @(posedge CLK) begin
   if (cpu_ireset_r) begin
     exe_ctr_r <= 0;
@@ -1916,7 +1934,9 @@ always @(posedge CLK) begin
     // That does not stop the CPU; it silently corrupts data, which is worse.
     // (PC_r is not here: it is already cleared by the IFD block above, and a
     //  register driven from two always blocks is a hard synthesis error.)
+`ifndef MK2
     SP_r <= 16'h0000;
+`endif
     A_r  <= 8'h00;
     F_r  <= 8'h00;
     B_r  <= 8'h00;
@@ -1931,6 +1951,22 @@ always @(posedge CLK) begin
       exe_ctr_r <= exe_complete_r ? 0 : exe_ctr_r + 1;
 
       if (exe_complete_r) begin
+`ifdef MK2
+        case (IFD_EXE_decode[`DEC_DST])
+          `OPR_BC : begin `BC_r <= exe_res_r; F_r[7:4] <= exe_res_cc_r[7:4]; end
+          `OPR_DE : begin `DE_r <= exe_res_r; F_r[7:4] <= exe_res_cc_r[7:4]; end
+          `OPR_SP : begin F_r[7:4] <= exe_res_cc_r[7:4]; end
+          `OPR_AF : begin A_r <= exe_res_r[15:8]; F_r[7:4] <= exe_res_r[7:4]; end
+          `OPR_B  : begin B_r <= exe_res_r[7:0]; F_r[7:4] <= exe_res_cc_r[7:4]; end
+          `OPR_C  : begin C_r <= exe_res_r[7:0]; F_r[7:4] <= exe_res_cc_r[7:4]; end
+          `OPR_D  : begin D_r <= exe_res_r[7:0]; F_r[7:4] <= exe_res_cc_r[7:4]; end
+          `OPR_E  : begin E_r <= exe_res_r[7:0]; F_r[7:4] <= exe_res_cc_r[7:4]; end
+          `OPR_H  : begin H_r <= exe_res_r[7:0]; F_r[7:4] <= exe_res_cc_r[7:4]; end
+          `OPR_L  : begin L_r <= exe_res_r[7:0]; F_r[7:4] <= exe_res_cc_r[7:4]; end
+          `OPR_HL : begin `HL_r <= exe_res_hl_mod_r ? exe_res_hl_r : exe_res_r; F_r[7:4] <= exe_res_cc_r[7:4]; end
+          `OPR_A  : begin A_r <= exe_res_r[7:0]; if (exe_res_hl_mod_r) `HL_r <= exe_res_hl_r; F_r[7:4] <= exe_res_cc_r[7:4]; end
+        endcase
+`else
         case (IFD_EXE_decode[`DEC_DST])
           //`OPR_I  : exe_src_r <= 0;
           // this is for RET.  could also make its target SP
@@ -1950,6 +1986,7 @@ always @(posedge CLK) begin
           `OPR_HL : begin `HL_r <= exe_res_hl_mod_r ? exe_res_hl_r : exe_res_r; SP_r <= exe_res_sp_r; F_r[7:4] <= exe_res_cc_r[7:4]; end
           `OPR_A  : begin A_r   <= exe_res_r[7:0]; if (exe_res_hl_mod_r) `HL_r <= exe_res_hl_r;       F_r[7:4] <= exe_res_cc_r[7:4]; end
         endcase
+`endif
 
         // delay 1 inst because fetch will see this in the following cycle
         exe_ime_r <= (exe_ime_r | exe_res_int_enable_r) & ~exe_res_int_disable_r & ~IFD_EXE_int;

@@ -35,7 +35,7 @@ jobs:
           grep -F 'Yosys 0.33 (git sha1 2584903a060)' "$RUNNER_TEMP/st0018-proof/yosys-version.txt"
           iverilog -V > "$RUNNER_TEMP/st0018-proof/iverilog-version.txt" 2>&1
           grep -F 'Icarus Verilog version 12.0' "$RUNNER_TEMP/st0018-proof/iverilog-version.txt"
-      - name: Prove all CPU and register-file state and require actual bad-mask and clock-enable counterexamples
+      - name: Exhaust all actual mask inputs and prove all CPU state with real consumer and clock-enable counterexamples
         run: |
           set -euo pipefail
           python3 .github/scripts/validate-st0018-mask-timing.py proof "$RUNNER_TEMP/st0018-proof/models"
@@ -92,10 +92,12 @@ jobs:
           p=json.load(open(sys.argv[1]))
           assert p['head']==os.environ['GITHUB_SHA']
           assert p['completeCpuAndRegfile'] and p['strictXEquality'] and p['arbitrarySharedState']
-          assert p['actualMaskComparisons']==4352 and len(p['sat'])==6
+          assert p['actualMaskComparisons']==196608 and len(p['sat'])==4
+          assert p['compositionalMaskFunctionProof'] and p['exhaustiveFourStateMaskInputs']==65536
+          assert p['actualMaskProducerControlBitsCompared']==8
           assert p['actualXCorruptionDetected'] and p['constantInitializerAuditBits']==2048
           assert all(x['actualSatResult'] for x in p['sat'])
-          assert [x['exit'] for x in p['sat']]==[0,0,1,1,0,1]
+          assert [x['exit'] for x in p['sat']]==[0,0,1,1]
           PY
           cmp "$report/source-contract.json" "$RUNNER_TEMP/st0018-proof-binding/source-contract.json"
           cp "$RUNNER_TEMP/st0018-proof-binding/models/proof-result.json" "$report/accepted-source-proof.json"

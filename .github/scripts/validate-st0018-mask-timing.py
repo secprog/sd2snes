@@ -91,7 +91,8 @@ def contract(out):
     out = Path(out)
     require(git("rev-parse", "HEAD").decode().strip() == os.environ["GITHUB_SHA"], "Checkout head")
     require(git("rev-parse", "HEAD^").decode().strip() in
-            (BASE, "0ed56b93ad33fc1f87afa8bb1c920f83c89bc414"), "Exact reviewed parent chain")
+            (BASE, "0ed56b93ad33fc1f87afa8bb1c920f83c89bc414",
+             "d5227a31358c346e7019fc49218da4390a1ec83d"), "Exact reviewed parent chain")
     require(set(git("diff", "--name-only", BASE, "HEAD").decode().splitlines()) ==
             {CPU, MAKE, SELF, WORKFLOW}, "Exact four-file scope")
     original = git("show", BASE+":"+CPU)
@@ -183,32 +184,125 @@ def miter_text(ports):
             ",".join("gate_"+n for n in outs)+"});\nendmodule\n")
 
 def proof(out):
+    """Compose an exhaustive actual-Verilog mask proof with complete CPU transition SAT."""
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
     gold = git("show", BASE+":"+CPU).decode()
     gate = read(CPU).decode()
     require(gate == gold.replace(OLD, NEW, 1), "Exact complete source binding")
-    bad_mask = gate.replace("ctl_mask[ci] = (31-ci >= ctl_n);", "ctl_mask[ci] = (30-ci >= ctl_n);", 1)
-    require(bad_mask != gate, "Real mask corruption")
+
+    def loop(source):
+        start = source.index("  for (ci = 0; ci < 32; ci = ci + 1) begin")
+        end = source.index("\n  end", start)+len("\n  end")
+        return source[start:end]
+
+    bad_mask = gate.replace("ctl_mask[ci] = (31-ci >= ctl_n);",
+                            "ctl_mask[ci] = (30-ci >= ctl_n);", 1)
+    old_branch = "    if (ctl_typ == 2'd0) ctl_mask[ci]    = (ci >= ctl_n);\n"+NEW
+    require(gate.count(old_branch) == 1, "Exact real X-control source boundary")
+    bad_x = gate.replace(old_branch,
+        "    ctl_mask[ci] = (ctl_typ == 2'd0) ? (ci >= ctl_n) : (31-ci >= ctl_n);", 1)
+    require(bad_mask != gate and bad_x != gate, "Actual changed-source mask controls")
+    mask_sources = {"gold_mask": gold, "gate_mask": gate, "bad_mask": bad_mask, "bad_x_mask": bad_x}
+    mask_models, mask_binding = [], []
+    for name, source in mask_sources.items():
+        fragment = loop(source)
+        mask_models.append("module "+name+
+            "(input [1:0] ctl_typ,input [5:0] ctl_n,output reg [31:0] ctl_mask);"
+            "integer ci; always @* begin\n"+fragment+"\nend\nendmodule\n")
+        mask_binding.append(dict(model=name, completeSourceSha256=sha(source.encode()),
+                                 actualLoopSha256=sha(fragment.encode()), loop=fragment))
+    write(out/"mask-models.v", "".join(mask_models))
+    write(out/"mask-source-bindings.json", mask_binding)
+    tb = """module tb;
+reg [7:0] drive,target; wire [31:0] g,c,b,x;
+integer v,i,digits,bg,checks,bad_count,bad_x_count,binary_cases;
+gold_mask g0(drive[7:6],drive[5:0],g); gate_mask c0(drive[7:6],drive[5:0],c);
+bad_mask b0(drive[7:6],drive[5:0],b); bad_x_mask x0(drive[7:6],drive[5:0],x);
+task check; begin
+#1; checks=checks+1;
+if (g !== c) $fatal(1,"mask mismatch drive=%b gold=%b candidate=%b",drive,g,c);
+if(g !== b)begin
+ bad_count=bad_count+1;
+ if(bad_count<=8)$display("Actual bad-mask counterexample drive=%b gold=%b mutant=%b",drive,g,b);
+end
+if(g !== x)begin
+ bad_x_count=bad_x_count+1;
+ if(bad_x_count<=8)$display("Actual bad-X-mask counterexample drive=%b gold=%b mutant=%b",drive,g,x);
+end
+if((^drive)!==1'bx)begin
+ binary_cases=binary_cases+1;
+ if(g !== x)$fatal(1,"X-control must remain binary equivalent");
+end
+end endtask
+initial begin checks=0;bad_count=0;bad_x_count=0;binary_cases=0;
+for(v=0;v<65536;v=v+1)begin
+ digits=v;
+ for(i=0;i<8;i=i+1)begin
+  case(digits%4) 0:target[i]=1'b0;1:target[i]=1'b1;2:target[i]=1'bx;3:target[i]=1'bz;endcase
+  digits=digits/4;
+ end
+ for(bg=0;bg<3;bg=bg+1)begin
+  case(bg)0:drive=8'h00;1:drive=8'hff;2:drive=8'hxx;endcase
+  #1;drive=target;check;
+ end
+end
+if(checks!=196608 || binary_cases!=768 || bad_count==0 || bad_x_count==0)
+ $fatal(1,"Incomplete actual exhaustive mask/control coverage");
+$display("PASS 65536 four-state inputs, 196608 actual mask comparisons, binary cases=%0d data negatives=%0d X negatives=%0d",
+binary_cases,bad_count,bad_x_count);
+$finish;end
+endmodule
+"""
+    write(out/"mask-tb.v", tb)
+    command(["iverilog","-g2012","-s","tb","-o",str(out/"mask-test.vvp"),
+             str(out/"mask-models.v"),str(out/"mask-tb.v")], out/"mask-compile")
+    command(["vvp",str(out/"mask-test.vvp")], out/"mask-run", timeout=1800)
+    require(b"PASS 65536 four-state inputs, 196608 actual mask comparisons" in
+            read(out/"mask-run.stdout.log"), "All actual mask input states and three preceding values")
+    (out/"mask-test.vvp").unlink()
+    write(out/"exhaustive-mask-result.json",dict(inputBits=8, fourStateInputs=65536,
+          comparisons=196608, precedingValues=["00","ff","xx"], all32BitsComparedWithCaseInequality=True,
+          realBadMaskAndXCounterexamplesRequired=True, binaryEquivalentXMutant=True,
+          noPerPatternTimingOrHardwareClaim=True))
+
+    # The only changed native function has now been exhaustively compared in actual Icarus.
+    # Replace exactly that loop by one shared arbitrary function input for the CPU proof.
+    # Its actual producer controls are exposed and compared too, closing the composition.
+    # No CPU/register-file FF, init, reset, enable or output is cut out of the SAT obligation.
+    bad_consumer = gate.replace("sh_mask <= ctl_mask;", "sh_mask <= ~ctl_mask;", 1)
     bad_ce = gate.replace("always @(posedge clk) if (ce) begin",
                           "always @(posedge clk) if (1'b1) begin", 1)
-    require(bad_ce != gate, "Real CPU enable corruption")
-    old_branch="    if (ctl_typ == 2'd0) ctl_mask[ci]    = (ci >= ctl_n);\n"+NEW
-    require(gate.count(old_branch)==1,"Exact real X-control source boundary")
-    bad_x=gate.replace(old_branch,
-          "    ctl_mask[ci] = (ctl_typ == 2'd0) ? (ci >= ctl_n) : (31-ci >= ctl_n);",1)
-    variants = {"gold": gold, "gate": gate, "bad-mask": bad_mask, "bad-ce": bad_ce, "bad-x-mask": bad_x}
+    require(bad_consumer != gate and bad_ce != gate, "Actual full CPU consumer/enable mutations")
+    variants = {"gold":gold, "gate":gate, "bad-consumer":bad_consumer, "bad-ce":bad_ce}
     reference, ports = None, None
     results = []
     for name, source in variants.items():
         folder = out/name
         folder.mkdir()
         write(folder/"source.v", source)
-        prep = ("read_verilog -sv -formal "+str(folder/"source.v")+"; hierarchy -check -top st018_cpu; "
-                "flatten; proc -ifx -noopt; check -assert; write_json "+str(folder/"post-proc.json")+
+        fragment = loop(source)
+        require(source.count(fragment) == 1, "Only actual mask function cut")
+        model = source.replace(fragment, "  ctl_mask = __verified_mask;\n", 1)
+        require(len(re.findall(r"\bci\b",model))==1 and "integer ci;" in model,
+                "Mask loop index has no other consumers")
+        model=model.replace("integer ci;","// Unused mask-loop index removed at the verified function cut.",1)
+        require(model.count("module st018_cpu (\n") == 1, "Complete CPU header")
+        model = model.replace("module st018_cpu (\n",
+            "module st018_cpu (\n  input [31:0] __verified_mask,\n  output [7:0] __mask_context,\n", 1)
+        header_end = model.index(");", model.index("module st018_cpu ("))+2
+        model = model[:header_end]+"\nassign __mask_context = {ctl_typ, ctl_n};"+model[header_end:]
+        write(folder/"model-source.v", model)
+        write(folder/"composition-binding.json",dict(actualSourceSha256=sha(source.encode()),
+              exactLoopSha256=sha(fragment.encode()), modelSha256=sha(model.encode()),
+              sharedFunctionInputBits=32, comparedActualProducerControlBits=8,
+              onlyUnusedLoopIndexDeclarationRemoved=True,allOtherCpuAndRegfileCodePreserved=True))
+        prep = ("read_verilog -sv -formal "+str(folder/"model-source.v")+
+                "; hierarchy -check -top st018_cpu; flatten; proc -ifx -noopt; check -assert; "
+                "write_json "+str(folder/"post-proc.json")+
                 "; opt_expr -keepdc; write_json "+str(folder/"constant-init.json")+
-                "; memory_memx; memory_collect; memory_map; "
-                "dffunmap; setundef -undriven -undef; opt_clean; check -assert; write_json "+str(folder/"state.json"))
+                "; memory_memx; memory_collect; memory_map; dffunmap; setundef -undriven -undef; "
+                "opt_clean; check -assert; write_json "+str(folder/"state.json"))
         command(["yosys", "-p", prep], folder/"prepare")
         init_design=json.loads(read(folder/"constant-init.json"))["modules"]["st018_cpu"]
         initialized={"mema":set(),"memb":set()};initializers=[]
@@ -232,6 +326,8 @@ def proof(out):
         inventory, current_ports = cut_state(folder/"state.json", folder/"transition.json",
                                               "gold" if name == "gold" else "gate")
         write(folder/"state-inventory.json", inventory)
+        require("__verified_mask" in current_ports and "__mask_context" in current_ports,
+                "Both sides of the composition retained")
         if reference is None:
             reference, ports = inventory, current_ports
         else:
@@ -239,67 +335,35 @@ def proof(out):
             require({k:(v["direction"],len(v["bits"])) for k,v in current_ports.items()} ==
                     {k:(v["direction"],len(v["bits"])) for k,v in ports.items()}, "Complete top-level ports")
     write(out/"miter.v", miter_text(ports))
-    for variant, modes in (("gate", ("binary", "xstate")), ("bad-mask", ("binary",)),
-                           ("bad-ce", ("binary",)), ("bad-x-mask", ("binary", "xstate"))):
+    for variant, modes in (("gate",("binary","xstate")),("bad-consumer",("binary",)),("bad-ce",("binary",))):
         for mode in modes:
-            folder = out/variant
-            witness = folder/("counterexample-"+mode+".json")
-            script = ("read_json "+str(out/"gold/transition.json")+"; read_json "+str(folder/"transition.json")+
-                      "; read_verilog -sv -formal "+str(out/"miter.v")+
-                      "; hierarchy -check -top miter; flatten; opt_clean; check -assert; write_json "+
-                      str(folder/("miter-"+mode+".json"))+
-                      "; sat -verify -enable_undef "+("-set-def-inputs " if mode=="binary" else "")+
-                      "-prove ok 1 -show-inputs -show-outputs -dump_json "+str(witness)+" -timeout 600")
-            prefix = folder/("proof-"+mode)
-            rc = command(["yosys", "-p", script], prefix, timeout=1200, allowed=(0,1))
-            transcript = read(str(prefix)+".stdout.log")+read(str(prefix)+".stderr.log")
-            positive = variant == "gate" or (variant=="bad-x-mask" and mode=="binary")
-            require((rc == 0) == positive, "Expected real proof/negative status")
-            marker = b"SAT proof finished - no model found: SUCCESS!" if positive else b"SAT proof finished - model found: FAIL!"
-            require(marker in transcript, "Actual SAT result, not a tool/timeout failure")
-            if not positive:
-                require(witness.exists() and witness.stat().st_size > 0, "Real counterexample required")
-            results.append(dict(variant=variant, mode=mode, exit=rc, expectedPass=positive,
-                                actualSatResult=True, witness=not positive))
-    # Exercise every binary mask input and each single-X/Z input bit in real Icarus.
-    def loop(src):
-        start = src.index("  for (ci = 0; ci < 32; ci = ci + 1) begin")
-        end = src.index("\n  end", start)+len("\n  end")
-        return src[start:end]
-    bodies = {}
-    for name in ("gold", "gate", "bad-x-mask"):
-        model_name=name.replace("-","_")
-        bodies[name] = ("module "+model_name+"(input [1:0] ctl_typ,input [5:0] ctl_n,output reg [31:0] ctl_mask);"
-                        "integer ci; always @* begin\n"+loop(variants[name])+"\nend\nendmodule\n")
-    write(out/"mask-models.v", bodies["gold"]+bodies["gate"]+bodies["bad-x-mask"])
-    tb = """module tb;
-reg [7:0] drive; wire [31:0] g,c,x; integer v,i,s,checks,bad_x_count;
-gold g0(drive[7:6],drive[5:0],g); gate c0(drive[7:6],drive[5:0],c);
-bad_x_mask x0(drive[7:6],drive[5:0],x);
-task check; begin #1; checks=checks+1; if (g !== c) $fatal(1,"mask mismatch %b %b %b",drive,g,c);
-if(g !== x)begin bad_x_count=bad_x_count+1;$display("X-control mismatch drive=%b gold=%b mutant=%b",drive,g,x);end
-end endtask
-initial begin checks=0;bad_x_count=0;
-for(v=0;v<256;v=v+1) begin
-drive=v;check;
-for(i=0;i<8;i=i+1) begin drive=v;drive[i]=1'bx;check;drive=v;drive[i]=1'bz;check;end
-end
-if(bad_x_count==0)$fatal(1,"X-control must produce real mask counterexamples");
-$display("PASS all %0d actual mask comparisons, binary and single X/Z perturbations; X negatives=%0d",checks,bad_x_count);$finish;end
-endmodule
-"""
-    write(out/"mask-tb.v", tb)
-    command(["iverilog","-g2012","-s","tb","-o",str(out/"mask-test.vvp"),
-             str(out/"mask-models.v"),str(out/"mask-tb.v")], out/"mask-compile")
-    command(["vvp",str(out/"mask-test.vvp")], out/"mask-run")
-    require(b"PASS all 4352 actual mask comparisons" in read(out/"mask-run.stdout.log"), "All mask comparisons")
-    # Do not upload executable simulation products in the text evidence.
-    (out/"mask-test.vvp").unlink()
-    write(out/"proof-result.json", dict(head=os.environ["GITHUB_SHA"], completeCpuStateBits=len(reference),
-          completeCpuAndRegfile=True, arbitrarySharedState=True, strictXEquality=True, noResetOrEnableAssumptions=True,
-          sat=results, actualMaskComparisons=4352, actualXCorruptionDetected=True,
-          constantInitializerAuditBits=2048,featuresPreservedAtSourceTransitionBoundary=True,
-          mappedAndHardwareEquivalenceNotClaimed=True, secondIndependentReviewer=False))
+            folder=out/variant
+            witness=folder/("counterexample-"+mode+".json")
+            script=("read_json "+str(out/"gold/transition.json")+"; read_json "+str(folder/"transition.json")+
+                    "; read_verilog -sv -formal "+str(out/"miter.v")+
+                    "; hierarchy -check -top miter; flatten; opt_clean; check -assert; write_json "+
+                    str(folder/("miter-"+mode+".json"))+
+                    "; sat -verify -enable_undef "+("-set-def-inputs " if mode=="binary" else "")+
+                    "-prove ok 1 -show-inputs -show-outputs -dump_json "+str(witness)+" -timeout 600")
+            prefix=folder/("proof-"+mode)
+            rc=command(["yosys","-p",script],prefix,timeout=1200,allowed=(0,1))
+            transcript=read(str(prefix)+".stdout.log")+read(str(prefix)+".stderr.log")
+            positive=variant=="gate"
+            require((rc==0)==positive,"Expected real proof/negative status")
+            marker=b"SAT proof finished - no model found: SUCCESS!" if positive else b"SAT proof finished - model found: FAIL!"
+            require(marker in transcript,"Actual SAT result, not a tool/timeout failure")
+            if not positive:require(witness.exists() and witness.stat().st_size>0,"Real counterexample required")
+            results.append(dict(variant=variant,mode=mode,exit=rc,expectedPass=positive,
+                                actualSatResult=True,witness=not positive))
+    write(out/"proof-result.json",dict(head=os.environ["GITHUB_SHA"],completeCpuStateBits=len(reference),
+          completeCpuAndRegfile=True,arbitrarySharedState=True,strictXEquality=True,
+          noResetOrEnableAssumptions=True,sat=results,actualMaskComparisons=196608,
+          exhaustiveFourStateMaskInputs=65536,actualXCorruptionDetected=True,
+          constantInitializerAuditBits=2048,compositionalMaskFunctionProof=True,
+          actualMaskProducerControlBitsCompared=8,sharedArbitraryVerifiedFunctionInputBits=32,
+          featuresPreservedAtSourceTransitionBoundary=True,mappedAndHardwareEquivalenceNotClaimed=True,
+          secondIndependentReviewer=False))
+
 
 def baseline(out):
     out = Path(out)

@@ -30,7 +30,7 @@ GBC-CORE-CONTRACT.md.
                 read by the SNES as 8bpp tiles in bank $E4 -- for the scenes
                 whose per-line palette traffic the view/log path cannot carry.
 
-  c6_sram.v     (Mk.II, wire $04) stores the same quantised 160x144 pixels in
+  c6_sram.v     (Mk.II, wire $05) stores the same quantised 160x144 pixels in
                 external SRAM at $70000-$78fff. A 2 KiB planar row cache
                 serves native or 5:8 stretched SNES DMA reads. The player
                 writes row 0..17 to $EF0008, waits for status +$92 to equal
@@ -63,7 +63,7 @@ obj-mk2-gbc directory, so it cannot reuse production objects. The GBC route
 never selects the SGB/MSU variant. The Mk.II GBC port keeps both VRAM banks,
 the colour pipeline, HDMA and double speed. Small memories use LUT RAM;
 the optional MCU state-debug window is omitted there.
-Wire $04 also omits status fields unused by the SNES player: +$0A/+$0B,
+Wire $05 also omits status fields unused by the SNES player: +$0A/+$0B,
 +$0D, +$59, +$5E, and the +$30..+$3F debug mirror read zero, except +$3C bit 0
 retains a sticky bus-starvation fault for board validation. The count itself
 is omitted on Mk.II; any fault still remains visible until CPU reset.
@@ -72,6 +72,12 @@ the player applies register snapshots unconditionally. The functional SEQ,
 LOG_OVF, row-freeze, dirty, palette and cache-ready/overflow fields remain.
 COLW_N saturates at 256 on Mk.II: the player tests only >=96 and >=256,
 so additional count precision cannot change its rendering-mode policy.
+The C6 dirty bitmap preserves all 360 cells. Wire $05 places row r at
+status +$A0+4*r, with its original even/odd nibble alignment in the first
+three bytes and a zero padding byte. The SNES still reads three bytes per
+row with the same instructions and masks. The retired +$60..+$8C view reads
+zero. This removes packed-byte row decoding without coarsening dirty cells
+or adding DMA traffic; the wire-$03 Mk.III bitmap remains packed.
 GETSYSCLK returns the unknown marker ($ffffffff) in the Mk.II GBC core.
 Only the System Information menu reads it; that menu runs on FPGA_BASE,
 whose frequency measurement remains available.
@@ -84,7 +90,7 @@ The explicit mk2:gbc selector runs the experimental ISE build without adding
 it to production inventories. The same run executes tests/test_gbc_mk2.py,
 assembles both player variants, and runs the existing SNES-player tests.
 It uploads native resource/timing reports and the two player images.
-Wire $04 uses gbc_snes_mk2.bin; wire $03 keeps gbc_snes.bin. A mismatched pair
+Wire $05 uses gbc_snes_mk2.bin; wire $03 keeps gbc_snes.bin. A mismatched pair
 fails the existing version check. No additional image quantisation is used.
 The optional gbc_mcu_check input builds a real Mk.II bootstrap, then compiles
 and links production and experimental MCU firmware in separate object trees.

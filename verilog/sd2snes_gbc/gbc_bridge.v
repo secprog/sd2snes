@@ -225,7 +225,7 @@ module gbc_bridge(
 // Wire version.  Bumped whenever a format, address or semantic in the
 // contract changes; the .bi3 and gbc_snes.bin are never shipped apart.
 `ifdef GBC_EXTERNAL_FB
-parameter [7:0] GBC_WIRE_VER = 8'h04; // explicit row-cache prepare/ready handshake
+parameter [7:0] GBC_WIRE_VER = 8'h05; // SRAM cache handshake and padded dirty rows
 `else
 parameter [7:0] GBC_WIRE_VER = 8'h03;
 `endif
@@ -469,7 +469,7 @@ reg  [9:0]  log_n_pend_r;     // its LOG_N, LOG_OVF and COLW_N
 reg         log_ovf_pend_r;
 `ifdef MK2
 // The player's only COLW_N decisions are >=96 and >=256. Retaining counts
-// above 256 adds no display information; the wire-$04 counter saturates there.
+// above 256 adds no display information; the wire-$05 counter saturates there.
 localparam COLW_BITS=9;
 `else
 localparam COLW_BITS=16;
@@ -1616,7 +1616,7 @@ reg [7:0] view_data_r;
 `ifdef MK2
 // Split the address/status decode from the final view mux. On Spartan-3 the
 // combined path was the longest synthesis path (SNES_ADDRr -> view_data_r).
-// Both byte and select are delayed together. The wire-$04 contract permits
+// Both byte and select are delayed together. The wire-$05 contract permits
 // three clocks, including the extra register on C6 dirty and READY status.
 reg status_select_r;
 reg [7:0] status_byte_r;

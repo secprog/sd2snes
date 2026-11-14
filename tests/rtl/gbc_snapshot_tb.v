@@ -123,7 +123,7 @@ module gbc_snapshot_tb;
       $fatal(1,"C6 status selection changed at address %h",ADDR);
   task read_status(input [23:0] a, input [7:0] expected);
     begin
-      // Wire $04 permits up to three clocks for the full view window.
+      // Wire $05 permits up to three clocks for the full view window.
       VIEW=1; ADDR=a; tick; tick; tick;
       if(DOUT !== expected)
         $fatal(1,"C6 status address=%h got=%h expected=%h",a,DOUT,expected);
@@ -262,7 +262,7 @@ module gbc_snapshot_tb;
     end
     $display("PASS: shared snapshot RAM, coherent publication, two-cycle views and copy reset (%0d bytes)",checks);
     // Register snapshots still update even though the player ignores REGS
-    // dirt and the raw OPRI/KEY1 diagnostic copies on wire $04.
+    // dirt and the raw OPRI/KEY1 diagnostic copies on wire $05.
     for(i=0;i<8;i=i+1) begin
       SCX=1<<i; LY0=1; tick; LY0=0; repeat(163) tick;
       read_status(24'he20203,SCX);
@@ -288,7 +288,7 @@ module gbc_snapshot_tb;
     VIEW=1; ADDR=24'he20292; repeat(3) tick; i=0;
     while(DOUT!==0 && i<20000) begin tick; i=i+1; end
     if(DOUT!==0) $fatal(1,"C6 row cache never became ready");
-    read_status(24'he20200,4);
+    read_status(24'he20200,5);
     read_status(24'he2020d,0);
     starvation=16'ha53c;
     for(j=0;j<16;j=j+1)
@@ -296,16 +296,20 @@ module gbc_snapshot_tb;
     starvation=0;
     read_status(24'he20259,0);
     read_status(24'he2025e,0);
-    read_status(24'he20260,8'hff);
+    read_status(24'he20260,0); // retired packed-byte view
+    read_status(24'he202a0,8'hff);
     read_status(24'he20292,0);
     DIN=18; command(8'h07); // Invalid release must not invalidate row 0.
     read_status(24'he20292,0);
     DIN=0; command(8'h07);
     read_status(24'he20292,8'hff);
-    read_status(24'he20260,0);
-    read_status(24'he20261,0);
-    read_status(24'he20262,8'hf0);
-    read_status(24'he20263,8'hff);
+    read_status(24'he202a0,0);
+    read_status(24'he202a1,0);
+    read_status(24'he202a2,0);
+    read_status(24'he202a3,0); // padding
+    read_status(24'he202a4,8'hf0); // odd row keeps the original nibble alignment
+    read_status(24'he202a5,8'hff);
+    read_status(24'he202a6,8'hff);
     read_status(24'he20292,8'hff);
     $display("PASS: complete C6 bridge prepare/ready/release and mixed status latency");
     // One-hot writes in every bank/block, including map-only addresses,

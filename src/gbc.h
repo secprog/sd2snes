@@ -16,7 +16,7 @@
 
    Production Mk.II firmware keeps no-op stubs and boots the SGB. The separate
    experimental Mk.II build enables the same policy with CONFIG_MK2_GBC, loading
-   fpga_gbc.bit and its wire-$04 player from the card.
+   fpga_gbc.bit and its wire-$05 player from the card.
 
    sgb.h has to be included before this header (it defines sgb_romprops_t), the way
    sgb.h itself relies on smc.h for snes_romprops_t.

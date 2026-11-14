@@ -97,8 +97,12 @@ jobs:
         run: |
           set -o pipefail
           export ASAR="$GITHUB_WORKSPACE/.ci-tools/asar-build/asar/bin/asar"
-          make -C snes/gbc all mk2 harness check ASAR="$ASAR" | tee "$RUNNER_TEMP/gbc-assembly.log"
+          make -C snes/gbc all mk2 map harness check ASAR="$ASAR" | tee "$RUNNER_TEMP/gbc-assembly.log"
           python3 snes/gbc/selfcheck.py -v misc/gbc_snes_mk2.bin
+          gcc -O1 -g -fsanitize=address,undefined -Itests/host \
+            tests/host/m65816.c tests/host/gbc_dirty_rows.c -o "$RUNNER_TEMP/gbc-dirty-rows"
+          "$RUNNER_TEMP/gbc-dirty-rows" misc/gbc_snes.bin misc/gbc_snes.sym \
+            misc/gbc_snes_mk2.bin misc/gbc_snes_mk2.sym | tee "$RUNNER_TEMP/gbc-dirty-rows.log"
           GBC_BIN_REQUIRED=1 bash tests/host/run_gbc_player.sh | tee "$RUNNER_TEMP/gbc-player.log"
       - uses: actions/upload-artifact@v4
         if: always()

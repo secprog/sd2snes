@@ -7,7 +7,7 @@
    gbc.c: route a Game Boy image to the FPGA_GBC core. See gbc.h for the model.
 
    Normal Mk.II firmware keeps the SGB path. The experimental Mk.II build
-   enables this policy with CONFIG_MK2_GBC and uses the wire-$04 player.
+   enables this policy with CONFIG_MK2_GBC and uses the wire-$05 player.
 */
 
 #include <string.h>

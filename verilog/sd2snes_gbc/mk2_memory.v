@@ -212,96 +212,39 @@ module gbc_pixel_ram #(parameter WIDTH=4)(input CLK, WE,
   assign READ_Q = pixels[RADDR];
 endmodule
 
-// 18 rows of 20 dirty cells. Even/odd rows have separate dual-port LUT RAMs:
-// the producer can read-modify-write one row while the SNES reads both rows
-// touched by a packed status byte. Tags give every row an immediate all-zero
-// or all-one default after reset/restart/ROW_DONE, without resetting the RAM.
-// SET wins over CLEAR, including a simultaneous update of that same row.
+// Wire $05 gives each 20-cell row four status-byte addresses. The player
+// still reads three bytes, with the original odd-row nibble alignment. Row
+// padding removes cross-row reads and their division/parity/bank selection.
+// Tags retain immediate reset/restart/ROW_DONE, and SET still wins CLEAR.
 module c6_dirty_ram(input CLK, RST, ALL, SET, input [4:0] ROW, COL,
-                    input [17:0] CLEAR, input [5:0] BIDX, output reg [7:0] BYTE);
+                    input [17:0] CLEAR, input [6:0] BIDX, output reg [7:0] BYTE);
   reg [17:0] valid, default_one;
   wire [17:0] clear_rows = CLEAR | {18{RST}};
   wire set_ok = SET && ROW < 18 && COL < 20;
   wire [17:0] set_rows = set_ok ? (18'd1 << ROW) : 18'd0;
   wire [19:0] col_mask = 20'd1 << COL;
-  wire [39:0] write_q, read_q;
-  wire [19:0] old_word = write_q[ROW[0]*20 +: 20];
+  wire [4:0] read_row = BIDX[6:2];
+  (* ram_style = "distributed" *) reg [19:0] rows [0:31];
   wire [19:0] base_word = clear_rows[ROW] ? 20'd0
-                       : valid[ROW] ? old_word : {20{default_one[ROW]}};
-
-  // Five status bytes contain exactly two 20-cell rows. A small constant
-  // lookup avoids a divider and reads one even/odd pair in parallel.
-  function [6:0] read_select;
-    input [5:0] index;
-    begin
-    case (index)
-       0: read_select={4'd0,3'd0};  1: read_select={4'd0,3'd1};
-       2: read_select={4'd0,3'd2};  3: read_select={4'd0,3'd3};
-       4: read_select={4'd0,3'd4};  5: read_select={4'd1,3'd0};
-       6: read_select={4'd1,3'd1};  7: read_select={4'd1,3'd2};
-       8: read_select={4'd1,3'd3};  9: read_select={4'd1,3'd4};
-      10: read_select={4'd2,3'd0}; 11: read_select={4'd2,3'd1};
-      12: read_select={4'd2,3'd2}; 13: read_select={4'd2,3'd3};
-      14: read_select={4'd2,3'd4}; 15: read_select={4'd3,3'd0};
-      16: read_select={4'd3,3'd1}; 17: read_select={4'd3,3'd2};
-      18: read_select={4'd3,3'd3}; 19: read_select={4'd3,3'd4};
-      20: read_select={4'd4,3'd0}; 21: read_select={4'd4,3'd1};
-      22: read_select={4'd4,3'd2}; 23: read_select={4'd4,3'd3};
-      24: read_select={4'd4,3'd4}; 25: read_select={4'd5,3'd0};
-      26: read_select={4'd5,3'd1}; 27: read_select={4'd5,3'd2};
-      28: read_select={4'd5,3'd3}; 29: read_select={4'd5,3'd4};
-      30: read_select={4'd6,3'd0}; 31: read_select={4'd6,3'd1};
-      32: read_select={4'd6,3'd2}; 33: read_select={4'd6,3'd3};
-      34: read_select={4'd6,3'd4}; 35: read_select={4'd7,3'd0};
-      36: read_select={4'd7,3'd1}; 37: read_select={4'd7,3'd2};
-      38: read_select={4'd7,3'd3}; 39: read_select={4'd7,3'd4};
-      40: read_select={4'd8,3'd0}; 41: read_select={4'd8,3'd1};
-      42: read_select={4'd8,3'd2}; 43: read_select={4'd8,3'd3};
-      44: read_select={4'd8,3'd4};
-      default: read_select={4'd0,3'd7};
-    endcase
-    end
-  endfunction
-  wire [6:0] read_sel = read_select(BIDX);
-  wire [3:0] pair_index = read_sel[6:3];
-  wire [4:0] even_row = {pair_index,1'b0};
-  wire [4:0] odd_row = {pair_index,1'b1};
-  // Only eight bits are exposed. Select them before applying each row's
-  // default, preserving the split row in the middle byte of each pair.
-  reg [7:0] read_byte;
-  wire even_valid = valid[even_row], odd_valid = valid[odd_row];
-  wire even_default = default_one[even_row], odd_default = default_one[odd_row];
-  wire low_valid = read_sel[2:0] < 3 ? even_valid : odd_valid;
-  wire high_valid = read_sel[2:0] < 2 ? even_valid : odd_valid;
-  wire low_default = read_sel[2:0] < 3 ? even_default : odd_default;
-  wire high_default = read_sel[2:0] < 2 ? even_default : odd_default;
-  genvar parity;
-  generate
-    for(parity=0; parity<2; parity=parity+1) begin : g_rows
-      (* ram_style = "distributed" *) reg [19:0] rows [0:8];
-      always @(posedge CLK)
-        if(set_ok && !ALL && ROW[0] == parity)
-          rows[ROW[4:1]] <= base_word | col_mask;
-      assign write_q[parity*20 +: 20] = rows[ROW[4:1]];
-      assign read_q[parity*20 +: 20] = rows[pair_index];
-    end
-  endgenerate
+                       : valid[ROW] ? rows[ROW] : {20{default_one[ROW]}};
+  wire [23:0] read_word = read_row[0] ? {rows[read_row],4'd0}
+                                              : {4'd0,rows[read_row]};
+  wire [23:0] row_mask = read_row[0] ? 24'hfffff0 : 24'h0fffff;
+  reg [7:0] read_byte, mask_byte;
   always @(posedge CLK) begin
+    if(set_ok && !ALL) rows[ROW] <= base_word | col_mask;
     valid <= ALL ? 18'd0 : ((valid & ~clear_rows) | set_rows);
     default_one <= ALL ? 18'h3ffff : (default_one & ~clear_rows);
   end
   always @(*) begin
-    case(read_sel[2:0])
-      0: read_byte=read_q[7:0];
-      1: read_byte=read_q[15:8];
-      2: read_byte=read_q[23:16];
-      3: read_byte=read_q[31:24];
-      4: read_byte=read_q[39:32];
-      default: read_byte=0;
+    case(BIDX[1:0])
+      0: begin read_byte=read_word[7:0]; mask_byte=row_mask[7:0]; end
+      1: begin read_byte=read_word[15:8]; mask_byte=row_mask[15:8]; end
+      2: begin read_byte=read_word[23:16]; mask_byte=row_mask[23:16]; end
+      default: begin read_byte=0; mask_byte=0; end
     endcase
-    BYTE = read_sel[2:0] > 4 ? 8'd0
-         : {high_valid ? read_byte[7:4] : {4{high_default}},
-            low_valid ? read_byte[3:0] : {4{low_default}}};
+    BYTE = read_row >= 18 ? 8'd0 : valid[read_row] ? read_byte
+                               : (mask_byte & {8{default_one[read_row]}});
   end
 endmodule
 // Three physical 512x32 / 2048x8 blocks. The hardware's narrow read port

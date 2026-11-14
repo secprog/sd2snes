@@ -102,7 +102,7 @@ module c6_fb(
   input      [15:0] COLW_N,        // published by the bridge (status +90..91)
 
 `ifdef GBC_EXTERNAL_FB
-  input             PREPARE_WR,   // wire $04: prepare row WR_DATA in the DMA cache
+  input             PREPARE_WR,   // wire $05: prepare row WR_DATA in the DMA cache
   output            FB_MEM_REQ, FB_MEM_WR,
   output     [18:0] FB_MEM_ADDR,
   output     [7:0]  FB_MEM_DATA,
@@ -448,13 +448,16 @@ end
 // frozen row and a frozen row takes no writes.
 //-------------------------------------------------------------------
 wire        dset    = wr2_r & wr_diff_r;
-wire [5:0]  didx  = STAT_OFF[7] ? {2'b10, STAT_OFF[3:0]} : {1'b0, STAT_OFF[4:0]};
 `ifdef GBC_EXTERNAL_FB
+// $A0+4*r+[0..2] contains row r in its original even/odd nibble alignment.
+// The fourth byte is padding. No byte includes cells from a different row.
+wire [6:0] didx = STAT_OFF[6:0] - 7'h20;
 wire [7:0] dirty_read;
 c6_dirty_ram dirty_bitmap(.CLK(CLK), .RST(RST), .ALL(c6_reset),
   .SET(dset), .ROW(wr_row2_r), .COL(wr_col2_r), .CLEAR(rd_mask),
   .BIDX(didx), .BYTE(dirty_read));
 `else
+wire [5:0]  didx  = STAT_OFF[7] ? {2'b10, STAT_OFF[3:0]} : {1'b0, STAT_OFF[4:0]};
 wire [17:0] set_row = {18{c6_reset}} | ({18{dset}} & (18'd1 << wr_row2_r));
 wire [19:0] set_col = {20{c6_reset}} | (20'd1 << wr_col2_r);
 wire [17:0] clr_row = rd_mask | {18{RST}};
@@ -597,7 +600,11 @@ generate
   end
 endgenerate
 `endif
+`ifdef GBC_EXTERNAL_FB
+wire        dhit  = (STAT_OFF >= 8'ha0) & (STAT_OFF <= 8'he7);
+`else
 wire        dhit  = (STAT_OFF >= 8'h60) & (STAT_OFF <= 8'h8C);
+`endif
 // XST's @* expansion cannot name an unpacked array. Select outside the
 // procedural mux, retaining the byte-array decode instead of a wide shifter.
 `ifdef GBC_EXTERNAL_FB
@@ -611,7 +618,7 @@ wire [7:0] dirty_byte = dbytes[didx];
 `endif
 
 `ifdef GBC_EXTERNAL_FB
-assign      STAT_HIT = (STAT_OFF >= 8'h58) & (STAT_OFF <= 8'h93);
+assign      STAT_HIT = ((STAT_OFF >= 8'h58) & (STAT_OFF <= 8'h93)) | dhit;
 `else
 assign      STAT_HIT = (STAT_OFF >= 8'h58) & (STAT_OFF <= 8'h91);
 `endif

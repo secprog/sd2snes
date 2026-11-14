@@ -32,13 +32,13 @@ HMAP  = $(HOUT:.bin=.map)
 
 all: $(OUT)
 
-# The experimental Mk.II core uses wire $04 and an explicit SRAM row-cache
+# The experimental Mk.II core uses wire $05 and an explicit SRAM row-cache
 # handshake. Never replace the Mk.III wire-$03 player with this image.
 mk2: ../../misc/gbc_snes_mk2.bin
 
 ../../misc/gbc_snes_mk2.bin: $(SRC) Makefile
 	@mkdir -p $(@D)
-	$(ASAR) -DGBC_MK2=1 $(SRC) $@
+	$(ASAR) -DGBC_MK2=1 --symbols=wla --symbols-path=$(@:.bin=.sym) $(SRC) $@
 	@test -s $@
 
 # asar exits non-zero on error, but it also prints errors to stdout while doing so;
@@ -90,4 +90,4 @@ check: $(OUT)
 clean:
 	rm -f $(OUT) $(MAP) $(OUT:.bin=.sym) $(HOUT) $(HMAP) $(HSYM)
 
-.PHONY: all map harness check clean
+.PHONY: all mk2 map harness check clean

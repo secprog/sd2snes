@@ -240,7 +240,7 @@
 !GBC_MK2 ?= 0
 !GBC_VER      = $03
 if !GBC_MK2
-!GBC_VER      = $04
+!GBC_VER      = $05
 endif
 
 ; ---------------------------------------------------------------------------
@@ -377,6 +377,9 @@ endif
 !GBC_ST_C6CL    = $5D   ; b2:0 CL_CUR, b3 CL_ID, b6:4 CL_PREV
 !GBC_ST_C6ROWDROP = $5E ; c6_rows_dropped, 8 bits
 !GBC_ST_C6DIRTY = $60   ; 45 B: C6_DIRTY[359:0], bit 20r+c = cell c of row r
+if !GBC_MK2
+!GBC_ST_C6DIRTY = $A0   ; wire $05: 4-byte row stride, same 3-byte nibble alignment
+endif
 !GBC_ST_RCLI    = $8D   ; 3 B: ROW_CLID[17:0]
 !GBC_ST_COLWN   = $90   ; 2 B: BCPD/OCPD writes of the last published frame
 
@@ -8629,7 +8632,8 @@ GbcFbRowCl:
 GbcFbRowMapped:
 GbcFbRowBits:
     ; --- the 20 dirty bits: bits 20r..20r+19 of C6_DIRTY, three bytes from
-    ;     byte floor(5r/2), an odd row starting at the high nibble.  Masked
+    ;     byte floor(5r/2) on Mk.III or 4*r on Mk.II. An odd row starts at
+    ;     the high nibble on both. Masked
     ;     in place (the neighbours' nibbles out), NOT shifted: the scan starts
     ;     an odd row's cell count at -4 instead.
     ldy.b $42
@@ -8651,7 +8655,7 @@ GbcFbRowBits:
     rts
 GbcFbRowSome:
 if !GBC_MK2
-    ; Wire $04: the external framebuffer must prepare this frozen row in
+    ; Wire $05: the external framebuffer must prepare this frozen row in
     ; the planar cache before ANY span DMA. Polling the bridge leaves SRAM
     ; available to the prefetcher. A bounded wait preserves the backlog if
     ; the bridge cannot deliver; the live capacity guard runs AFTER the wait.
@@ -9620,7 +9624,11 @@ GbcFbPMask:
     db $01, $02, $04, $08, $10, $20, $40, $80, $01, $02, $01, $02, $04, $08, $10, $20, $40, $80
 ; The byte of C6_DIRTY the 20 bits of row r start in: floor(5r / 2).
 GbcFbRowByte:
+if !GBC_MK2
+    db 0, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64, 68
+else
     db 0, 2, 5, 7, 10, 12, 15, 17, 20, 22, 25, 27, 30, 32, 35, 37, 40, 42
+endif
 ; First / last dirty CELL of a dirty byte, by byte position (0..2) and row
 ; parity (the odd rows' bit 0 is cell -4): bit + 8 b - 4 p.  Index 0 is
 ; never asked (the scan skips a clean byte).

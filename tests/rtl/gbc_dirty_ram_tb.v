@@ -3,12 +3,13 @@ module gbc_dirty_ram_tb;
   reg CLK=0, RST=1, ALL=0, SET=0;
   reg [4:0] ROW=0, COL=0;
   reg [17:0] CLEAR=0;
-  reg [5:0] BIDX=0;
+  reg [6:0] BIDX=0;
   wire [7:0] BYTE;
   c6_dirty_ram dut(.CLK(CLK), .RST(RST), .ALL(ALL), .SET(SET),
     .ROW(ROW), .COL(COL), .CLEAR(CLEAR), .BIDX(BIDX), .BYTE(BYTE));
   reg [359:0] expected;
   reg [7:0] expected_byte;
+  reg [23:0] expected_row;
   integer i, row_i, byte_i, seed=32'h76b38a2, checks=0;
   task tick;
     begin
@@ -22,12 +23,14 @@ module gbc_dirty_ram_tb;
         if(SET && ROW<18 && COL<20) expected[20*ROW+COL]=1;
       end
       CLK=1; #1;
-      for(byte_i=0;byte_i<64;byte_i=byte_i+1) begin
+      for(byte_i=0;byte_i<128;byte_i=byte_i+1) begin
         BIDX=byte_i; #1;
-        expected_byte=byte_i<45 ? (expected>>(8*byte_i)) : 8'd0;
+        expected_row=byte_i/4<18 ? (expected>>(20*(byte_i/4))) & 20'hfffff : 0;
+        if((byte_i/4)%2) expected_row=expected_row<<4;
+        expected_byte=byte_i%4<3 ? expected_row>>(8*(byte_i%4)) : 0;
         if(BYTE !== expected_byte) begin
           $display("dirty bitmap mismatch step=%0d byte=%0d got=%h expected=%h",
-                   checks/64,byte_i,BYTE,expected_byte);
+                   checks/128,byte_i,BYTE,expected_byte);
           $fatal(1);
         end
         checks=checks+1;
@@ -38,7 +41,7 @@ module gbc_dirty_ram_tb;
   initial begin
     expected=0; tick; RST=0;
     // Every cell individually, followed by clearing/reusing every row. This
-    // catches both packed bytes that cross a row boundary and stale RAM bits.
+    // catches row padding, nibble alignment and stale RAM bits.
     SET=1;
     for(i=0;i<360;i=i+1) begin ROW=i/20; COL=i%20; tick; end
     SET=0;
@@ -52,7 +55,7 @@ module gbc_dirty_ram_tb;
       RST=(i%89==0); ALL=(i%113==0);
       tick;
     end
-    $display("PASS: LUT dirty bitmap matches packed 360-bit oracle in %0d byte checks",checks);
+    $display("PASS: padded dirty rows match packed 360-bit oracle in %0d byte checks",checks);
     $finish;
   end
 endmodule

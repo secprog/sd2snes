@@ -23,7 +23,7 @@
 `define _config_vh
 
 // Mk.II uses external SRAM for C6 storage and a single planar DMA row cache.
-// Its wire-$04 player is built separately: the Mk.III wire-$03 image cannot
+// Its wire-$05 player is built separately: the Mk.III wire-$03 image cannot
 // request that cache and must fail the version handshake on a Mk.II core.
 `ifdef MK2
   `define GBC_EXTERNAL_FB

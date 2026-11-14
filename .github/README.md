@@ -100,6 +100,8 @@ and exports native synthesis in `fpga-reports-mk2-gbc`, including after the
 expected native capacity failure. To check MkIII too, select
 `fpga_cores=mk2:gbc,mk3:gbc`. `gbc_mcu_check=true` additionally compiles the
 normal and experimental MkII firmware against a freshly built bootstrap.
+The MCU artifact retains each policy's matching card modules and boot screen
+alongside its firmware and overlays.
 Those compiler-check artifacts are not complete SD-card release packages.
 
 After the native artifact is available, dispatch the same registered workflow

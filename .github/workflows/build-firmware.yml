@@ -584,6 +584,8 @@ jobs:
             src/obj-mk2*/*.map
             src/obj-mk2*/firmware.img
             src/obj-mk2*/ovl*.img
+            src/obj-mk2*/bootscr.img
+            src/obj-mk2*/*.bin
           if-no-files-found: error
           retention-days: 14
 

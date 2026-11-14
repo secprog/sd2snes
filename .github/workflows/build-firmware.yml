@@ -95,6 +95,7 @@ jobs:
           if [[ "$RTL_ONLY" != clock ]]; then
             python3 .github/scripts/check-gbc-vram-tap.py | tee "$RUNNER_TEMP/gbc-vram-proof.log"
             python3 .github/scripts/check-gbc-smallmem.py | tee "$RUNNER_TEMP/gbc-smallmem-proof.log"
+            python3 .github/scripts/check-gbc-sp-add.py | tee "$RUNNER_TEMP/gbc-sp-add-proof.log"
           fi
       - name: Assemble and validate both wire protocols and existing player behavior
         if: inputs.gbc_rtl_only != 'all' && inputs.gbc_rtl_only != 'clock'

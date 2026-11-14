@@ -1731,6 +1731,15 @@ wire [4:0] mk2_alu_high = {1'b0,exe_dst_r[7:4]}
                        + exe_res_c3_r;
 `endif
 
+`ifdef MK2
+// ADD SP,e uses the latched destination; LD HL,SP+e uses the live SP.
+// Select that operand before one shared adder, retaining both carry stages.
+wire [15:0] mk2_sp_base = IFD_EXE_op[4] ? SP_r : exe_dst_r;
+wire [4:0] mk2_sp_low = {1'b0,mk2_sp_base[3:0]} + {1'b0,exe_src_r[3:0]};
+wire [4:0] mk2_sp_mid = {1'b0,mk2_sp_base[7:4]} + {1'b0,exe_src_r[7:4]} + exe_res_c3_r;
+wire [7:0] mk2_sp_high = mk2_sp_base[15:8] + exe_src_r[15:8] + exe_res_c7_r;
+`endif
+
 reg         exe_res_int_enable_r;
 reg         exe_res_int_disable_r;
 
@@ -2047,22 +2056,32 @@ always @(posedge CLK) begin
           end
         end
         else if (IFD_EXE_op[3:0] == 4'h8) begin
+`ifdef MK2
+          {exe_res_c3_r,exe_res_r[3:0]} <= mk2_sp_low;
+          {exe_res_c7_r,exe_res_r[7:4]} <= mk2_sp_mid;
+          exe_res_r[15:8] <= mk2_sp_high;
+          exe_res_cc_r <= {1'b0,1'b0,exe_res_c3_r,exe_res_c7_r,exe_cc_r[3:0]};
+`endif
           if (~IFD_EXE_op[4]) begin
             // ADD SP,e
+`ifndef MK2
             {exe_res_c3_r,exe_res_r[3:0]} <= exe_dst_r[3:0] + exe_src_r[3:0];
             {exe_res_c7_r,exe_res_r[7:4]} <= exe_dst_r[7:4] + exe_src_r[7:4] + exe_res_c3_r;
             exe_res_r[15:8]               <= exe_dst_r[15:8] + exe_src_r[15:8] + exe_res_c7_r;
             exe_res_cc_r                  <= {1'b0,1'b0,exe_res_c3_r,exe_res_c7_r,exe_cc_r[3:0]};
+`endif
 
             // hack to avoid memory access.  stage is always 0 on first cycle
             exe_lat_add_r <= |exe_ctr_r ? 2 : 1;
           end
           else begin
             // LD HL,SP+e
+`ifndef MK2
             {exe_res_c3_r,exe_res_r[3:0]} <= SP_r[3:0] + exe_src_r[3:0];
             {exe_res_c7_r,exe_res_r[7:4]} <= SP_r[7:4] + exe_src_r[7:4] + exe_res_c3_r;
             exe_res_r[15:8]               <= SP_r[15:8] + exe_src_r[15:8] + exe_res_c7_r;
             exe_res_cc_r                  <= {1'b0,1'b0,exe_res_c3_r,exe_res_c7_r,exe_cc_r[3:0]};
+`endif
 
             exe_lat_add_r <= 1;
           end

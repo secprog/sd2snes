@@ -85,8 +85,16 @@ with tempfile.TemporaryDirectory(prefix="gbc-smallmem-proof-") as tmp:
  wire cram_use = |(reg_state_r & ST_REG_REQ) &&
                  ((reg_addr_r == 8'h69) || (reg_addr_r == 8'h6b));
  wire hram_consume = |(mct_state_r & ST_MCT_HRAM) && ~|mct_req_r;
+ // Prove state membership too. Without this invariant, induction can start
+ // in an impossible multi-hot MCT state that the case statement never exits.
+ wire controllers_valid =
+   (reg_state_r == ST_REG_IDLE || reg_state_r == ST_REG_REQ || reg_state_r == ST_REG_END) &&
+   (mct_state_r == ST_MCT_IDLE || mct_state_r == ST_MCT_DEC ||
+    mct_state_r == ST_MCT_VRAM || mct_state_r == ST_MCT_OAM ||
+    mct_state_r == ST_MCT_REG || mct_state_r == ST_MCT_HRAM ||
+    mct_state_r == ST_MCT_EXT || mct_state_r == ST_MCT_END);
  assign equivalent = cpu_ireset_r ||
-   ((!cram_use || (!mk2_hram_select && !hram_selected_d1)) &&
+   (controllers_valid && (!cram_use || (!mk2_hram_select && !hram_selected_d1)) &&
     (!MCT_HRAM_wren || mk2_hram_select) &&
     (!hram_consume || hram_selected_d1));
 endmodule

@@ -63,6 +63,8 @@ The user accepted the measured -0.832 ns setup miss on 2026-11-14. The image
 and Mk.II packages are marked timing-unverified; console stability has not
 been established. The selected profile is gate-lut4-delay-satlut, seed 11,
 normal MAP/PAR effort, with 7161 LUTs and 3584 slices in run 43612271241.
+Run 43617971625 reproduced this result and generated the accepted experimental
+bitstream (SHA-256 779dcd9c08076b8b9db3704e6c2626509d22bfb966e5ab06018ef6955481330b).
 The Mk.II GBC port keeps both VRAM banks,
 the colour pipeline, HDMA and double speed. Small memories use LUT RAM;
 the optional MCU state-debug window is omitted there.

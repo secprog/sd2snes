@@ -107,6 +107,10 @@ with -0.832 ns setup slack (36 errors) and no hold errors. The user accepted
 that setup miss on 2026-11-14. Later area/timing experiments were withdrawn. Normal MkII GBC Actions builds
 now run that remapping profile and seed after native synthesis, label the image
 and MkII package timing-unverified, and retain the actual timing reports.
+Run [43617971625](https://github.com/secprog/sd2snes/actions/runs/43617971625)
+reproduced those counts, setup slack and zero hold errors, and generated
+`fpga_gbc.bit` with SHA-256
+`779dcd9c08076b8b9db3704e6c2626509d22bfb966e5ab06018ef6955481330b`.
 The native MAP capacity error is expected only before the proved remapping;
 final fit, routing, native-tool errors, hold and switching-limit checks remain
 mandatory. Other cores keep their existing timing policy.

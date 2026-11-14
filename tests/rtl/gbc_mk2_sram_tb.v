@@ -10,6 +10,7 @@ module gbc_mk2_sram_tb;
   reg [15:0] vaddr=0;
   wire commit, commit_last, commit_diff, overflow;
   wire [4:0] commit_row, commit_col;
+  wire [4:0] cache_row;
   wire [7:0] view_byte, ready;
   wire req, mem_wr;
   wire [18:0] addr;
@@ -20,7 +21,8 @@ module gbc_mk2_sram_tb;
     .WR_LINE(line),.WR_LAST(last),.WR_PIXELS(pixels),.COMMIT(commit),
     .COMMIT_ROW(commit_row),.COMMIT_COL(commit_col),.COMMIT_LAST(commit_last),
     .COMMIT_DIFF(commit_diff),.OVERFLOW(overflow),.PREPARE(prepare),
-    .PREPARE_ROW(prep_row),.STRETCH(stretch),.FROZEN(frozen),.INVALIDATE(invalidate),
+    .PREPARE_ROW(prep_row),.STRETCH(stretch),.FROZEN(frozen),
+    .INVALIDATE_CACHE(invalidate[cache_row]),.CACHE_ROW(cache_row),
     .VADDR(vaddr),.VIEW_BYTE(view_byte),.READY_ROW(ready),.MEM_REQ(req),
     .MEM_WR(mem_wr),.MEM_ADDR(addr),.MEM_DATA(data),.MEM_ACK(ack),.MEM_Q(q));
 

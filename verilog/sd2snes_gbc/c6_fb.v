@@ -247,6 +247,11 @@ reg [2:0]   wr_line_r;
 wire        wr2_r, wr_last2_r, wr_diff_r;
 wire [4:0]  wr_row2_r, wr_col2_r;
 wire [7:0]  cache_ready_row;
+wire [4:0] cache_row;
+// The cached row has the same direct ROW_DONE comparison as the dirty write
+// row. Avoid decoding an 18-bit clear vector and selecting its cached bit.
+wire cache_clear = cache_row < 18 && row_frozen_r[cache_row]
+                 && (rd_all || (rd_one && rd_row == cache_row));
 // READY depends on the row-release decode and the cache tag. Register it
 // before the status mux; the complete SNES view still settles in <=3 clocks.
 reg [7:0] cache_ready_status;
@@ -273,7 +278,7 @@ c6_sram storage(
   .COMMIT(wr2_r), .COMMIT_ROW(wr_row2_r), .COMMIT_COL(wr_col2_r),
   .COMMIT_LAST(wr_last2_r), .COMMIT_DIFF(wr_diff_r), .OVERFLOW(fb_overflow),
   .PREPARE(prepare_r), .PREPARE_ROW(prepare_row_r), .STRETCH(ctl_stretch_r),
-  .FROZEN(row_frozen_r), .INVALIDATE(rd_mask),
+  .FROZEN(row_frozen_r), .INVALIDATE_CACHE(cache_clear), .CACHE_ROW(cache_row),
   .VADDR(VADDR), .VIEW_BYTE(VIEW_BYTE), .READY_ROW(cache_ready_row),
   .MEM_REQ(FB_MEM_REQ), .MEM_WR(FB_MEM_WR), .MEM_ADDR(FB_MEM_ADDR),
   .MEM_DATA(FB_MEM_DATA), .MEM_ACK(FB_MEM_ACK), .MEM_Q(FB_MEM_Q)

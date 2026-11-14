@@ -12,6 +12,9 @@ on:
       register_duplication:
         type: string
         default: project
+      placement_seed:
+        type: number
+        default: 3
   workflow_dispatch:
     inputs:
       native_run:
@@ -30,6 +33,10 @@ on:
         type: choice
         default: project
         options: [project, 'off']
+      placement_seed:
+        description: Candidate MAP and PAR cost-table seed (1..100)
+        type: number
+        default: 3
 
 permissions:
   contents: read
@@ -37,7 +44,7 @@ permissions:
 
 jobs:
   implementation:
-    name: Prove and implement ${{ inputs.profile }} (duplication ${{ inputs.register_duplication }})
+    name: Prove and implement ${{ inputs.profile }} (seed ${{ inputs.placement_seed }}, duplication ${{ inputs.register_duplication }})
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
@@ -49,9 +56,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           NATIVE_RUN: ${{ inputs.native_run }}
+          PLACEMENT_SEED: ${{ inputs.placement_seed }}
         run: |
           set -euo pipefail
           [[ "$NATIVE_RUN" =~ ^[0-9]+$ ]]
+          [[ "$PLACEMENT_SEED" =~ ^([1-9]|[1-9][0-9]|100)$ ]]
           mkdir -p .ci-tools/gbc-remap/reports
           gh api "repos/$GH_REPO/actions/runs/$NATIVE_RUN" > .ci-tools/gbc-remap/reports/native-run.json
           native_sha=$(python3 -c 'import json; print(json.load(open(".ci-tools/gbc-remap/reports/native-run.json"))["head_sha"])')
@@ -93,16 +102,17 @@ jobs:
         env:
           PROFILE: ${{ inputs.profile }}
           MAP_DUPLICATION: ${{ inputs.register_duplication }}
+          PLACEMENT_SEED: ${{ inputs.placement_seed }}
         run: |
           set -o pipefail
           docker run --rm --user 0:0 --mac-address 08:00:27:68:c9:35 \
-            --volume "$GITHUB_WORKSPACE:/work" --workdir /work --env PROFILE --env MAP_DUPLICATION \
+            --volume "$GITHUB_WORKSPACE:/work" --workdir /work --env PROFILE --env MAP_DUPLICATION --env PLACEMENT_SEED \
             --entrypoint /bin/bash sd2snes-ci:mk2 \
             .github/scripts/implement-gbc-remap.sh 2>&1 | tee .ci-tools/gbc-remap/reports/implementation.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: gbc-native-remap-${{ inputs.profile }}-dup-${{ inputs.register_duplication }}
+          name: gbc-native-remap-${{ inputs.profile }}-seed-${{ inputs.placement_seed }}-dup-${{ inputs.register_duplication }}
           path: |
             .ci-tools/gbc-remap/reports/
             .ci-tools/gbc-remap/baseline/*.mrp

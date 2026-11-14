@@ -749,7 +749,14 @@ localparam [15:0] SPEED_SWITCH_MCYC = 16'd32768;   // parked edges = 0x20000 T; 
 reg         spd_go_r;           // 1x -> 2x: the flip is pending (two bus edges after the handoff)
 reg         spd_go_ctr_r;       // ... the first of those two edges has not passed yet
 reg         spd_stall_r;        // CPU parked after the switch (HALT with a timeout)
+`ifdef MK2
+// Only expiry is observed. A 15-bit maximal LFSR (XAPP052 taps 15,14),
+// prefixed with the zero seed, reaches 4000 after 32767 enabled clocks.
+// The next parked edge expires, exactly as the 32768-count down-counter.
+reg  [14:0] spd_ctr_r;
+`else
 reg  [15:0] spd_ctr_r;          // M-cycles of park remaining
+`endif
 reg         spd_stop_r;         // the STOP now in EXE is the switch, not a wait for input
 reg         spd_wake_r;         // the park ended on IE & IF: hold the STOP one more bus edge (the CGB's wake cost)
 reg         spd_tail_r;         // the park ended on its timer: the edge on which the STOP retires (HDMA wake check)
@@ -1073,7 +1080,11 @@ always @(posedge CLK) begin
       REG_KEY1_r[0] <= 1'b0;
       REG_DIV_r     <= 16'h0000;
       spd_stall_r   <= ~|(REG_IE_r[4:0] & REG_IF_r[4:0]);
+`ifdef MK2
+      spd_ctr_r     <= 15'd0;
+`else
       spd_ctr_r     <= SPEED_SWITCH_MCYC;
+`endif
       if (cpu_speed_r) begin
         cpu_speed_r  <= 1'b0;           // 2x -> 1x: the clock flips on this edge
       end
@@ -1096,8 +1107,13 @@ always @(posedge CLK) begin
           spd_wake_r  <= 1'b1;          // one more edge: the CGB's wake-up cost
         end
         else if (CLK_BUS_EDGE) begin
+`ifdef MK2
+          spd_ctr_r <= {spd_ctr_r[13:0], (spd_ctr_r[14] ^ spd_ctr_r[13]) | ~|spd_ctr_r};
+          if (spd_ctr_r == 15'h4000) begin
+`else
           spd_ctr_r <= spd_ctr_r - 16'd1;
           if (spd_ctr_r == 16'd1) begin
+`endif
             spd_stall_r <= 1'b0;
             spd_tail_r  <= 1'b1;        // the STOP retires on the next edge
           end

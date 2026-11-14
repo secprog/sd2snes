@@ -100,6 +100,44 @@ module gbc_command_actual(input CLK2, input [23:0] SNES_ADDR_IN,
         # Compile the production read function AND its actual sequential call
         # sites, including OPR_I holds. The test oracle is the old flat table.
         cpu = (root / "verilog/sd2snes_gbc/sgb_cpu.v").read_text()
+        # Extract both complete speed-switch control blocks, including their
+        # real reset/load/IRQ priority, not just the two timer expressions.
+        speed_sources = []
+        for board, name in (("MK2", "gbc_speed_actual"), ("MK3", "gbc_speed_reference")):
+            preprocessed = Path(tmp) / f"speed-{board}.v"
+            command = [args.iverilog, "-E", f"-D{board}", "-I",
+                       str(root / "verilog/sd2snes_gbc"), "-o", str(preprocessed),
+                       str(root / "verilog/sd2snes_gbc/sgb_cpu.v")]
+            if args.ivl_base:
+                command += ["-B", args.ivl_base]
+            subprocess.run(command, check=True)
+            speed_cpu = preprocessed.read_text()
+            declarations = re.search(r"localparam \[15:0\] SPEED_SWITCH_MCYC.*?;", speed_cpu)[0]
+            declarations += "\n" + re.search(r"reg\s+\[[^\]]+\] spd_ctr_r;", speed_cpu)[0]
+            reset_start = re.search(r"cpu_speed_r\s*<= 1'b0;", speed_cpu).start()
+            reset_end = speed_cpu.index("REG_P1_r[5:4] <=", reset_start)
+            start = speed_cpu.index("if (IFD_EXE_new & ~((IFD_EXE_op[7:0]")
+            end = speed_cpu.index("case (reg_state_r)", start)
+            preprocessed.write_text(f'''module {name}(input CLK,cpu_ireset_r,CLK_BUS_EDGE,
+ input IFD_stop_switch,IFD_EXE_new,IFD_EXE_cb, input [23:0] IFD_EXE_op,
+ input [7:0] REG_IE_r,REG_IF_r, output [23:0] observable, output parked);
+ reg cpu_speed_r,spd_go_r,spd_go_ctr_r,spd_stall_r,spd_stop_r,spd_wake_r,spd_tail_r;
+ reg [7:0] REG_KEY1_r=8'hff;
+ reg [15:0] REG_DIV_r=16'h1234;
+ assign observable={{cpu_speed_r,spd_go_r,spd_go_ctr_r,spd_stall_r,
+                     spd_stop_r,spd_wake_r,spd_tail_r,REG_KEY1_r[0],REG_DIV_r}};
+ assign parked=spd_stall_r;
+''' + declarations + "\nalways @(posedge CLK) begin\nif(cpu_ireset_r) begin\n"
+                + speed_cpu[reset_start:reset_end] + "\nend else begin\n"
+                + speed_cpu[start:end] + "\nend\nend\nendmodule\n")
+            speed_sources.append(str(preprocessed))
+        speed = Path(tmp) / "speed.vvp"
+        compile_speed = [args.iverilog, "-g2012", "-s", "gbc_speed_timer_tb", "-o", str(speed),
+                         str(root / "tests/rtl/gbc_speed_timer_tb.v"), *speed_sources]
+        if args.ivl_base:
+            compile_speed += ["-B", args.ivl_base]
+        subprocess.run(compile_speed, check=True)
+        subprocess.run([args.vvp, str(speed)], check=True, timeout=60)
         alu_start = cpu.index("wire mk2_alu_cin =")
         alu_end = cpu.index("`endif", alu_start)
         alu_case = cpu.index("        case (IFD_EXE_op[5:3])")

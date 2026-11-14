@@ -112,6 +112,7 @@ jobs:
             python3 .github/scripts/check-gbc-oam-range.py | tee "$RUNNER_TEMP/gbc-oam-range-proof.log"
             python3 .github/scripts/check-gbc-cic-share.py | tee "$RUNNER_TEMP/gbc-cic-share-proof.log"
             python3 .github/scripts/check-gbc-audio-range.py | tee "$RUNNER_TEMP/gbc-audio-range-proof.log"
+            python3 .github/scripts/check-gbc-audio-mix.py | tee "$RUNNER_TEMP/gbc-audio-mix-proof.log"
             python3 .github/scripts/check-gbc-dirty-clear.py | tee "$RUNNER_TEMP/gbc-dirty-clear-proof.log"
           fi
       - name: Assemble and validate both wire protocols and existing player behavior

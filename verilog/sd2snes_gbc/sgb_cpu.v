@@ -1,3 +1,5 @@
+// MkII port; the MkIII branch includes the unchanged pre-port source.
+`ifdef MK2
 `timescale 1ns / 1ps
 //////////////////////////////////////////////////////////////////////////////////
 // Company:
@@ -5677,3 +5679,7 @@ assign DBG_BRK = 0;
 `endif
 
 endmodule
+
+`else
+`include "mk3/sgb_cpu.v"
+`endif

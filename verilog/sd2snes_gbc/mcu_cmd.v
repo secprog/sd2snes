@@ -1,3 +1,5 @@
+// MkII port; the MkIII branch includes the unchanged pre-port source.
+`ifdef MK2
 `timescale 1ns / 1ps
 //////////////////////////////////////////////////////////////////////////////////
 // Company:
@@ -482,3 +484,7 @@ assign reg_read_out = index_read_buf;
 
 assign DBG_mcu_nextaddr = mcu_nextaddr;
 endmodule
+
+`else
+`include "mk3/mcu_cmd.v"
+`endif

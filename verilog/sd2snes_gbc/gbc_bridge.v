@@ -1,3 +1,5 @@
+// MkII port; the MkIII branch includes the unchanged pre-port source.
+`ifdef MK2
 `timescale 1ns / 1ps
 //////////////////////////////////////////////////////////////////////////////////
 // Module Name:    gbc_bridge
@@ -1744,3 +1746,7 @@ wire _unused_ok = &{1'b0, PPU_VSYNC_EDGE, TAP_KEY0, TAP_VBK,
 // verilator lint_on UNUSED
 
 endmodule
+
+`else
+`include "mk3/gbc_bridge.v"
+`endif

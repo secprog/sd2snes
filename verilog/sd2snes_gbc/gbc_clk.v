@@ -1,3 +1,5 @@
+// MkII port; the MkIII branch includes the unchanged pre-port source.
+`ifdef MK2
 `timescale 1ns / 1ps
 //////////////////////////////////////////////////////////////////////////////////
 // Module Name:    gbc_clk
@@ -535,3 +537,7 @@ assign locked        = exact_mode | locked_r;
 assign sync_err_last = err_last_r;
 
 endmodule
+
+`else
+`include "mk3/gbc_clk.v"
+`endif

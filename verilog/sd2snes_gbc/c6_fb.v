@@ -1,3 +1,5 @@
+// MkII port; the MkIII branch includes the unchanged pre-port source.
+`ifdef MK2
 `timescale 1ns / 1ps
 //////////////////////////////////////////////////////////////////////////////////
 // c6_fb.v -- the Game Boy picture as a framebuffer in M9K, read by the SNES as
@@ -738,4 +740,8 @@ module c6_fb_ram(
     altsyncram_component.width_byteena_b = 1,
     altsyncram_component.wrcontrol_wraddress_reg_b = "CLOCK0";
 endmodule
+`endif
+
+`else
+`include "mk3/c6_fb.v"
 `endif

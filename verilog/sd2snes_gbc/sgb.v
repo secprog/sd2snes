@@ -1,3 +1,5 @@
+// MkII port; the MkIII branch includes the unchanged pre-port source.
+`ifdef MK2
 `timescale 1ns / 1ps
 //////////////////////////////////////////////////////////////////////////////////
 // Company:
@@ -956,3 +958,7 @@ assign config_data_out = config_r[reg_read_in];
 `endif
 
 endmodule
+
+`else
+`include "mk3/sgb.v"
+`endif

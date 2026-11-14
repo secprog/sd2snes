@@ -1,3 +1,5 @@
+// MkII port; the MkIII branch includes the unchanged pre-port source.
+`ifdef MK2
 `timescale 1ns / 1ps
 //////////////////////////////////////////////////////////////////////////////////
 // Company:
@@ -125,3 +127,7 @@ always @(posedge clk) begin
 end
 
 endmodule
+
+`else
+`include "mk3/spi.v"
+`endif

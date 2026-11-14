@@ -1,3 +1,5 @@
+// MkII port; the MkIII branch includes the unchanged pre-port source.
+`ifdef MK2
 `timescale 1ns / 1ps
 //////////////////////////////////////////////////////////////////////////////////
 // Company:
@@ -74,4 +76,8 @@
 // candidate before the CL of the frame switches (section 14.6.6).
 `define C6_CL_HYST 4'd4
 
+`endif
+
+`else
+`include "mk3/config.vh"
 `endif

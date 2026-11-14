@@ -102,6 +102,7 @@ jobs:
           set -o pipefail
           args=()
           if [[ "$RTL_ONLY" == clock ]]; then args+=(--clock-only); fi
+          python3 .github/scripts/check-gbc-board-isolation.py | tee "$RUNNER_TEMP/gbc-board-isolation.log"
           python3 tests/test_gbc_mk2.py "${args[@]}" | tee "$RUNNER_TEMP/gbc-rtl.log"
           python3 .github/scripts/check-gbc-clock-slew.py | tee "$RUNNER_TEMP/gbc-clock-slew-proof.log"
           if [[ "$RTL_ONLY" != clock ]]; then

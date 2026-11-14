@@ -1,7 +1,7 @@
 CORE = gbc
 
-VSRC = c6_fb.v c6_sram.v mk2_memory.v mk2_cpu_memory.v dcm.v address.v cheat.v clk_test.v dac.v gbc_bridge.v gbc_clk.v main.v mcu_cmd.v sd_dma.v spi.v sgb.v sgb_cpu.v
-VHSRC =
+VSRC = c6_fb.v c6_sram.v mk2_memory.v mk2_cpu_memory.v dcm.v address.v cheat.v clk_test.v dac.v gbc_bridge.v gbc_clk.v main.v mcu_cmd.v msu.v sd_dma.v spi.v sgb.v sgb_cpu.v
+VHSRC = $(wildcard mk3/*.v mk3/*.vh)
 
 HEADER = config.vh
 
@@ -10,7 +10,7 @@ COMMON_IP = vram snescmd_buf oam
 XIL_IP =
 XIL_IPCORE_DIR = ../sd2snes_sgb/ip/mk2
 
-INT_IP = pll hram dec_table
+INT_IP = pll hram dec_table dac_buf
 
 include ../settings.mk
 include ../common.mk

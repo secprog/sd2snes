@@ -1,3 +1,5 @@
+// MkII port; the MkIII branch includes the unchanged pre-port source.
+`ifdef MK2
 `timescale 1 ns / 1 ns
 //////////////////////////////////////////////////////////////////////////////////
 // Company: Rehkopf
@@ -1223,3 +1225,7 @@ module gbc_view_decode(input CLK, input [23:0] ADDR_EARLY,
     MATCH[8] <= bank_match[2] && range_match[4] && range_match[6];
   end
 endmodule
+
+`else
+`include "mk3/main.v"
+`endif

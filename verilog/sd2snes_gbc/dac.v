@@ -1,3 +1,5 @@
+// MkII port; the MkIII branch includes the unchanged pre-port source.
+`ifdef MK2
 `timescale 1ns/1ps
 // GBC cartridge audio: the existing GB APU CIC decimator, volume boost,
 // saturation and I2S serializer. No MSU-1 PCM path or sample buffer.
@@ -220,3 +222,7 @@ always @(posedge clkin) begin
   end
 end
 endmodule
+
+`else
+`include "mk3/dac.v"
+`endif

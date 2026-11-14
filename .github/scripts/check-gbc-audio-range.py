@@ -25,8 +25,8 @@ with tempfile.TemporaryDirectory(prefix="gbc-audio-range-proof-") as tmp:
     production = actual[start:end]
     production = production.replace("sgb_co[2][1]", "right_sample").replace("sgb_co[2][0]", "left_sample")
     gain = re.search(r"reg \[10:0\] sgb_vol_reg\s*=.*?;", actual)[0]
-    reference = re.search(r"wire signed \[15:0\] vol_sample_sat\s*=.*?;", sources["MK3"], re.S)[0]
-    reference = reference.replace("vol_sample_sat", "reference_sat")
+    reference_expr = re.search(r"assign vol_sample_sat\s*=(.*?);", sources["MK3"], re.S)[1]
+    reference = "wire signed [15:0] reference_sat = " + reference_expr + ";"
     for negative in (False, True):
         candidate = production
         if negative:

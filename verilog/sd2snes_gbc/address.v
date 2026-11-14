@@ -1,3 +1,5 @@
+// MkII port; the MkIII branch includes the unchanged pre-port source.
+`ifdef MK2
 `timescale 1 ns / 1 ns
 //////////////////////////////////////////////////////////////////////////////////
 // Company: Rehkopf
@@ -86,3 +88,7 @@ assign r213f_enable = featurebits[FEAT_213F] & (SNES_PA == 8'h3f);
 assign snescmd_enable = ({SNES_ADDR[22], SNES_ADDR[15:9]} == 8'b0_0010101);
 
 endmodule
+
+`else
+`include "mk3/address.v"
+`endif

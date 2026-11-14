@@ -121,6 +121,9 @@ the candidate EDIF. Fixed registers, RAMs, multipliers, clocks and I/O keep
 their original definitions and connections. The unchanged EDIF reconstruction
 must reproduce the native resource report. Each seed then undergoes its own
 strict implementation checks with the original clock constraints.
+For a measured near miss, `gbc_par_continue=true` selects PAR's documented
+extra recovery effort (`-xe c`), within the workflow's 90-minute timeout.
+It does not change the clock, timing requirements or image-generation gates.
 Reports and any qualified image are uploaded as
 `gbc-native-remap-PROFILE-seed-SEED-dup-project`; the reports include source
 and artifact hashes, mapping options, timing reports and the image hash.

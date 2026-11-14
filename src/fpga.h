@@ -79,9 +79,8 @@ extern uint8_t fpga_boot_led;
    different core with its own contract -- ROM read from PSRAM, mapper/run in register 3
    of the $2020-$202F window (a26_regs.v), written by the player.  See atari.h. */
 #define FPGA_ATARI ((const uint8_t*)"/sd2snes/fpga_atari." FPGA_CONF_EXT)
-/* Game Boy Color core (verilog/sd2snes_gbc, the SGB core promoted to CGB) -- mk3-only:
-   only fpga_gbc.bi3 exists, no mk2 .bit is planned (see gbc.c; on the mk2 a .gb/.gbc
-   keeps booting the SGB core).  Selected by gbc_id() through sgb_update_romprops. */
+/* Game Boy / Game Boy Color core. MkII loads fpga_gbc.bit with the wire-$05
+   player; MkIII loads fpga_gbc.bi3 with its original wire-$03 player. */
 #define FPGA_GBC ((const uint8_t*)"/sd2snes/fpga_gbc." FPGA_CONF_EXT)
 #define FPGA_BASE ((const uint8_t*)"/sd2snes/fpga_base." FPGA_CONF_EXT)
 /* mk2-only variant of the base core (verilog/sd2snes_basex: the same source with BASE_EXT).

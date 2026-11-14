@@ -85,6 +85,7 @@ case "${1:-}" in
         make -C "snes/$player" clean
         make -C "snes/$player" all ASAR=/opt/asar/bin/asar
       done
+      make -C snes/gbc mk2 ASAR=/opt/asar/bin/asar
     } 2>&1 | tee snes/players/build.log
     for player in nes sms gbc a26; do
       test "$(stat -c %s "misc/${player}_snes.bin")" = 32768
@@ -93,9 +94,9 @@ case "${1:-}" in
       > snes/players/source-check.log
     cat snes/players/source-before.sha256 > snes/players/source-output.sha256
     sha256sum misc/nes_snes.bin misc/nes_snes.map misc/sms_snes.bin \
-      misc/gbc_snes.bin misc/a26_snes.bin >> snes/players/source-output.sha256
+      misc/gbc_snes.bin misc/gbc_snes_mk2.bin misc/a26_snes.bin >> snes/players/source-output.sha256
     # cgb_boot.bin awaits separate collection and acceptance against the unchanged
-    # firmware CRC/size contract; its absence still blocks MkIII packaging.
+    # firmware CRC/size contract; its absence blocks both boards' packaging.
     exit "$menu_text_status"
     ;;
   *)

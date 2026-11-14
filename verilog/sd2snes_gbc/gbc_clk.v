@@ -1,3 +1,5 @@
+// MkII port; the MkIII branch includes the unchanged pre-port source.
+`ifdef MK2
 `timescale 1ns / 1ps
 //////////////////////////////////////////////////////////////////////////////////
 // Module Name:    gbc_clk
@@ -136,7 +138,23 @@ localparam [3:0]  LOCK_FRAMES = 4'd8;
 // Phase accumulator
 //-------------------------------------------------------------------
 
-reg  [23:0] k2_r;
+`ifdef MK2
+// K2 stays inside [1669004,1702720], including Exact's 1675446.
+// Keeping the stored rate unsigned avoids synthesizing three redundant bits.
+localparam K2_BITS=21, DIFF_BITS=18, ERR_BITS=17, KI_BITS=14,
+           KI_NEXT_BITS=14, P_BITS=16, ABS_BITS=10;
+`else
+localparam K2_BITS=24, DIFF_BITS=19, ERR_BITS=19, KI_BITS=18,
+           KI_NEXT_BITS=18, P_BITS=22, ABS_BITS=17;
+`endif
+`ifdef MK2
+// Every committed rate, including Exact, lies in 0x19778c..0x19fb40.
+// Its upper five bits are invariant, not a register needing a wide mux.
+reg [15:0] rate_low_r;
+wire [20:0] k2_r = {5'h19,rate_low_r};
+`else
+reg  [K2_BITS-1:0] k2_r;
+`endif
 reg  [23:0] acc_r;
 reg         ce2_r;
 reg         ce1_r;
@@ -216,22 +234,42 @@ localparam [3:0] ST_IDLE  = 4'd0,
 
 // Working width for the output arithmetic: signed 24 bits.  The widest
 // intermediate is K2_NOM + K_i - kp*err = 2251750 and the widest bound is
-// K2_MAX + SLEW_UNLOCKED = 1787013, both far inside +-8388607.  That also
-// makes $signed(k2_r) correct as written: k2_r never exceeds K2_MAX < 2^21,
-// so its bit 23 is always 0 and reading it as signed cannot go negative.
+// K2_MAX + SLEW_UNLOCKED = 1787013, both far inside +-8388607. Mk.II narrows
+// the stored intermediates using the bounds above. k2_cur_w explicitly
+// zero-extends the unsigned rate before interpreting it as a signed value.
 reg  [3:0]        st_r;
 reg  [16:0]       dot_q;        // frame_dot_ctr latched at the strobe
 reg               frozen_q;     // this update only republishes K2_NOM + K_i
 reg               locked_q;     // lock state this update is allowed to slew at
-reg  signed [18:0] diff_r;      // dot - ALVO, before the modular reduction
-reg  signed [18:0] err_q;       // dots, [-35112, +35112)
-reg  [16:0]       err_abs_q;
-reg  signed [17:0] ki_r;        // the integral term, in LSB of K2
-reg  signed [17:0] ki_next_r;   // ... before its clamp
-reg  signed [21:0] p_term_r;    // kp * err, in LSB of K2
+reg  signed [DIFF_BITS-1:0] diff_r; // dot - ALVO, before the modular reduction
+reg  signed [ERR_BITS-1:0] err_q;   // dots, [-35112, +35112)
+reg  [ABS_BITS-1:0] err_abs_q;
+reg  signed [KI_BITS-1:0] ki_r;        // the integral term, in LSB of K2
+reg  signed [KI_NEXT_BITS-1:0] ki_next_r; // ... before its clamp
+reg  signed [P_BITS-1:0] p_term_r;     // kp * err, in LSB of K2
+`ifdef MK2
+// Work relative to 0x190000, the invariant upper rate bits. If the signed
+// error does not fit 12 bits, |kp*err| >= 32768: even KI's +/-4096 cannot
+// bring it inside the +/-16858 clamp. Preserve that decision separately.
+// Otherwise NOM.low+KI-kp*err stays in 10598..84326, fitting 17 unsigned bits.
+reg p_large_r, p_negative_r;
+reg [15:0] tgt_sum_r;
+reg [16:0] tgt_diff_r;
+reg [15:0] tgt_low_r, k2_lo_low_r;
+reg [16:0] k2_hi_low_r;
+reg signed [16:0] slew_delta_r;
+reg slew_lo_wrap_r;
+// Compare against constants in the commit stage instead of comparing two
+// variable 16-bit bounds there. The difference is sampled with the bounds.
+// Preserve even the wrapped lower-bound case for every 16-bit rate value.
+wire slew_up = slew_delta_r > 17'sd8429;
+wire slew_down = slew_lo_wrap_r ? slew_delta_r < 17'sd57107
+                               : slew_delta_r < -17'sd8429;
+`else
 reg  signed [23:0] tgt_r;
 reg  signed [23:0] k2_hi_r;     // k2 + slew, registered so ST_SLEW2 only compares
 reg  signed [23:0] k2_lo_r;     // k2 - slew
+`endif
 reg  [3:0]        lock_ctr_r;
 reg               locked_r;
 reg               skip_r;       // skip the next update (LCD off / first SYNC after on)
@@ -244,15 +282,32 @@ reg  [15:0]       err_last_r;
 // and the reduction are one state apart because together they are two chained
 // 19-bit chains.
 wire signed [18:0] diff_w = $signed({2'b00, dot_q}) - $signed({2'b00, ALVO});
+`ifdef MK2
+// Even an out-of-range 17-bit dot sample gives diff in [-11525,119546].
+// Therefore the negative-wrap arm is unreachable. After the positive wrap
+// err fits signed 17 bits. KI is clamped to +/-4096; the INT2 gate allows
+// only a step up to 127, so every committed pre-clamp sum fits signed 14 bits.
+wire signed [18:0] err_w = (diff_r >= $signed(DOT_HALF)) ? diff_r - $signed(DOT_MOD)
+                                                      : diff_r;
+`else
 wire signed [18:0] err_w  = (diff_r >=  $signed(DOT_HALF)) ? diff_r - $signed(DOT_MOD)
                           : (diff_r <  -$signed(DOT_HALF)) ? diff_r + $signed(DOT_MOD)
                                                            : diff_r;
+`endif
 
 // Integrator step, magnitude first so the shift rounds toward zero.  An
 // arithmetic right shift of a negative error rounds toward -inf, which turns
 // err = -1 into a permanent +1 LSB per frame ratchet on K_i.
+`ifdef MK2
+// Only |err|<512 may update KI, so the committed step is at most 127. Values
+// outside that interval are deliberately ignored by the existing INT2 gate.
+wire [6:0] ki_step_w = err_abs_q[8:2];
+wire abs_large = err_q[16:9] != {8{err_q[9]}};
+wire [9:0] abs_small = err_q[16] ? -err_q[9:0] : err_q[9:0];
+`else
 wire [16:0]        ki_step_w = err_abs_q >> KI_SHIFT;
-wire signed [17:0] ki_next_w = err_q[18] ? ki_r + $signed({1'b0, ki_step_w})
+`endif
+wire signed [17:0] ki_next_w = err_q[ERR_BITS-1] ? ki_r + $signed({1'b0, ki_step_w})
                                          : ki_r - $signed({1'b0, ki_step_w});
 
 // Slew limit, against the K2 that is live right now.  The limit follows the
@@ -261,12 +316,22 @@ wire signed [17:0] ki_next_w = err_q[18] ? ki_r + $signed({1'b0, ki_step_w})
 // $EF0004) clears the lock inside this very walk, and reading locked_r here
 // would hand that first bad sample the wide unlocked slew -- which is exactly
 // the sample a slew limiter exists to reject.
-wire signed [23:0] k2_cur_w  = $signed(k2_r);
+wire signed [23:0] k2_cur_w  = $signed({1'b0,k2_r});
+`ifdef MK2
+// Unlocked slew is wider than the entire legal K2 interval, so it cannot
+// bind. Only form the locked bounds and bypass them for an unlocked sample.
+wire signed [23:0] slew_w = SLEW_LOCKED;
+`else
 wire signed [23:0] slew_w    = locked_q ? SLEW_LOCKED : SLEW_UNLOCKED;
+`endif
 
 always @(posedge CLK) begin
   if (RST) begin
+`ifdef MK2
+    rate_low_r <= exact_mode ? K2_EXACT[15:0] : K2_NOM[15:0];
+`else
     k2_r       <= exact_mode ? K2_EXACT : K2_NOM;
+`endif
     st_r       <= ST_IDLE;
     dot_q      <= 17'd0;
     frozen_q   <= 1'b0;
@@ -277,9 +342,16 @@ always @(posedge CLK) begin
     ki_r       <= 18'sd0;
     ki_next_r  <= 18'sd0;
     p_term_r   <= 22'sd0;
+`ifdef MK2
+    tgt_sum_r <= 0; tgt_diff_r <= 0; tgt_low_r <= 0;
+    k2_hi_low_r <= 0; k2_lo_low_r <= 0;
+    slew_delta_r <= 0; slew_lo_wrap_r <= 0;
+    p_large_r <= 0; p_negative_r <= 0;
+`else
     tgt_r      <= 24'sd0;
     k2_hi_r    <= 24'sd0;
     k2_lo_r    <= 24'sd0;
+`endif
     lock_ctr_r <= 4'd0;
     locked_r   <= 1'b0;
     skip_r     <= 1'b1;
@@ -291,7 +363,11 @@ always @(posedge CLK) begin
     // the loop still measures and publishes the phase error -- it is free
     // telemetry, and watching it walk is how one tells "Exact, as designed"
     // from "genlock, broken" over USB.
+`ifdef MK2
+    if (exact_mode) rate_low_r <= K2_EXACT[15:0];
+`else
     if (exact_mode) k2_r <= K2_EXACT;
+`endif
 
     case (st_r)
       // A strobe that lands while the walk is still running is ignored.  The
@@ -316,7 +392,13 @@ always @(posedge CLK) begin
       end
 
       ST_ABS: begin
-        err_abs_q <= err_q[18] ? (~err_q[16:0] + 17'd1) : err_q[16:0];
+`ifdef MK2
+        // All consumers ask only whether the magnitude is below 64 or 512.
+        // Saturating at 512 retains both predicates without a 17-bit negate.
+        err_abs_q <= abs_large ? 10'd512 : abs_small;
+`else
+        err_abs_q <= err_q[ERR_BITS-1] ? (~err_q[16:0] + 17'd1) : err_q[16:0];
+`endif
         // GBDG +10 is 16 bits and the error is 17; saturate rather than wrap,
         // so a pre-lock error reads as "huge" instead of as its own negation.
         // Not published for a frozen update: the dot counter is stopped with
@@ -335,6 +417,10 @@ always @(posedge CLK) begin
         // there anyway, and keeping it out of the gated branch keeps this
         // state one chain deep.
         ki_next_r <= ki_next_w;
+`ifdef MK2
+        p_large_r <= !frozen_q && (err_q[16:11] != {6{err_q[11]}});
+        p_negative_r <= err_q[16];
+`endif
 
         if (frozen_q) begin
           // Frozen: republish K2_NOM + K_i and touch nothing else.  The phase
@@ -370,23 +456,44 @@ always @(posedge CLK) begin
       end
 
       ST_TGT1: begin
+`ifdef MK2
+        tgt_sum_r <= $signed({1'b0, K2_NOM[15:0]}) + $signed(ki_r);
+`else
         tgt_r <= $signed({1'b0, K2_NOM[22:0]}) + $signed(ki_r);
+`endif
         st_r  <= ST_TGT2;
       end
 
       ST_TGT2: begin
+`ifdef MK2
+        tgt_diff_r <= $signed({1'b0,tgt_sum_r}) - $signed(p_term_r);
+`else
         tgt_r <= tgt_r - $signed(p_term_r);
+`endif
         st_r  <= ST_CLAMP;
       end
 
       ST_CLAMP: begin
+`ifdef MK2
+        tgt_low_r <= p_large_r ? (p_negative_r ? K2_MAX[15:0] : K2_MIN[15:0])
+                   : (tgt_diff_r < {1'b0,K2_MIN[15:0]}) ? K2_MIN[15:0]
+                   : (tgt_diff_r > {1'b0,K2_MAX[15:0]}) ? K2_MAX[15:0] : tgt_diff_r[15:0];
+`else
         tgt_r <= (tgt_r < K2_MIN) ? K2_MIN : (tgt_r > K2_MAX) ? K2_MAX : tgt_r;
+`endif
         st_r  <= ST_SLEW1;
       end
 
       ST_SLEW1: begin
+`ifdef MK2
+        k2_hi_low_r <= {1'b0,rate_low_r} + 17'd8429;
+        k2_lo_low_r <= rate_low_r - 16'd8429;
+        slew_delta_r <= $signed({1'b0,tgt_low_r}) - $signed({1'b0,rate_low_r});
+        slew_lo_wrap_r <= rate_low_r < 16'd8429;
+`else
         k2_hi_r <= k2_cur_w + slew_w;
         k2_lo_r <= k2_cur_w - slew_w;
+`endif
         st_r    <= ST_SLEW2;
       end
 
@@ -394,9 +501,15 @@ always @(posedge CLK) begin
         // Only compares and muxes: both bounds and the target are registers,
         // so nothing here reads k2_r.
         if (!exact_mode)
-          k2_r <= (tgt_r > k2_hi_r) ? k2_hi_r[23:0]
-                : (tgt_r < k2_lo_r) ? k2_lo_r[23:0]
-                                    : tgt_r[23:0];
+`ifdef MK2
+          rate_low_r <= !locked_q ? tgt_low_r
+                      : slew_up ? k2_hi_low_r[15:0]
+                      : slew_down ? k2_lo_low_r : tgt_low_r;
+`else
+          k2_r <= (tgt_r > k2_hi_r) ? k2_hi_r[K2_BITS-1:0]
+                : (tgt_r < k2_lo_r) ? k2_lo_r[K2_BITS-1:0]
+                                    : tgt_r[K2_BITS-1:0];
+`endif
         st_r <= ST_IDLE;
       end
 
@@ -424,3 +537,7 @@ assign locked        = exact_mode | locked_r;
 assign sync_err_last = err_last_r;
 
 endmodule
+
+`else
+`include "mk3/gbc_clk.v"
+`endif

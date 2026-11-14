@@ -1,3 +1,5 @@
+// MkII port; the MkIII branch includes the unchanged pre-port source.
+`ifdef MK2
 `timescale 1ns / 1ps
 //////////////////////////////////////////////////////////////////////////////////
 // c6_fb.v -- the Game Boy picture as a framebuffer in M9K, read by the SNES as
@@ -101,6 +103,15 @@ module c6_fb(
   output            STAT_HIT,
   input      [15:0] COLW_N,        // published by the bridge (status +90..91)
 
+`ifdef GBC_EXTERNAL_FB
+  input             PREPARE_WR,   // wire $05: prepare row WR_DATA in the DMA cache
+  output            FB_MEM_REQ, FB_MEM_WR,
+  output     [18:0] FB_MEM_ADDR,
+  output     [7:0]  FB_MEM_DATA,
+  input             FB_MEM_ACK,
+  input      [7:0]  FB_MEM_Q,
+`endif
+
   // GBDG (contract section 10)
   output     [7:0]  FLAGS,         // = status +58
   output     [7:0]  CL_BYTE,       // = status +5D
@@ -153,8 +164,14 @@ wire        c6_off   = TAP_LY0 & ~ctl_en_r &  en_eff_r;
 //-------------------------------------------------------------------
 // state
 //-------------------------------------------------------------------
+`ifdef GBC_EXTERNAL_FB
+wire [17:0] row_frozen_r, thaw_pend_r, row_clid_r;
+`else
 reg  [17:0]  row_frozen_r, thaw_pend_r, row_clid_r;
+`endif
+`ifndef GBC_EXTERNAL_FB
 reg  [359:0] dirty_r;
+`endif
 reg  [2:0]   cl_cur_r, cl_prev_r, cl_cand_r;
 reg          cl_id_r;
 reg  [3:0]   cl_hyst_r;
@@ -223,7 +240,47 @@ wire        wr_en    = en_eff_r & (~row_is_frozen | thaw_now);
 // CLK) away, while the write and its compare are over two cycles later.
 reg  [63:0] acc_r;
 wire [63:0] acc_nx = {acc_r[55:0], px8};
+wire [17:0] rd_mask;
 
+`ifdef GBC_EXTERNAL_FB
+reg         wr0_r, wr_last0_r;
+reg [4:0]   wr_row_r, wr_col_r;
+reg [2:0]   wr_line_r;
+wire        wr2_r, wr_last2_r, wr_diff_r;
+wire [4:0]  wr_row2_r, wr_col2_r;
+wire [7:0]  cache_ready_row;
+// READY depends on the row-release decode and the cache tag. Register it
+// before the status mux; the complete SNES view still settles in <=3 clocks.
+reg [7:0] cache_ready_status;
+always @(posedge CLK) cache_ready_status <= cache_ready_row;
+wire        fb_overflow;
+reg         prepare_r;
+reg [4:0]   prepare_row_r;
+always @(posedge CLK) begin
+  wr0_r <= !RST && !c6_reset && !c6_off && px_vis && wr_en && (&PX_X[2:0]);
+  if (px_vis && wr_en) acc_r <= acc_nx;
+  if (px_vis && wr_en && (&PX_X[2:0])) begin
+    wr_last0_r <= px_last;
+    wr_row_r <= px_row;
+    wr_col_r <= PX_X[7:3];
+    wr_line_r <= PX_Y[2:0];
+  end
+  prepare_r <= PREPARE_WR && !RST;
+  if (PREPARE_WR) prepare_row_r <= WR_DATA[4:0];
+end
+c6_sram storage(
+  .CLK(CLK), .RST(RST | c6_reset | c6_off),
+  .WR(wr0_r), .WR_ROW(wr_row_r), .WR_COL(wr_col_r), .WR_LINE(wr_line_r),
+  .WR_LAST(wr_last0_r), .WR_PIXELS(acc_r),
+  .COMMIT(wr2_r), .COMMIT_ROW(wr_row2_r), .COMMIT_COL(wr_col2_r),
+  .COMMIT_LAST(wr_last2_r), .COMMIT_DIFF(wr_diff_r), .OVERFLOW(fb_overflow),
+  .PREPARE(prepare_r), .PREPARE_ROW(prepare_row_r), .STRETCH(ctl_stretch_r),
+  .FROZEN(row_frozen_r), .INVALIDATE(rd_mask),
+  .VADDR(VADDR), .VIEW_BYTE(VIEW_BYTE), .READY_ROW(cache_ready_row),
+  .MEM_REQ(FB_MEM_REQ), .MEM_WR(FB_MEM_WR), .MEM_ADDR(FB_MEM_ADDR),
+  .MEM_DATA(FB_MEM_DATA), .MEM_ACK(FB_MEM_ACK), .MEM_Q(FB_MEM_Q)
+);
+`else
 reg         wr0_r, wr1_r, wr2_r;
 reg         wr_last0_r, wr_last1_r, wr_last2_r;
 reg         wr_diff_r;
@@ -260,6 +317,7 @@ always @(posedge CLK) begin
   wr_col2_r  <= wr_col_r;
   wr_row2_r  <= wr_row_r;
 end
+`endif
 
 //-------------------------------------------------------------------
 // ROW_DONE decode ($EF0007)
@@ -269,7 +327,13 @@ wire        rd_one     = rowdone_wr_r & (wr_data_r < 8'd18);
 wire [4:0]  rd_row     = wr_data_r[4:0];
 wire        rd_hit_one = rd_one & row_frozen_r[rd_row];
 wire        rd_bad     = rowdone_wr_r & ~rd_all & ~rd_hit_one;
-wire [17:0] rd_mask    = rd_all ? row_frozen_r : (rd_hit_one ? (18'd1 << rd_row) : 18'd0);
+`ifdef GBC_EXTERNAL_FB
+// Gate each decoded bit with its own frozen flag. Indexing FROZEN first and
+// then decoding the result creates two cascaded row muxes on READY/status.
+assign rd_mask = row_frozen_r & ({18{rd_all}} | ({18{rd_one}} & (18'd1 << rd_row)));
+`else
+assign rd_mask = rd_all ? row_frozen_r : (rd_hit_one ? (18'd1 << rd_row) : 18'd0);
+`endif
 
 //-------------------------------------------------------------------
 // rows, dirty, CL, counters
@@ -282,13 +346,22 @@ wire        vg_pos    = ~vg_r[15] & |vg_r;
 wire        vb_pos    = ~vb_r[15] & |vb_r;
 wire [2:0]  cl_vote   = {vb_pos, vg_pos, vr_pos};
 
+`ifdef GBC_EXTERNAL_FB
+c6_row_flags row_flags(.CLK(CLK), .RST(RST | c6_reset), .OFF(c6_off),
+  .THAW(thaw_now), .THAW_ROW(px_row), .FREEZE(wr2_r & wr_last2_r),
+  .FREEZE_ROW(wr_row2_r), .CLID(cl_id_r), .DONE(rd_mask),
+  .FROZEN(row_frozen_r), .PENDING(thaw_pend_r), .ROW_CLID(row_clid_r));
+`endif
+
 always @(posedge CLK) begin
   if (RST | c6_reset) begin
     en_eff_r       <= c6_reset;
     hold_eff_r     <= c6_reset & ctl_hold_r;
+`ifndef GBC_EXTERNAL_FB
     row_frozen_r   <= 18'd0;
     thaw_pend_r    <= 18'd0;
     row_clid_r     <= 18'd0;
+`endif
     cl_cur_r       <= 3'd0;
     cl_prev_r      <= 3'd0;
     cl_cand_r      <= 3'd0;
@@ -308,27 +381,35 @@ always @(posedge CLK) begin
       en_eff_r   <= ctl_en_r;
       hold_eff_r <= ctl_hold_r;
     end
+`ifndef GBC_EXTERNAL_FB
     if (c6_off) begin
       row_frozen_r <= 18'd0;
       thaw_pend_r  <= 18'd0;
     end
+`endif
 
     // ---- ROW_DONE: arm the thaw (the dirty bits are cleared below) -------
+`ifndef GBC_EXTERNAL_FB
     if (|rd_mask) thaw_pend_r <= thaw_pend_r | rd_mask;
+`endif
     if (rd_bad & ~(&rowdone_bad_r)) rowdone_bad_r <= rowdone_bad_r + 16'd1;
 
     // ---- thaw / drop at (0, 8r) -------------------------------------------
+`ifndef GBC_EXTERNAL_FB
     if (thaw_now) begin
       row_frozen_r[px_row] <= 1'b0;
       thaw_pend_r[px_row]  <= 1'b0;
       row_clid_r[px_row]   <= cl_id_r;
     end
+`endif
     if (drop_now & ~(&rows_dropped_r)) rows_dropped_r <= rows_dropped_r + 16'd1;
 
     // ---- the compare of the last word lands: the row freezes -------------
     // On the same edge its dirty bit is set (below), never before it: a row
     // that reads frozen has every bit of its last word in the bitmap.
+`ifndef GBC_EXTERNAL_FB
     if (wr2_r & wr_last2_r) row_frozen_r[wr_row2_r] <= 1'b1;
+`endif
 
     // ---- the vote -----------------------------------------------------
     if (TAP_VBLANK & en_eff_r) begin
@@ -369,6 +450,21 @@ end
 // frozen row and a frozen row takes no writes.
 //-------------------------------------------------------------------
 wire        dset    = wr2_r & wr_diff_r;
+`ifdef GBC_EXTERNAL_FB
+// $A0+4*r+[0..2] contains row r in its original even/odd nibble alignment.
+// The fourth byte is padding. No byte includes cells from a different row.
+wire [6:0] didx = STAT_OFF[6:0] - 7'h20;
+wire [7:0] dirty_read;
+// This is exactly rd_mask[wr_row2_r] for every valid write row. Compare
+// row numbers directly instead of decoding all rows and selecting one again.
+wire dirty_write_clear = wr_row2_r < 18 && row_frozen_r[wr_row2_r]
+                      && (rd_all || (rd_one && rd_row == wr_row2_r));
+c6_dirty_ram dirty_bitmap(.CLK(CLK), .RST(RST), .ALL(c6_reset),
+  .SET(dset), .ROW(wr_row2_r), .COL(wr_col2_r), .CLEAR(rd_mask),
+  .CLEAR_WRITE_ROW(dirty_write_clear),
+  .BIDX(didx), .BYTE(dirty_read));
+`else
+wire [5:0]  didx  = STAT_OFF[7] ? {2'b10, STAT_OFF[3:0]} : {1'b0, STAT_OFF[4:0]};
 wire [17:0] set_row = {18{c6_reset}} | ({18{dset}} & (18'd1 << wr_row2_r));
 wire [19:0] set_col = {20{c6_reset}} | (20'd1 << wr_col2_r);
 wire [17:0] clr_row = rd_mask | {18{RST}};
@@ -381,10 +477,12 @@ generate
     end
   end
 endgenerate
+`endif
 
 //-------------------------------------------------------------------
 // the two memories (even / odd cell columns)
 //-------------------------------------------------------------------
+`ifndef GBC_EXTERNAL_FB
 wire [10:0] rd_addr0, rd_addr1;
 
 c6_fb_ram fb0 (
@@ -483,6 +581,7 @@ always @(*) begin
 end
 
 assign VIEW_BYTE = s1_oor_r ? 8'h00 : vb;
+`endif
 
 //-------------------------------------------------------------------
 // status bytes (section 14.5), all live
@@ -495,6 +594,7 @@ wire [7:0]  clb   = {1'b0, cl_prev_r, cl_id_r, cl_cur_r};
 // +60..+7F -> 0..31, +80..+8C -> 32..44, no subtractor.  Written as the part
 // select dirty_r[8*(off - $60) +: 8] it came out as a 360-bit shifter: 1.3 K
 // LE, a tenth of the chip, for a 45-byte mux.
+`ifndef GBC_EXTERNAL_FB
 wire [7:0]  dbytes [0:63];
 genvar      gd;
 generate
@@ -506,11 +606,47 @@ generate
     end
   end
 endgenerate
-wire [5:0]  didx  = STAT_OFF[7] ? {2'b10, STAT_OFF[3:0]} : {1'b0, STAT_OFF[4:0]};
+`endif
+`ifdef GBC_EXTERNAL_FB
+wire        dhit  = (STAT_OFF >= 8'ha0) & (STAT_OFF <= 8'he7);
+`else
 wire        dhit  = (STAT_OFF >= 8'h60) & (STAT_OFF <= 8'h8C);
+`endif
+// XST's @* expansion cannot name an unpacked array. Select outside the
+// procedural mux, retaining the byte-array decode instead of a wide shifter.
+`ifdef GBC_EXTERNAL_FB
+// Break the large dirty-byte read mux away from the status/view mux. Mk.II
+// still settles in two clocks, inside the three-clock SNES view contract.
+reg [7:0] dirty_byte_r;
+always @(posedge CLK) dirty_byte_r <= dirty_read;
+wire [7:0] dirty_byte = dirty_byte_r;
+`else
+wire [7:0] dirty_byte = dbytes[didx];
+`endif
 
+`ifdef GBC_EXTERNAL_FB
+assign      STAT_HIT = ((STAT_OFF >= 8'h58) & (STAT_OFF <= 8'h93)) | dhit;
+`else
 assign      STAT_HIT = (STAT_OFF >= 8'h58) & (STAT_OFF <= 8'h91);
+`endif
 always @(*) begin
+`ifdef GBC_EXTERNAL_FB
+  // The address decodes are disjoint. A parallel reduction avoids a serial
+  // status mux without changing reserved bytes or the dirty-byte pipeline.
+  STAT_BYTE = ({8{STAT_OFF == 8'h58}} & flags)
+            | ({8{STAT_OFF == 8'h5A}} & row_frozen_r[7:0])
+            | ({8{STAT_OFF == 8'h5B}} & row_frozen_r[15:8])
+            | ({8{STAT_OFF == 8'h5C}} & {6'd0,row_frozen_r[17:16]})
+            | ({8{STAT_OFF == 8'h5D}} & clb)
+            | ({8{STAT_OFF == 8'h8D}} & row_clid_r[7:0])
+            | ({8{STAT_OFF == 8'h8E}} & row_clid_r[15:8])
+            | ({8{STAT_OFF == 8'h8F}} & {6'd0,row_clid_r[17:16]})
+            | ({8{STAT_OFF == 8'h90}} & COLW_N[7:0])
+            | ({8{STAT_OFF == 8'h91}} & COLW_N[15:8])
+            | ({8{STAT_OFF == 8'h92}} & cache_ready_status)
+            | ({8{STAT_OFF == 8'h93}} & {7'd0,fb_overflow})
+            | ({8{dhit}} & dirty_byte);
+`else
   case (STAT_OFF)
     8'h58:   STAT_BYTE = flags;
     8'h59:   STAT_BYTE = frames_r[7:0];
@@ -524,8 +660,9 @@ always @(*) begin
     8'h8F:   STAT_BYTE = {6'd0, row_clid_r[17:16]};
     8'h90:   STAT_BYTE = COLW_N[7:0];
     8'h91:   STAT_BYTE = COLW_N[15:8];
-    default: STAT_BYTE = dhit ? dbytes[didx] : 8'h00;
+    default: STAT_BYTE = dhit ? dirty_byte : 8'h00;
   endcase
+`endif
 end
 
 assign FLAGS        = flags;
@@ -548,6 +685,7 @@ endmodule
 // array.  Unregistered outputs, like every other RAM in this core; the read
 // side registers port B itself (see above).
 //-------------------------------------------------------------------
+`ifndef GBC_EXTERNAL_FB
 module c6_fb_ram(
   input         clock,
   input  [10:0] address_a,
@@ -602,3 +740,8 @@ module c6_fb_ram(
     altsyncram_component.width_byteena_b = 1,
     altsyncram_component.wrcontrol_wraddress_reg_b = "CLOCK0";
 endmodule
+`endif
+
+`else
+`include "mk3/c6_fb.v"
+`endif

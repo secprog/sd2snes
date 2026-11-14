@@ -1,3 +1,5 @@
+// MkII port; the MkIII branch includes the unchanged pre-port source.
+`ifdef MK2
 `timescale 1ns / 1ps
 //////////////////////////////////////////////////////////////////////////////////
 // Company:
@@ -39,8 +41,8 @@ module spi(
 reg [7:0] cmd_data_r;
 reg [7:0] param_data_r;
 
-reg [2:0] SSELr;
-reg [2:0] SSELSCKr;
+(* shreg_extract = "no" *) reg [2:0] SSELr;
+(* shreg_extract = "no" *) reg [2:0] SSELSCKr;
 
 always @(posedge clk) SSELr <= {SSELr[1:0], SSEL};
 always @(posedge SCK) SSELSCKr <= {SSELSCKr[1:0], SSEL};
@@ -56,7 +58,7 @@ assign startmessage = SSEL_startmessage;
 reg [2:0] bitcnt;
 initial bitcnt = 3'b000;
 wire bitcnt_msb = bitcnt[2];
-reg [2:0] bitcnt_wrap_r;
+(* shreg_extract = "no" *) reg [2:0] bitcnt_wrap_r;
 always @(posedge clk) bitcnt_wrap_r <= {bitcnt_wrap_r[1:0], bitcnt_msb};
 wire byte_received_sync = (bitcnt_wrap_r[2:1] == 2'b10);
 
@@ -125,3 +127,7 @@ always @(posedge clk) begin
 end
 
 endmodule
+
+`else
+`include "mk3/spi.v"
+`endif

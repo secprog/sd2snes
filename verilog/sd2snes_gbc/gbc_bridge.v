@@ -1,3 +1,5 @@
+// MkII port; the MkIII branch includes the unchanged pre-port source.
+`ifdef MK2
 `timescale 1ns / 1ps
 //////////////////////////////////////////////////////////////////////////////////
 // Module Name:    gbc_bridge
@@ -45,6 +47,9 @@
 //                address it belongs to.
 //   cycle N+2  : the composed byte is in view_data_r, which is DATA_OUT.
 //
+// Mk.II pipelines the status byte and its select before the final view mux.
+// Normal status reads take two clocks; C6 dirty/READY bytes already have an
+// internal register and take three. All remain inside the window below.
 // Two cycles for the views of $E0-$E3.  The STATUS BLOCK is the one exception
 // below that and takes ONE cycle: it reads no RAM, so there is nothing to wait
 // for, and $E2:0200 is the byte every liveness check reads.  The FRAMEBUFFER
@@ -123,12 +128,24 @@ module gbc_bridge(
   input  [7:0]  DATA_IN,
   input         VIEW_ENABLE,     // $E0-$E3
   input         EF_ENABLE,       // $EF00xx
+`ifdef MK2
+  input [8:0]   CMD_MATCH,       // address-only decode aligned to SNES_ADDR
+  input [8:0]   VIEW_MATCH,      // BG, OBJ, map, CGRAM, status, OAM, log, FB, raw
+`endif
   output [7:0]  DATA_OUT,
+
+`ifdef GBC_EXTERNAL_FB
+  output        FB_MEM_REQ, FB_MEM_WR,
+  output [18:0] FB_MEM_ADDR,
+  output [7:0]  FB_MEM_DATA,
+  input         FB_MEM_ACK,
+  input  [7:0]  FB_MEM_Q,
+`endif
 
   // GB core
   input         CE1,             // 1x clock enable (free-running liveness counter)
   input         BUS_EDGE,        // GB M-cycle edge, for reset alignment
-  input  [15:0] STARVATION,      // sgb_cpu: bus edges that caught a PSRAM access still in flight (GBDG +0C)
+  input  [15:0] STARVATION,      // sgb_cpu: late-access count (Mk.II: sticky flag), GBDG +0C
   input  [15:0] DILATION,        // sgb_cpu: M-cycles the GB clock was stretched to fit one (GBDG +1C)
   output        CPU_RST,
   input  [1:0]  P1I,             // GB P1[5:4]: {P15 buttons, P14 d-pad}, active low
@@ -209,7 +226,11 @@ module gbc_bridge(
 
 // Wire version.  Bumped whenever a format, address or semantic in the
 // contract changes; the .bi3 and gbc_snes.bin are never shipped apart.
+`ifdef GBC_EXTERNAL_FB
+parameter [7:0] GBC_WIRE_VER = 8'h05; // SRAM cache handshake and padded dirty rows
+`else
 parameter [7:0] GBC_WIRE_VER = 8'h03;
+`endif
 // GBDG layout revision (GBDG +1E).  Independent of the wire version: the GBDG
 // is read by the MCU, not by the player, so growing it never forces a reflash
 // of the pair.  $01 = the counter mailbox at +20..+29; $02 = the sixth mailbox
@@ -224,6 +245,17 @@ parameter [7:0] GBDG_REV = 8'h02;
 // register is one address and there is no word case to consider.
 wire        ef_wr = EF_ENABLE & SNES_WR_end;
 
+`ifdef MK2
+wire        wr_pad_lo   = SNES_WR_end & CMD_MATCH[0];
+wire        wr_pad_hi   = SNES_WR_end & CMD_MATCH[1];
+wire        wr_commit   = SNES_WR_end & CMD_MATCH[2];
+wire        wr_go       = SNES_WR_end & CMD_MATCH[3];
+wire        wr_sync     = SNES_WR_end & CMD_MATCH[4];
+wire        wr_consumed = SNES_WR_end & CMD_MATCH[5];
+wire        wr_c6ctl    = SNES_WR_end & CMD_MATCH[6];
+wire        wr_c6rowdn  = SNES_WR_end & CMD_MATCH[7];
+wire        wr_prepare  = SNES_WR_end & CMD_MATCH[8];
+`else
 wire        wr_pad_lo   = ef_wr & (SNES_ADDR[7:0] == 8'h00);
 wire        wr_pad_hi   = ef_wr & (SNES_ADDR[7:0] == 8'h01);
 wire        wr_commit   = ef_wr & (SNES_ADDR[7:0] == 8'h02);
@@ -232,6 +264,8 @@ wire        wr_sync     = ef_wr & (SNES_ADDR[7:0] == 8'h04);
 wire        wr_consumed = ef_wr & (SNES_ADDR[7:0] == 8'h05);
 wire        wr_c6ctl    = ef_wr & (SNES_ADDR[7:0] == 8'h06);   // C6_CTL  (section 14.2)
 wire        wr_c6rowdn  = ef_wr & (SNES_ADDR[7:0] == 8'h07);   // ROW_DONE (section 14.2)
+wire        wr_prepare  = ef_wr & (SNES_ADDR[7:0] == 8'h08);
+`endif
 
 // Counter mailbox, $EF0010-$EF001B: six 16-bit words, word i at $EF0010+2i
 // (lo) / +2i+1 (hi).  Not a strobe -- plain data the bridge holds for the MCU
@@ -355,7 +389,16 @@ wire snap_take  = snap_req & snap_ready;
 wire snap_skip  = TAP_LY0 & ~snap_take;
 
 // The copy engine has moved its last byte...
-wire        snap_done    = snap_run_r & snap_rd_d1_r & (snap_cnt_d1_r == 8'd159);
+wire        snap_copy_last = snap_run_r & snap_rd_d1_r & (snap_cnt_d1_r == 8'd159);
+`ifdef MK2
+// The packed snapshot store writes the assembled OAM word one clock after
+// its final byte arrives. Publish on that write edge, never before it.
+reg snap_copy_last_r;
+always @(posedge CLK) snap_copy_last_r <= snap_copy_last & ~RST;
+wire        snap_done = snap_copy_last_r;
+`else
+wire        snap_done = snap_copy_last;
+`endif
 // ...but publishing it INSIDE the read window would hand the player a snapshot
 // half of its own frame is already built on: SEQ would move under it and the
 // OAM it copied twenty lines ago would no longer be the one the status block
@@ -370,12 +413,16 @@ wire        snap_publish = (snap_done & ~busy_eff) | (snap_pub_pend_r & wr_consu
 // byte needs Y, X, tile and attribute together (visibility depends on Y and X,
 // the tile number on the attribute), and a byte-wide RAM would need four reads
 // where the contract allows two cycles in total.  40 sprites x 2 buffers.
+`ifdef MK2
+wire [31:0] oam_snap_q_r;
+wire [7:0] cram_snap_q_r;
+`else
 reg  [31:0] oam_snap_r[0:127];
 reg  [31:0] oam_snap_q_r;
 
 // CRAM stays byte-wide: one CGRAM view byte is one palette byte, and which one
 // is pure index arithmetic (the compatibility remap included).
-reg  [7:0]  cram_snap_r[0:255];
+(* ram_style = "distributed" *) reg  [7:0]  cram_snap_r[0:255];
 reg  [7:0]  cram_snap_q_r;
 
 // An M9K powers up at zero (power_up_uninitialized defaults to FALSE), so this
@@ -386,6 +433,7 @@ initial begin
   for (snap_i = 0; snap_i < 128; snap_i = snap_i + 1) oam_snap_r[snap_i]  = 32'd0;
   for (snap_i = 0; snap_i < 256; snap_i = snap_i + 1) cram_snap_r[snap_i] =  8'd0;
 end
+`endif
 
 //-------------------------------------------------------------------
 // Mid-frame log -- write side (contract section 8)
@@ -406,8 +454,14 @@ end
 // combinationally here would ask the fitter for 32768 flip-flops.
 // max_depth 256: six 256x32 M9Ks.  Left to itself the fitter rounds the depth
 // up to 2048 and asks for eight, which is one more than the device has left.
+`ifdef MK2
+// XST rounds a 1536-word array up to four RAMB16s. Three explicit 512-word
+// banks preserve the one-cycle read; each native read port selects a byte.
+wire [7:0] log_q_r;
+`else
 (* ramstyle = "no_rw_check", max_depth = 256 *) reg  [31:0] log_ram_r[0:1535];
 reg  [31:0] log_q_r;
+`endif
 
 reg  [1:0]  log_pub_r;        // the buffer the SNES reads
 reg  [1:0]  log_live_r;       // the buffer the GB writes
@@ -415,7 +469,14 @@ reg  [1:0]  log_pend_r;       // a finished frame waiting for its publish
 reg         log_pend_v_r;     // ... and whether there is one
 reg  [9:0]  log_n_pend_r;     // its LOG_N, LOG_OVF and COLW_N
 reg         log_ovf_pend_r;
-reg  [15:0] colw_pend_r;
+`ifdef MK2
+// The player's only COLW_N decisions are >=96 and >=256. Retaining counts
+// above 256 adds no display information; the wire-$05 counter saturates there.
+localparam COLW_BITS=9;
+`else
+localparam COLW_BITS=16;
+`endif
+reg  [COLW_BITS-1:0] colw_pend_r;
 reg  [9:0]  log_wr_idx_r;     // 0..512, saturates at 512 (= overflow)
 reg         log_ovf_live_r;   // the live buffer dropped at least one entry
 reg  [9:0]  log_n_pub_r;      // published LOG_N, status +23..24
@@ -425,13 +486,16 @@ reg  [15:0] log_ovf_ctr_r;    // GBDG +0E: frames whose log overflowed
 // that the log WOULD take -- counted before the 512 cap, so it keeps counting
 // where LOG_N saturates.  Same publication rule as LOG_N: it turns over with
 // the log flip at LY=0 and restarts with the live buffer.  Saturating.
-reg  [15:0] colw_live_r;
-reg  [15:0] colw_pub_r;       // status +90..91
+reg  [COLW_BITS-1:0] colw_live_r;
+reg  [COLW_BITS-1:0] colw_pub_r;       // status +90..91
+wire [15:0] colw_status = colw_pub_r;
 
+`ifndef MK2
 integer log_i;
 initial begin
   for (log_i = 0; log_i < 1536; log_i = log_i + 1) log_ram_r[log_i] = 32'd0;
 end
+`endif
 
 // Byte 0, ly_eff: the line the write takes effect on.  A write that lands
 // before this line's mode 3 still changes what mode 3 fetches, so it counts for
@@ -533,7 +597,11 @@ always @(posedge CLK) begin
     end
   end
   else if (log_wr) begin
+`ifdef MK2
+    if (colw_wr & ~colw_live_r[8]) colw_live_r <= colw_live_r + 9'd1;
+`else
     if (colw_wr & ~(&colw_live_r)) colw_live_r <= colw_live_r + 16'd1;
+`endif
     if (log_full) begin
       log_ovf_live_r <= 1'b1;
       // GBDG +0E counts FRAMES whose log overflowed, not entries dropped: the
@@ -583,9 +651,14 @@ wire [1:0]  vbank = SNES_ADDR[17:16];    // 0 = $E0 ... 3 = $E3
 wire [15:0] vaddr = SNES_ADDR[15:0];
 // VIEW_ENABLE now also covers $E4 (address.v); bit 18 tells the FB bank apart.
 wire        view_lo = VIEW_ENABLE & ~SNES_ADDR[18];
-wire        sel_fb  = VIEW_ENABLE &  SNES_ADDR[18];
 wire        view_chr = view_lo;
 
+`ifdef MK2
+wire sel_bgch=VIEW_MATCH[0], sel_obch=VIEW_MATCH[1], sel_map=VIEW_MATCH[2];
+wire sel_cgram=VIEW_MATCH[3], sel_stat=VIEW_MATCH[4], sel_oam=VIEW_MATCH[5];
+wire sel_log=VIEW_MATCH[6], sel_fb=VIEW_MATCH[7];
+`else
+wire        sel_fb  = VIEW_ENABLE &  SNES_ADDR[18];
 wire sel_bgch  = view_chr & (vbank == 2'd0) & (vaddr <  16'h3000);
 wire sel_obch  = view_chr & (vbank == 2'd0) & (vaddr[15:14] == 2'b01);
 wire sel_map   = view_chr & (vbank == 2'd1) & (vaddr <  16'h2000);
@@ -597,6 +670,7 @@ wire sel_oam   = view_lo & (vbank == 2'd3) & (vaddr <  16'h0200);
 // hole in the window.
 wire sel_log   = view_lo & (vbank == 2'd2) & (vaddr[15:12] == 4'h0)
                              & (vaddr[11] ^ vaddr[10]);
+`endif
 
 // ---- 4.1 BG chr: t = addr[13:4], bank = t >= 384, offset = (t mod 384)*16 ----
 wire [9:0]  bg_t    = vaddr[13:4];
@@ -695,7 +769,11 @@ wire        cg_white  = (cg_c == 8'd98);   // BG4 pal 0 colour 2 = the white scr
 // palettes wanted here are 0..7, 64..71 and 72..79 -- and with the offset from
 // $40 in vaddr[4:0], that is a bit pick: bit 6 = "OBJ" = |off[4:3], bit 3 =
 // "palette 1" = off[4], bits 2:0 = the byte within the palette.
+`ifdef MK2
+wire        sel_craw  = VIEW_MATCH[8];
+`else
 wire        sel_craw  = sel_stat & (vaddr[7:5] == 3'b010) & (vaddr[4:3] != 2'b11);
+`endif
 wire [6:0]  craw_idx  = {|vaddr[4:3], 2'b00, vaddr[4], vaddr[2:0]};
 
 wire [7:0]  cram_snap_ra = {snap_buf_r,
@@ -730,6 +808,16 @@ wire [31:0] snap_oam_wd = {OAM_RD_DATA, snap_oam_word_r};
 wire        snap_cram_we = snap_rd_d1_r & ~snap_cnt_d1_r[7];
 wire [7:0]  snap_cram_wa = {snap_wbuf, snap_cnt_d1_r[6:0]};
 
+`ifdef MK2
+// Both views select one shared synchronous read port. The copy engine emits
+// an OAM word every four clocks; the paired CRAM word uses the following
+// write slot. One RAMB16 holds both double-buffered snapshots.
+gbc_snapshot_ram snapshots(.CLK(CLK), .RST(RST),
+  .OAM_WE(snap_oam_we), .OAM_WADDR(snap_oam_wa), .OAM_DATA(snap_oam_wd),
+  .CRAM_WE(snap_cram_we), .CRAM_WADDR(snap_cram_wa), .CRAM_DATA(CRAM_RD_DATA),
+  .OAM_RADDR(oam_snap_ra), .CRAM_RADDR(cram_snap_ra),
+  .CRAM_READ(sel_cgram | sel_craw), .OAM_Q(oam_snap_q_r), .CRAM_Q(cram_snap_q_r));
+`else
 always @(posedge CLK) begin
   if (snap_oam_we) oam_snap_r[snap_oam_wa] <= snap_oam_wd;
   oam_snap_q_r <= oam_snap_r[oam_snap_ra];
@@ -739,16 +827,22 @@ always @(posedge CLK) begin
   if (snap_cram_we) cram_snap_r[snap_cram_wa] <= CRAM_RD_DATA;
   cram_snap_q_r <= cram_snap_r[cram_snap_ra];
 end
+`endif
 
 // The log RAM, same shape.  The write port addresses the live buffer and the
 // read port the published one, which are never the same buffer, so the two can
 // never meet on one address and the read-during-write behaviour of the M9K
 // never matters (no_rw_check on the declaration tells the fitter so, and saves
 // it the bypass).
+`ifdef MK2
+gbc_log_ram log_ram(.CLK(CLK), .WE(log_take), .WADDR(log_wa),
+                    .DATA(log_word), .RADDR({log_ra,vaddr[1:0]}), .Q(log_q_r));
+`else
 always @(posedge CLK) begin
   if (log_take) log_ram_r[log_wa] <= log_word;
   log_q_r <= log_ram_r[log_ra];
 end
+`endif
 
 //-------------------------------------------------------------------
 // C6: the framebuffer (c6_fb.v, contract section 14)
@@ -772,7 +866,12 @@ c6_fb c6fb (
   .CTL_WR(wr_c6ctl), .ROWDONE_WR(wr_c6rowdn), .WR_DATA(DATA_IN),
   .SEL(sel_fb), .VADDR(vaddr), .VIEW_BYTE(c6_view_byte),
   .STAT_OFF(SNES_ADDR[7:0]), .STAT_BYTE(c6_stat_byte), .STAT_HIT(c6_stat_hit),
-  .COLW_N(colw_pub_r),
+  .COLW_N(colw_status),
+`ifdef GBC_EXTERNAL_FB
+  .PREPARE_WR(wr_prepare && DATA_IN < 8'd18),
+  .FB_MEM_REQ(FB_MEM_REQ), .FB_MEM_WR(FB_MEM_WR), .FB_MEM_ADDR(FB_MEM_ADDR),
+  .FB_MEM_DATA(FB_MEM_DATA), .FB_MEM_ACK(FB_MEM_ACK), .FB_MEM_Q(FB_MEM_Q),
+`endif
   .FLAGS(c6_flags), .CL_BYTE(c6_cl),
   .ROWS_DROPPED(c6_rows_dropped), .ROWDONE_BAD(c6_rowdone_bad),
   .CL_SWITCHES(c6_cl_switches), .FRAMES(c6_frames)
@@ -920,10 +1019,14 @@ wire [7:0] oam_byte = ~o_vis                    ? ((s1_oam_byte_r == 2'd1) ? 8'h
 // ---- log (contract section 8) ---------------------------------------------
 // The entry came out of the RAM as one word; which of its four bytes the SNES
 // asked for is the low two address bits, registered alongside it.
+`ifdef MK2
+wire [7:0] log_ebyte = log_q_r;
+`else
 wire [7:0] log_ebyte = (s1_log_byte_r == 2'd0) ? log_q_r[7:0]
                      : (s1_log_byte_r == 2'd1) ? log_q_r[15:8]
                      : (s1_log_byte_r == 2'd2) ? log_q_r[23:16]
                      :                           log_q_r[31:24];
+`endif
 wire [7:0] log_byte  = s1_log_oor_r ? 8'h00 : log_ebyte;
 
 // ---- COMPAT_RAW (contract section 5, +$40..+$57) --------------------------
@@ -932,6 +1035,18 @@ wire [7:0] log_byte  = s1_log_oor_r ? 8'h00 : log_ebyte;
 // whatever the game left in palette RAM.
 wire [7:0] craw_byte = s1_craw_hi_r ? {1'b0, cram_snap_q_r[6:0]} : cram_snap_q_r;
 
+`ifdef MK2
+// The address windows above are disjoint and their selects share a register
+// stage. Express the selection as a parallel mask, without a priority chain.
+wire [7:0] view_byte = ({8{s1_bgch_r}} & bgch_byte)
+                    | ({8{s1_obch_r}} & obch_byte)
+                    | ({8{s1_map_r}} & map_byte)
+                    | ({8{s1_cgram_r}} & cgram_byte)
+                    | ({8{s1_oam_r}} & oam_byte)
+                    | ({8{s1_log_r}} & log_byte)
+                    | ({8{s1_craw_r}} & craw_byte)
+                    | ({8{s1_fb_r}} & c6_view_byte);
+`else
 wire [7:0] view_byte = s1_bgch_r  ? bgch_byte
                      : s1_obch_r  ? obch_byte
                      : s1_map_r   ? map_byte
@@ -941,6 +1056,7 @@ wire [7:0] view_byte = s1_bgch_r  ? bgch_byte
                      : s1_craw_r  ? craw_byte
                      : s1_fb_r    ? c6_view_byte
                      :              8'h00;
+`endif
 wire       view_sel_d1 = s1_bgch_r | s1_obch_r | s1_map_r | s1_cgram_r | s1_oam_r
                        | s1_log_r | s1_craw_r
                        | s1_fb_r
@@ -950,9 +1066,11 @@ wire       view_sel_d1 = s1_bgch_r | s1_obch_r | s1_map_r | s1_cgram_r | s1_oam_
 // Dirty accumulator (contract section 6)
 //-------------------------------------------------------------------
 
+`ifndef MK2
 reg  [47:0] dirty_chr_acc_r,  dirty_chr_pub_r;
 reg  [31:0] dirty_obj_acc_r,  dirty_obj_pub_r;
 reg  [63:0] dirty_map_acc_r,  dirty_map_pub_r;
+`endif
 reg  [7:0]  dirty_misc_acc_r, dirty_misc_pub_r;
 
 // One decoder per class rather than a 48/32/64-bit variable shift: the bank is
@@ -986,6 +1104,12 @@ wire        d_map_hit = TAP_VRAM_WE & (TAP_VRAM_ADDR[12:11] == 2'b11);
 // of any view and must not cost 4 KB of map traffic.  They still count as REGS.
 wire        snap_msel   = snap_publish & ((|((pd_lcdc_r ^ sn_lcdc_r) & 8'h01))
                                        |  (pd_compat_r != sn_compat_r));
+`ifdef MK2
+// GbcRegs re-applies the published registers every frame. GbcFoldDirty only
+// consumes MSEL/OAM/CRAM (masks $10 and $03), so the separate REGS difference
+// flag and its comparisons carry no information to the Mk.II renderer.
+wire        snap_regs   = 1'b0;
+`else
 wire        snap_regs   = snap_publish & ((pd_lcdc_r != sn_lcdc_r) | (pd_scx_r  != sn_scx_r)
                                     |  (pd_scy_r  != sn_scy_r)  | (pd_wx_r   != sn_wx_r)
                                     |  (pd_wy_r   != sn_wy_r)   | (pd_bgp_r  != sn_bgp_r)
@@ -994,6 +1118,7 @@ wire        snap_regs   = snap_publish & ((pd_lcdc_r != sn_lcdc_r) | (pd_scx_r  
                                     |  (pd_compat_r != sn_compat_r)
                                     |  (pd_lcd_on_r != sn_lcd_on_r)
                                     |  (pd_first_frame_r != sn_first_frame_r));
+`endif
 // The OAM view also moves when LCDC.0/.1/.2 or compat move, because visibility,
 // the 8x16 tile pairing and the priority/palette encoding all read them.
 wire        snap_oam    = snap_publish & (oam_snap_diff_r
@@ -1023,6 +1148,30 @@ wire [7:0]  set_misc = {3'b000, snap_msel, 1'b0, snap_regs, snap_cram, snap_oam}
 // counting it in GBDG turns a lost tile into a number somebody can read.
 wire        commit_swap = wr_commit & ~busy_r;
 
+`ifdef MK2
+wire [7:0] dirty_chr_byte, dirty_map_byte;
+wire [7:0] dirty_chr_offset=SNES_ADDR[7:0]-8'h10;
+wire [7:0] dirty_map_offset=SNES_ADDR[7:0]-8'h1a;
+wire [2:0] dirty_chr_page={1'b0,TAP_VRAM_ADDR[12:11]} + (TAP_VRAM_BANK ? 3'd3 : 3'd0);
+// OBJ is exactly the first sixteen CHR blocks in each VRAM bank. Both
+// accumulators have the same reset and COMMIT boundary, so their bits never
+// differ. Serve OBJ's four bytes from CHR pages 0,1,3,4 instead of storing
+// and publishing the same information twice.
+wire [2:0] dirty_chr_read_page = (SNES_ADDR[7:1]==7'h0b) ? {2'b00,SNES_ADDR[0]}
+                               : (SNES_ADDR[7:1]==7'h0c) ? (SNES_ADDR[0] ? 3'd4 : 3'd3)
+                               : dirty_chr_offset[2:0];
+gbc_dirty_pages #(.PAGES(6)) chr_dirty(.CLK(CLK),.RST(RST),.SWAP(commit_swap),
+  .ALL(1'b0),.SET(d_chr_hit),.WPAGE(dirty_chr_page),.BIT(TAP_VRAM_ADDR[10:8]),
+  .RPAGE(dirty_chr_read_page),.Q(dirty_chr_byte));
+gbc_dirty_pages #(.PAGES(8)) map_dirty(.CLK(CLK),.RST(RST),.SWAP(commit_swap),
+  .ALL(snap_msel),.SET(d_map_hit),.WPAGE(TAP_VRAM_ADDR[10:8]),
+  .BIT(TAP_VRAM_ADDR[7:5]),.RPAGE(dirty_map_offset[2:0]),.Q(dirty_map_byte));
+always @(posedge CLK) begin
+  if(RST) begin dirty_misc_acc_r<=0; dirty_misc_pub_r<=0; end
+  else if(commit_swap) begin dirty_misc_pub_r<=dirty_misc_acc_r; dirty_misc_acc_r<=set_misc; end
+  else dirty_misc_acc_r<=dirty_misc_acc_r | set_misc;
+end
+`else
 always @(posedge CLK) begin
   if (RST) begin
     dirty_chr_acc_r  <= 48'd0;  dirty_chr_pub_r  <= 48'd0;
@@ -1043,6 +1192,8 @@ always @(posedge CLK) begin
     dirty_misc_acc_r <= dirty_misc_acc_r | set_misc;
   end
 end
+
+`endif
 
 //-------------------------------------------------------------------
 // Snapshot engine (contract section 7)
@@ -1355,6 +1506,16 @@ wire [7:0] status_flags0 = {snap_valid_r, log_ovf_pub_r, sn_first_frame_r, sn_lo
 // bridge's own telemetry without the MCU in the loop.
 reg [7:0] gbdg_mirror;
 always @(*) begin
+`ifdef MK2
+  // The player copies these bytes but never consumes them. Keep the memory
+  // starvation diagnostic for board validation; omit the other debug-only
+  // counters and their wide read mux on the capacity-limited Mk.II.
+  case (SNES_ADDR[3:0])
+    4'hC: gbdg_mirror=STARVATION[7:0];
+    4'hD: gbdg_mirror=STARVATION[15:8];
+    default: gbdg_mirror=0;
+  endcase
+`else
   case (SNES_ADDR[3:0])
     4'h0:    gbdg_mirror = "G";
     4'h1:    gbdg_mirror = "B";
@@ -1373,6 +1534,7 @@ always @(*) begin
     4'hE:    gbdg_mirror = log_ovf_ctr_r[7:0];
     default: gbdg_mirror = log_ovf_ctr_r[15:8];   // 4'hF
   endcase
+`endif
 end
 
 reg [7:0] status_byte;
@@ -1388,12 +1550,27 @@ always @(*) begin
     8'h07:   status_byte = sn_bgp_r;
     8'h08:   status_byte = sn_obp0_r;
     8'h09:   status_byte = sn_obp1_r;
+`ifdef MK2
+    // The player does not consume these copies. CPU priority, double speed,
+    // and the published SPEED2X flag retain their original implementation.
+    8'h0A,8'h0B: status_byte = 0;
+`else
     8'h0A:   status_byte = sn_opri_r;
     8'h0B:   status_byte = sn_key1_r;
+`endif
     8'h0C:   status_byte = ly_sync_r;
+`ifdef MK2
+    8'h0D:   status_byte = 0; // unused by the player; SEQ remains at +0E/+0F
+`else
     8'h0D:   status_byte = frame_ctr_r;
+`endif
     8'h0E:   status_byte = seq_r[7:0];
     8'h0F:   status_byte = seq_r[15:8];
+`ifdef MK2
+    8'h10,8'h11,8'h12,8'h13,8'h14,8'h15: status_byte=dirty_chr_byte;
+    8'h16,8'h17,8'h18,8'h19: status_byte=dirty_chr_byte;
+    8'h1a,8'h1b,8'h1c,8'h1d,8'h1e,8'h1f,8'h20,8'h21: status_byte=dirty_map_byte;
+`else
     8'h10:   status_byte = dirty_chr_pub_r[7:0];
     8'h11:   status_byte = dirty_chr_pub_r[15:8];
     8'h12:   status_byte = dirty_chr_pub_r[23:16];
@@ -1412,6 +1589,7 @@ always @(*) begin
     8'h1F:   status_byte = dirty_map_pub_r[47:40];
     8'h20:   status_byte = dirty_map_pub_r[55:48];
     8'h21:   status_byte = dirty_map_pub_r[63:56];
+`endif
     // RASTER (bit 3) is NOT an accumulator bit.  Contract section 5 lists
     // OAM/CRAM/REGS/MSEL as snapshot differences and RASTER separately as "the
     // log is not empty", which is a property of the log the player is reading
@@ -1437,6 +1615,19 @@ end
 // right one either way (see the header, THE READ PIPELINE).
 reg [7:0] view_data_r;
 
+`ifdef MK2
+// Split the address/status decode from the final view mux. On Spartan-3 the
+// combined path was the longest synthesis path (SNES_ADDRr -> view_data_r).
+// Both byte and select are delayed together. The wire-$05 contract permits
+// three clocks, including the extra register on C6 dirty and READY status.
+reg status_select_r;
+reg [7:0] status_byte_r;
+always @(posedge CLK) begin
+  status_select_r <= sel_stat & ~sel_craw;
+  status_byte_r <= status_byte;
+end
+`endif
+
 always @(posedge CLK) begin
   view_data_r <= 8'h00;
   // The FB byte goes FIRST: it is the deepest path into this register (the
@@ -1445,7 +1636,11 @@ always @(posedge CLK) begin
   // selects one branch only, so the order is not observable -- except as the
   // "three cycles for the whole window" of the header.
   if (s1_fb_r)                   view_data_r <= c6_view_byte;
+`ifdef MK2
+  else if (status_select_r)      view_data_r <= status_byte_r;
+`else
   else if (sel_stat & ~sel_craw) view_data_r <= status_byte;
+`endif
   else if (view_sel_d1)          view_data_r <= view_byte;
 end
 
@@ -1551,3 +1746,7 @@ wire _unused_ok = &{1'b0, PPU_VSYNC_EDGE, TAP_KEY0, TAP_VBK,
 // verilator lint_on UNUSED
 
 endmodule
+
+`else
+`include "mk3/gbc_bridge.v"
+`endif

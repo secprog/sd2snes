@@ -1,3 +1,5 @@
+// MkII port; the MkIII branch includes the unchanged pre-port source.
+`ifdef MK2
 `timescale 1ns / 1ps
 //////////////////////////////////////////////////////////////////////////////////
 // Company:
@@ -31,7 +33,19 @@ module sgb(
   input  [7:0]  DATA_IN,
   input         VIEW_ENABLE,   // $E0-$E3 read
   input         EF_ENABLE,     // $EF00xx write
+`ifdef MK2
+  input [8:0]   CMD_MATCH,     // retimed address-only decode, aligned to SNES_ADDR
+  input [8:0]   VIEW_MATCH,
+`endif
   output [7:0]  DATA_OUT,
+
+`ifdef GBC_EXTERNAL_FB
+  output        FB_MEM_REQ, FB_MEM_WR,
+  output [18:0] FB_MEM_ADDR,
+  output [7:0]  FB_MEM_DATA,
+  input         FB_MEM_ACK,
+  input  [7:0]  FB_MEM_Q,
+`endif
 
   // ROM interface
   input         ROM_BUS_RDY,
@@ -154,7 +168,7 @@ integer i;
 //
 // 16MB PSRAM - GB cart, GB WRAM, GB SaveRAM, GB boot ROM
 // 512KB RAM  - SNES ROM
-// 32KB BRAM  - VRAM, OAM, HRAM, SNESCMD, MSU/DAC
+// 32KB BRAM  - VRAM, bridge snapshots/log, SNESCMD, framebuffer row cache
 // (FPGA)
 // 1 DCM/PLL
 //
@@ -405,10 +419,14 @@ sgb_cpu cpu(
   .REG_REQ_DATA(REG_REQ_DATA),
   .MBC_REG_DATA(MBC_REG_DATA),
 
+`ifdef SGB_MCU_ACCESS
   .MCU_RRQ(MCU_RRQ),
   .MCU_WRQ(MCU_WRQ),
   .MCU_ADDR(MCU_ADDR),
   .MCU_DATA_IN(MCU_DATA_IN),
+`else
+  .MCU_RRQ(1'b0), .MCU_WRQ(1'b0), .MCU_ADDR(19'd0), .MCU_DATA_IN(8'd0),
+`endif
   .MCU_RSP(MCU_RSP),
   .MCU_DATA_OUT(MCU_DATA_OUT),
 
@@ -457,7 +475,15 @@ gbc_bridge bridge(
   .DATA_IN(DATA_IN),
   .VIEW_ENABLE(VIEW_ENABLE),
   .EF_ENABLE(EF_ENABLE),
+`ifdef MK2
+  .CMD_MATCH(CMD_MATCH),
+  .VIEW_MATCH(VIEW_MATCH),
+`endif
   .DATA_OUT(DATA_OUT),
+`ifdef GBC_EXTERNAL_FB
+  .FB_MEM_REQ(FB_MEM_REQ), .FB_MEM_WR(FB_MEM_WR), .FB_MEM_ADDR(FB_MEM_ADDR),
+  .FB_MEM_DATA(FB_MEM_DATA), .FB_MEM_ACK(FB_MEM_ACK), .FB_MEM_Q(FB_MEM_Q),
+`endif
 
   .CE1(CLK_CE1),
   .BUS_EDGE(CLK_BUS_EDGE),
@@ -932,3 +958,7 @@ assign config_data_out = config_r[reg_read_in];
 `endif
 
 endmodule
+
+`else
+`include "mk3/sgb.v"
+`endif

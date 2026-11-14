@@ -1,0 +1,147 @@
+name: GBC native remapping experiment
+
+on:
+  workflow_call:
+    inputs:
+      native_run:
+        type: string
+        required: true
+      profile:
+        type: string
+        required: true
+      register_duplication:
+        type: string
+        default: project
+      placement_seed:
+        type: number
+        default: 3
+      par_continue:
+        type: boolean
+        default: false
+      map_continue:
+        type: boolean
+        default: false
+      ignore_timing:
+        type: boolean
+        default: false
+  workflow_dispatch:
+    inputs:
+      native_run:
+        description: Native MkII GBC run containing NGC, EDIF and CoreGen outputs
+        type: string
+        required: true
+        default: '43510243832'
+      profile:
+        description: Proved combinational mapping candidate
+        type: choice
+        required: true
+        default: fixed-mux-sat
+        options: [gate-lut4-satlut-delay, gate-lut4-satlut-delay4, gate-lut4-delay-satlut, gate-lut4-critical-satlut, gate-lut4-window-satlut, compare-lut4-sat, gate-lut4-sat, gate-lut4-sat-area, gate-lut4-sat2, gate-lut4-sat4, gate-lut4-sat8, gate-lut4-choices, gate-lut4-satlut, gate-lut4-satlut2, gate-lut4-satlut128, gate-lut4-satlut-reverse, fixed-mux-sat, compare-sat, lut4-sat, fixed-mux-resub, lut4-resub, fixed-mux-area, lut4-area, fixed-mux, lut4]
+      register_duplication:
+        description: Candidate MAP register duplication (reference retains project options)
+        type: choice
+        default: project
+        options: [project, 'off']
+      placement_seed:
+        description: Candidate MAP and PAR cost-table seed (1..100)
+        type: number
+        default: 3
+      par_continue:
+        description: Continue PAR timing recovery with extra effort (same constraints)
+        type: boolean
+        default: false
+      map_continue:
+        description: Continue MAP packing and placement with extra effort (same constraints)
+        type: boolean
+        default: false
+      ignore_timing:
+        description: Generate an experimental timing-unverified image after successful fit and routing
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  implementation:
+    name: Prove and implement ${{ inputs.profile }} (seed ${{ inputs.placement_seed }}, duplication ${{ inputs.register_duplication }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Fetch and verify the exact native source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          NATIVE_RUN: ${{ inputs.native_run }}
+          PLACEMENT_SEED: ${{ inputs.placement_seed }}
+        run: |
+          set -euo pipefail
+          [[ "$NATIVE_RUN" =~ ^[0-9]+$ ]]
+          [[ "$PLACEMENT_SEED" =~ ^([1-9]|[1-9][0-9]|100)$ ]]
+          mkdir -p .ci-tools/gbc-remap/reports
+          gh api "repos/$GH_REPO/actions/runs/$NATIVE_RUN" > .ci-tools/gbc-remap/reports/native-run.json
+          native_sha=$(python3 -c 'import json; print(json.load(open(".ci-tools/gbc-remap/reports/native-run.json"))["head_sha"])')
+          [[ "$native_sha" =~ ^[0-9a-f]{40}$ ]]
+          git diff --exit-code "$native_sha" HEAD -- verilog/ utils/
+          gh run download "$NATIVE_RUN" --name fpga-reports-mk2-gbc --dir .ci-tools/gbc-remap/native
+          python3 - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          root = Path('.ci-tools/gbc-remap')
+          identities = {}
+          for name in ('main.ngc', 'main_native.edf', 'main_map.mrp', 'vram.ngc', 'snescmd_buf.ngc', 'oam.ngc'):
+              found = list((root/'native').rglob(name))
+              assert len(found) == 1 and found[0].is_file(), name
+              identities[name] = hashlib.sha256(found[0].read_bytes()).hexdigest()
+          (root/'reports/native-sha256.json').write_text(json.dumps(identities, indent=2)+'\n')
+          PY
+      - uses: ./.github/actions/prepare-build-image
+        with:
+          target: mk2
+      - name: Install pinned hosted logic tools
+        run: bash .github/scripts/install-gbc-logic-tools.sh
+      - name: Prove mapping and the serialized native EDIF
+        env:
+          PROFILE: ${{ inputs.profile }}
+        run: |
+          set -euo pipefail
+          native=$(find .ci-tools/gbc-remap/native -name main_native.edf -print -quit)
+          python3 .github/scripts/check-gbc-xst-remap.py "$native" .ci-tools/gbc-remap/reports "$PROFILE"
+      - name: Check native round trip and implement (timing override ${{ inputs.ignore_timing }})
+        env:
+          PROFILE: ${{ inputs.profile }}
+          MAP_DUPLICATION: ${{ inputs.register_duplication }}
+          PLACEMENT_SEED: ${{ inputs.placement_seed }}
+          PAR_CONTINUE: ${{ inputs.par_continue }}
+          MAP_CONTINUE: ${{ inputs.map_continue }}
+          IGNORE_TIMING: ${{ inputs.ignore_timing && '1' || '0' }}
+        run: |
+          set -o pipefail
+          docker run --rm --user 0:0 --mac-address 08:00:27:68:c9:35 \
+            --volume "$GITHUB_WORKSPACE:/work" --workdir /work --env PROFILE --env MAP_DUPLICATION --env PLACEMENT_SEED --env PAR_CONTINUE --env MAP_CONTINUE --env IGNORE_TIMING \
+            --entrypoint /bin/bash sd2snes-ci:mk2 \
+            .github/scripts/implement-gbc-remap.sh 2>&1 | tee .ci-tools/gbc-remap/reports/implementation.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gbc-native-remap-${{ inputs.profile }}-seed-${{ inputs.placement_seed }}-dup-${{ inputs.register_duplication }}
+          path: |
+            .ci-tools/gbc-remap/reports/
+            .ci-tools/gbc-remap/baseline/*.mrp
+            .ci-tools/gbc-remap/baseline/*.bld
+            .ci-tools/gbc-remap/baseline/*-counts.txt
+            .ci-tools/gbc-remap/candidate/*.mrp
+            .ci-tools/gbc-remap/candidate/*.bld
+            .ci-tools/gbc-remap/candidate/*.psr
+            .ci-tools/gbc-remap/candidate/*.map
+            .ci-tools/gbc-remap/candidate/*.par
+            .ci-tools/gbc-remap/candidate/*.twr
+            .ci-tools/gbc-remap/candidate/*.pcf
+            .ci-tools/gbc-remap/candidate/*.bgn
+            .ci-tools/gbc-remap/candidate/fpga_gbc.bit
+          if-no-files-found: error
+          retention-days: 14

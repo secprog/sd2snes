@@ -302,12 +302,21 @@ int main(void) {
     gameopt_classify("/roms/Pokemon.gb");
     gameopt_command("/roms/Pokemon.gb", GAMEOPT_OP_INFO, 0, 0, 0);
     sram_readblock(b, SRAM_GAMEOPT_ADDR, sizeof(b));
-    /* the SGB core runs the SGB BIOS: the hook, the gestures and the $2100 patcher work there */
+#ifdef CONFIG_MK2
+    /* MkII always runs the GBC player: SGB BIOS options have no effect. */
+    CHECK(b[GAMEOPT_VAL + igb] == GAMEOPT_V_NA && b[GAMEOPT_VAL + ihook] == GAMEOPT_V_NA);
+    CHECK(b[GAMEOPT_VAL + i1chip] == GAMEOPT_V_NA && b[GAMEOPT_VAL + iall] == GAMEOPT_V_DEFAULT);
+    CHECK(b[GAMEOPT_VAL + idx_of(offsetof(cfg_t, enable_ingame_buttons))] == GAMEOPT_V_NA);
+    CHECK(b[GAMEOPT_VAL + idx_of(offsetof(cfg_t, enable_hook_holdoff))] == GAMEOPT_V_NA);
+    CHECK(b[GAMEOPT_VAL + idx_of(offsetof(cfg_t, reset_patch))] == GAMEOPT_V_NA);
+#else
+    /* MkIII still offers the SGB BIOS: its hook, gestures and $2100 patcher work there. */
     CHECK(b[GAMEOPT_VAL + igb] == GAMEOPT_V_DEFAULT && b[GAMEOPT_VAL + ihook] == GAMEOPT_V_DEFAULT);
     CHECK(b[GAMEOPT_VAL + i1chip] == GAMEOPT_V_DEFAULT && b[GAMEOPT_VAL + iall] == GAMEOPT_V_DEFAULT);
     CHECK(b[GAMEOPT_VAL + idx_of(offsetof(cfg_t, enable_ingame_buttons))] == GAMEOPT_V_DEFAULT);
     CHECK(b[GAMEOPT_VAL + idx_of(offsetof(cfg_t, enable_hook_holdoff))] == GAMEOPT_V_DEFAULT);
     CHECK(b[GAMEOPT_VAL + idx_of(offsetof(cfg_t, reset_patch))] == GAMEOPT_V_DEFAULT);
+#endif
     CHECK(b[GAMEOPT_VAL + idx_of(offsetof(cfg_t, enable_autosave))] == GAMEOPT_V_DEFAULT);
     /* ...but not the SNES cores' own machinery */
     CHECK(b[GAMEOPT_VAL + idx_of(offsetof(cfg_t, enable_ingame_pad2))] == GAMEOPT_V_NA);
@@ -317,13 +326,13 @@ int main(void) {
     {
       int ibri = idx_of(offsetof(cfg_t, brightness_limit)), isync = idx_of(offsetof(cfg_t, gbc_sync));
       int ivol = idx_of(offsetof(cfg_t, sgb_volume_boost));
+      CHECK(b[GAMEOPT_VAL + isync] == GAMEOPT_V_DEFAULT);
+      CHECK(b[GAMEOPT_VAL + idx_of(offsetof(cfg_t, gbc_stretch))] == GAMEOPT_V_DEFAULT);
 #ifdef CONFIG_MK2
-      CHECK(b[GAMEOPT_VAL + ibri] == GAMEOPT_V_NA);             /* no limit in the Mk.II SGB core */
-      CHECK(b[GAMEOPT_VAL + isync] == GAMEOPT_V_NA);
+      CHECK(b[GAMEOPT_VAL + ibri] == GAMEOPT_V_NA);             /* player owns brightness */
       CHECK(!(b[GAMEOPT_OFF + 2 * ihook + 1] & 0x60));          /* one Game Boy core: no names */
 #else
       CHECK(b[GAMEOPT_VAL + ibri] == GAMEOPT_V_DEFAULT);
-      CHECK(b[GAMEOPT_VAL + isync] == GAMEOPT_V_DEFAULT);
       CHECK((b[GAMEOPT_OFF + 2 * ihook + 1] & 0x60) == 0x20);   /* the SGB core's */
       CHECK((b[GAMEOPT_OFF + 2 * i1chip + 1] & 0xe0) == 0xa0);  /* live, the SGB core's */
       CHECK(!(b[GAMEOPT_OFF + 2 * isync + 1] & 0x60));          /* GBC core: its label says so */

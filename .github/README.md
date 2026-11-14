@@ -41,14 +41,14 @@ board exclusions, so adding a core cannot silently leave it out of CI.
 
 | FPGA target | Runtime cores (mini is built and packaged in addition) |
 | --- | --- |
-| MkII (19) | base, basex, bootleg, col20, cx4, dsp, dspx, gsu, gsu3, obc1, sa1, sdd1, sgb, sgb_msu, spc7110, st0011, st0018, test, xc |
+| MkII (19) | atari, base, basex, bootleg, col20, cx4, dsp, dspx, gbc, gsu, gsu3, obc1, sa1, sdd1, spc7110, st0011, st0018, test, xc |
 | MkIII LPC / STM32 (23) | a26, base, bootleg, col20, cx4, dsp, gbc, gsu, gsu3, nes, nes_k, nes_mmc3, nes_mmc5, obc1, sa1, sdd1, sgb, sms, spc7110, st0011, st0018, test, xc |
 
 MkII uses separate `basex` and `dspx` images for extended mappers and competition
-carts, and separate SGB feature variants. MkIII includes those mapper features
-in its base/DSP images and uses one SGB image. NES, SMS, Atari and GBC loaders
-are MkIII-only; legacy NES/SMS ISE project files do not enable their MkII MCU
-loaders. Other board-specific feature and timing settings are retained.
+carts. Its GB/GBC core replaces both old SGB variants. MkIII includes those mapper
+features in its base/DSP images and retains its SGB and GBC cores. NES and SMS
+loaders remain MkIII-only. Legacy NES/SMS ISE project files do not enable their MkII MCU loaders.
+Other board-specific feature and timing settings are retained.
 
 Complete board sets are verified before publishing `fpga-mk2` / `fpga-mk3`
 artifacts. Packaging checks the ZIP's exact FPGA list, MCU file and menu,
@@ -57,15 +57,16 @@ also copied to the SD-card package because its boot diagnostics load it from
 the card. Core logs, utilization and timing reports are retained on success
 and failure; a failed core cannot cancel the other core jobs.
 For a focused retry, select `build: fpga` and set `fpga_cores` to targets such as
-`mk2:sgb,mk2:sgb_msu,mk2:gsu`. This builds only those cores without packaging or
+`mk2:gbc,mk2:gsu`. This builds only those cores without packaging or
 cancelling a full release run. Leave that field empty to check all FPGA cores.
 `placement_seeds` optionally tests several MkII map/PAR cost tables in parallel
 (for example `2,3,4`). Seed trials publish separate images and reports; normal
 release builds use the settings committed in each ISE project.
 Every MkII implementation generates a detailed TRACE report, including hold paths
 and paths not covered by the existing constraints. Missing reports, report errors
-and timing violations are build failures; CI explicitly sets `IGNORE_TIMING=0` on
-both FPGA targets.
+and timing violations are build failures unless explicitly accepted. The selected
+MkII GBC implementation has the recorded setup-timing acceptance described below;
+that exception does not relax other cores' timing checks.
 These reports describe the committed timing model, not hardware qualification.
 Legacy MkII cores with no explicit DCM jitter budget or I/O delays still require
 separate timing-budget review and hardware validation, even with Timing Score 0.
@@ -77,6 +78,90 @@ with the corresponding hold correction. Other paths keep their normal timing.
 The default `make all` still creates a combined release. `make release
 RELEASE_BOARD=mk2`, `mk3` or `mk3-stm32` packages already-built files for a
 single board. These commands do not bypass FPGA timing or synthesis guards.
+
+## Experimental MkII GBC qualification
+
+The MkII port retains both rendering modes, the complete 160x144 image, C6
+colour conversion and the existing GB audio output. C6 uses external SRAM
+and a planar row cache on MkII. Its wire-$05 player must be paired with the
+MkII core; the MkIII player uses wire $03. MkII now routes every `.gb` and
+`.gbc` image through this core, replacing the old SGB variants in its package.
+MkIII keeps its original core, MSU-1 path and configurable SGB/GBC routing.
+Hosted source-identity checks compare MkIII against the pre-port commit and
+MkII against the accepted layout before implementation.
+
+Physical fits have been measured, but the port has not yet passed the
+committed MkII setup-timing requirements. A passing RTL proof or resource
+count alone does not qualify an FPGA image. By default, the remapping workflow
+generates `fpga_gbc.bit` only after MAP/PAR and TRACE report zero timing errors.
+An explicit manual `ignore_timing=true` also permits an experimental image with
+setup violations, provided native tools, fit, routing, hold and component
+switching checks pass. It writes `TIMING-UNVERIFIED.txt` and
+`timing-unverified-image.sha256`; it never labels that image timing-qualified.
+Console validation is also required before treating this as a supported port.
+
+The accepted experimental candidate uses RTL `476d1a19`, native run
+`43607129297`, profile `gate-lut4-delay-satlut`, seed `11`, and normal MAP/PAR
+effort. Run `43612271241` measured 7,161/7,168 LUTs and 3,584/3,584 slices,
+with -0.832 ns setup slack (36 errors) and no hold errors. The user accepted
+that setup miss on 2026-11-14. Later area/timing experiments were withdrawn. Normal MkII GBC Actions builds
+now run that remapping profile and seed after native synthesis, label the image
+and MkII package timing-unverified, and retain the actual timing reports.
+Run [43617971625](https://github.com/secprog/sd2snes/actions/runs/43617971625)
+reproduced those counts, setup slack and zero hold errors, and generated
+`fpga_gbc.bit` with SHA-256
+`779dcd9c08076b8b9db3704e6c2626509d22bfb966e5ab06018ef6955481330b`.
+The native MAP capacity error is expected only before the proved remapping;
+final fit, routing, native-tool errors, hold and switching-limit checks remain
+mandatory. Other cores keep their existing timing policy.
+
+Use GitHub Actions for all compilation and simulation. First dispatch
+`build-firmware.yml` with `build=fpga`, `fpga_cores=mk2:gbc` and
+`ignore_timing=false`. This runs the RTL/formal checks, assembles both players,
+and exports native synthesis in `fpga-reports-mk2-gbc`, including after the
+expected native capacity failure. To check MkIII too, select
+`fpga_cores=mk2:gbc,mk3:gbc`. `gbc_mcu_check=true` additionally compiles the
+default MkII GB/GBC firmware against a freshly built bootstrap.
+The MCU artifact retains the matching card modules and boot screen
+alongside its firmware and overlays.
+Those compiler-check artifacts are not complete SD-card release packages.
+
+After the native artifact is available, dispatch the same registered workflow
+with these inputs:
+
+| Input | Value |
+| --- | --- |
+| `build` | `fpga` |
+| `fpga_cores` | `mk2:gbc` |
+| `gbc_rtl_only` | `all` |
+| `gbc_yosys_check` | `true` |
+| `mk2_run_id` | The native run ID |
+| `gbc_remap_profiles` | For example `["gate-lut4-delay-satlut","gate-lut4-satlut"]` |
+| `placement_seeds` | For example `1,3,7`; empty retains seed 3 |
+
+The checked-out `verilog/` and `utils/` sources must match the native run.
+Each profile proves every combinational boundary before and after serializing
+the candidate EDIF. Fixed registers, RAMs, multipliers, clocks and I/O keep
+their original definitions and connections. The unchanged EDIF reconstruction
+must reproduce the native resource report. Each seed then undergoes its own
+strict implementation checks with the original clock constraints.
+For a measured near miss, `gbc_par_continue=true` selects PAR's documented
+extra recovery effort (`-xe c`), within the workflow's 90-minute timeout.
+It does not change the clock or timing requirements.
+`gbc_map_continue=true` independently enables MAP's extra packing and placement
+effort (`-xe c`). Both options default to false and are recorded in the reports.
+Reports and any qualified image are uploaded as
+`gbc-native-remap-PROFILE-seed-SEED-dup-project`; the reports include source
+and artifact hashes, mapping options, timing reports and the image hash.
+
+The cartridge's FPGA sends audio through its CS4344 DAC to the SNES analogue
+cartridge-audio input (see the [RevF schematic](../pcb/kicad/RevF/pwr_misc.sch)
+and [CS4344 data sheet](https://statics.cirrus.com/pubs/proDatasheet/CS4344-45-48_F2.pdf)).
+The SNES internal sound-chip sample rate therefore does
+not establish a lower precision requirement for this path. The MkII arithmetic
+and filter changes preserve the existing output, checked against the SGB
+reference across every volume setting. MSU-1 is absent from the MkII GBC implementation. MkIII retains its original
+MSU-1 path; SA-1 was never instantiated in either GBC core.
 
 `Compare CX4 RTL timing` is a manual diagnostic workflow. It compares the current
 `cx4.v` and `main.v` with both files from sttng's ST0011/ST0018/COL20 reference,

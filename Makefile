@@ -15,7 +15,7 @@ SAVESTATEFILES := savestate*.yml
 MENUPATH := snes
 MK2MENU := menu.bin
 MK3MENU := m3nu.bin
-MK2PLAYER := misc/atari_snes.bin
+MK2PLAYER := $(addprefix misc/,atari_snes.bin gbc_snes_mk2.bin cgb_boot.bin cgb_boot.LICENSE)
 MK3PLAYERS := $(addprefix misc/,nes_snes.bin sms_snes.bin gbc_snes.bin a26_snes.bin cgb_boot.bin cgb_boot.LICENSE)
 CARD_MODULES := nsfplay.bin memtest.bin pcmplay.bin rtc7110.bin fileops.bin rmdir.bin xc_soc.bin
 MENU_ASSETS := $(addprefix misc/,classic.thm menu.spc sfx_cursor.pcm sfx_confirm.pcm sfx_back.pcm sfx_error.pcm welcome.fmv welcome.pcm)
@@ -23,8 +23,8 @@ MENU_ASSETS := $(addprefix misc/,classic.thm menu.spc sfx_cursor.pcm sfx_confirm
 FPGAPATH := verilog
 MK2EXT := bit
 MK3EXT := bi3
-# MkII needs separate extended-mapper, competition-cart and SGB/MSU variants.
-MK2CORES := atari base basex bootleg col20 cx4 dsp dspx gsu gsu3 obc1 sa1 sdd1 sgb sgb_msu spc7110 st0011 st0018 test xc
+# MkII uses the fitted GB/GBC core instead of the old SGB variants.
+MK2CORES := atari base basex bootleg col20 cx4 dsp dspx gbc gsu gsu3 obc1 sa1 sdd1 spc7110 st0011 st0018 test xc
 # Both MkIII MCU variants load these same Cyclone IV images.
 MK3CORES := a26 base bootleg col20 cx4 dsp gbc gsu gsu3 nes nes_k nes_mmc3 nes_mmc5 obc1 sa1 sdd1 sgb sms spc7110 st0011 st0018 test xc
 
@@ -127,6 +127,8 @@ build: $(MK2MINI) $(MK3MINI) | host-tools
 
 players-mk2:
 	$(MAKE) -C snes/atari all
+	$(MAKE) -C snes/gbc mk2
+	@test -s misc/cgb_boot.bin && test -s misc/cgb_boot.LICENSE
 
 players-mk3:
 	$(MAKE) -C snes/nes all

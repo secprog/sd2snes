@@ -1,3 +1,5 @@
+// MkII port; the MkIII branch includes the unchanged pre-port source.
+`ifdef MK2
 `timescale 1ns / 1ps
 //////////////////////////////////////////////////////////////////////////////////
 // Company:
@@ -175,7 +177,7 @@ module sgb_cpu(
   output        DBG_BRK
 );
 
-integer i;
+integer oam_lookup_i, ppu_write_i, apu_mix_i;
 
 //-------------------------------------------------------------------
 // DESCRIPTION
@@ -432,7 +434,7 @@ end
 //  1 - MCT decode              ReqPendr
 //  2 - MCT mct_req_r/SYS_REQ
 //  3 - ReqPendr
-reg  [5:0]  cpu_free_slot_r;
+(* shreg_extract = "no" *) reg [5:0] cpu_free_slot_r;
 always @(posedge CLK) begin
   // MCU needs more bandwidth so now we only block the last empty CPU clock cycle shifted by a value greater than the MCT delay
   cpu_free_slot_r <= {cpu_free_slot_r[4:0],(~&clk_bus_ctr_r)};
@@ -621,7 +623,10 @@ reg [7:0]   REG_NR50_r; // FF24
 reg [7:0]   REG_NR51_r; // FF25
 reg [7:0]   REG_NR52_r; // FF26
 
+`ifndef MK2
 reg [7:0]   REG_WAV_r[15:0]; // FF30-FF3F
+`endif
+wire [7:0]  reg_wave_cpu_data, reg_wave_apu_data;
 
 // PPU
 reg [7:0]   REG_LCDC_r; // FF40
@@ -746,7 +751,14 @@ localparam [15:0] SPEED_SWITCH_MCYC = 16'd32768;   // parked edges = 0x20000 T; 
 reg         spd_go_r;           // 1x -> 2x: the flip is pending (two bus edges after the handoff)
 reg         spd_go_ctr_r;       // ... the first of those two edges has not passed yet
 reg         spd_stall_r;        // CPU parked after the switch (HALT with a timeout)
+`ifdef MK2
+// Only expiry is observed. A 15-bit maximal LFSR (XAPP052 taps 15,14),
+// prefixed with the zero seed, reaches 4000 after 32767 enabled clocks.
+// The next parked edge expires, exactly as the 32768-count down-counter.
+reg  [14:0] spd_ctr_r;
+`else
 reg  [15:0] spd_ctr_r;          // M-cycles of park remaining
+`endif
 reg         spd_stop_r;         // the STOP now in EXE is the switch, not a wait for input
 reg         spd_wake_r;         // the park ended on IE & IF: hold the STOP one more bus edge (the CGB's wake cost)
 reg         spd_tail_r;         // the park ended on its timer: the edge on which the STOP retires (HDMA wake check)
@@ -825,17 +837,24 @@ wire [6:0]  c6_cram_addr;
 wire        cram_b_busy = CRAM_RD_REQ | c6_cram_req;
 wire [6:0]  cram_b_addr = CRAM_RD_REQ ? CRAM_RD_ADDR : c6_cram_req ? c6_cram_addr : cram_dbg_addr;
 
-reg  [7:0]  cram_r[0:127];
+`ifdef MK2
+// The CPU's HRAM and palette accesses share port A of one block RAM.
+// The MCT/REG controller proof checks the read window as well as writes;
+// port B remains dedicated to the unchanged snapshot/pixel arbitration.
+wire [7:0] cram_q_a_r;
+wire [7:0] cram_q_b_r;
+`else
+(* ram_style = "distributed" *) reg  [7:0]  cram_r[0:127];
 reg  [7:0]  cram_q_a_r;
 reg  [7:0]  cram_q_b_r;
-reg         cram_b_busy_d1_r;
-
 always @(posedge CLK) begin
   if (cram_we_a) cram_r[cram_a_index] <= reg_wr_data_r;
   cram_q_a_r <= cram_r[cram_a_index];
   cram_q_b_r <= cram_r[cram_b_addr];
-  cram_b_busy_d1_r <= cram_b_busy;
 end
+`endif
+reg         cram_b_busy_d1_r;
+always @(posedge CLK) cram_b_busy_d1_r <= cram_b_busy;
 
 assign CRAM_RD_DATA = cram_q_b_r;
 
@@ -1063,7 +1082,11 @@ always @(posedge CLK) begin
       REG_KEY1_r[0] <= 1'b0;
       REG_DIV_r     <= 16'h0000;
       spd_stall_r   <= ~|(REG_IE_r[4:0] & REG_IF_r[4:0]);
+`ifdef MK2
+      spd_ctr_r     <= 15'd0;
+`else
       spd_ctr_r     <= SPEED_SWITCH_MCYC;
+`endif
       if (cpu_speed_r) begin
         cpu_speed_r  <= 1'b0;           // 2x -> 1x: the clock flips on this edge
       end
@@ -1086,8 +1109,13 @@ always @(posedge CLK) begin
           spd_wake_r  <= 1'b1;          // one more edge: the CGB's wake-up cost
         end
         else if (CLK_BUS_EDGE) begin
+`ifdef MK2
+          spd_ctr_r <= {spd_ctr_r[13:0], (spd_ctr_r[14] ^ spd_ctr_r[13]) | ~|spd_ctr_r};
+          if (spd_ctr_r == 15'h4000) begin
+`else
           spd_ctr_r <= spd_ctr_r - 16'd1;
           if (spd_ctr_r == 16'd1) begin
+`endif
             spd_stall_r <= 1'b0;
             spd_tail_r  <= 1'b1;        // the STOP retires on the next edge
           end
@@ -1154,22 +1182,22 @@ always @(posedge CLK) begin
           8'h25: reg_mdr_r[7:0] <= REG_NR51_r;
           8'h26: reg_mdr_r[7:0] <= {REG_NR52_r[7:7],3'h7,({4{REG_NR52_r[7]}} & {APU_REG_enable})};
 
-          8'h30: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : REG_WAV_r[reg_addr_r[3:0]][7:0];
-          8'h31: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : REG_WAV_r[reg_addr_r[3:0]][7:0];
-          8'h32: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : REG_WAV_r[reg_addr_r[3:0]][7:0];
-          8'h33: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : REG_WAV_r[reg_addr_r[3:0]][7:0];
-          8'h34: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : REG_WAV_r[reg_addr_r[3:0]][7:0];
-          8'h35: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : REG_WAV_r[reg_addr_r[3:0]][7:0];
-          8'h36: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : REG_WAV_r[reg_addr_r[3:0]][7:0];
-          8'h37: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : REG_WAV_r[reg_addr_r[3:0]][7:0];
-          8'h38: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : REG_WAV_r[reg_addr_r[3:0]][7:0];
-          8'h39: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : REG_WAV_r[reg_addr_r[3:0]][7:0];
-          8'h3A: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : REG_WAV_r[reg_addr_r[3:0]][7:0];
-          8'h3B: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : REG_WAV_r[reg_addr_r[3:0]][7:0];
-          8'h3C: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : REG_WAV_r[reg_addr_r[3:0]][7:0];
-          8'h3D: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : REG_WAV_r[reg_addr_r[3:0]][7:0];
-          8'h3E: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : REG_WAV_r[reg_addr_r[3:0]][7:0];
-          8'h3F: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : REG_WAV_r[reg_addr_r[3:0]][7:0];
+          8'h30: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : reg_wave_cpu_data;
+          8'h31: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : reg_wave_cpu_data;
+          8'h32: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : reg_wave_cpu_data;
+          8'h33: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : reg_wave_cpu_data;
+          8'h34: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : reg_wave_cpu_data;
+          8'h35: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : reg_wave_cpu_data;
+          8'h36: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : reg_wave_cpu_data;
+          8'h37: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : reg_wave_cpu_data;
+          8'h38: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : reg_wave_cpu_data;
+          8'h39: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : reg_wave_cpu_data;
+          8'h3A: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : reg_wave_cpu_data;
+          8'h3B: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : reg_wave_cpu_data;
+          8'h3C: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : reg_wave_cpu_data;
+          8'h3D: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : reg_wave_cpu_data;
+          8'h3E: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : reg_wave_cpu_data;
+          8'h3F: reg_mdr_r[7:0] <= (APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : reg_wave_cpu_data;
 
           8'h40: begin reg_mdr_r[7:0] <= REG_LCDC_r;                    if (reg_wr_r) REG_LCDC_r[7:0] <= reg_wr_data_r[7:0]; end
           8'h41: begin reg_mdr_r[7:0] <= {1'b1,REG_STAT_r[6:0]};        if (reg_wr_r) REG_STAT_r[7:3] <= reg_wr_data_r[7:3]; end
@@ -1367,13 +1395,7 @@ wire [15:0] dec_data;
 // PC with bypass
 wire [15:0] ifd_pc = EXE_IFD_redirect ? EXE_IFD_target : PC_r;
 
-`ifdef MK2
-dec_table dec (
-  .clka(CLK),       // input clka
-  .addra(dec_addr), // input [7 : 0] addra
-  .douta(dec_data)  // output [15 : 0] douta
-);
-`endif
+// Mk.II's decoder is in cpu_memory beside the shared HRAM/palette block.
 `ifdef MK3
 dec_table dec (
   .clock(CLK),        // input clock
@@ -1653,6 +1675,37 @@ reg [15:0]  exe_dst_r;
 reg [7:0]   exe_cc_r;
 reg [7:0]   exe_src_alu_r;
 
+`ifdef MK2
+// Byte and pair operands share the same four register-pair muxes. Keep the
+// existing operand registers and their hold on OPR_I; only the read network
+// changes. In particular OPR_A selects AF's high byte, not its flags byte.
+function [15:0] mk2_operand;
+  input [3:0] sel;
+  input [15:0] pc, immediate, bc, de, sp, af, hl;
+  reg [1:0] pair_index;
+  reg [15:0] pair_data, register_data;
+  begin
+    pair_index = sel[3] ? {sel[2], sel[1] & (~sel[2] | sel[0])} : sel[1:0];
+    case(pair_index)
+      0: pair_data=bc;
+      1: pair_data=de;
+      2: pair_data=hl;
+      3: pair_data=af;
+    endcase
+    register_data = sel[3] && sel!=`OPR_HL
+      ? {8'd0, ((!sel[0] || sel==`OPR_A) ? pair_data[15:8] : pair_data[7:0])}
+      : pair_data;
+    case(sel)
+      `OPR_PC: mk2_operand=pc;
+      `OPR_S8: mk2_operand={{8{immediate[7]}},immediate[7:0]};
+      `OPR_U16: mk2_operand=immediate;
+      `OPR_SP: mk2_operand=sp;
+      default: mk2_operand=register_data;
+    endcase
+  end
+endfunction
+`endif
+
 reg [15:0]  exe_res_r;
 reg [7:0]   exe_res_cc_r;
 reg [7:0]   exe_res_los_r;
@@ -1667,6 +1720,27 @@ reg         exe_res_c15_r;
 reg         exe_res_c11_r;
 reg         exe_res_c7_r;
 reg         exe_res_c3_r;
+`ifdef MK2
+// CP uses the same subtraction as SUB; only its destination and flags differ.
+// Share the two nibble adders without changing their registered carry timing.
+wire mk2_alu_cin = IFD_EXE_op[5] ? 1'b1
+                  : ((IFD_EXE_op[3] & exe_cc_r[4]) ^ IFD_EXE_op[4]);
+wire [4:0] mk2_alu_low = {1'b0,exe_dst_r[3:0]}
+                      + {1'b0,exe_src_alu_r[3:0] ^ {4{IFD_EXE_op[4]}}}
+                      + mk2_alu_cin;
+wire [4:0] mk2_alu_high = {1'b0,exe_dst_r[7:4]}
+                       + {1'b0,exe_src_alu_r[7:4] ^ {4{IFD_EXE_op[4]}}}
+                       + exe_res_c3_r;
+`endif
+
+`ifdef MK2
+// ADD SP,e uses the latched destination; LD HL,SP+e uses the live SP.
+// Select that operand before one shared adder, retaining both carry stages.
+wire [15:0] mk2_sp_base = IFD_EXE_op[4] ? SP_r : exe_dst_r;
+wire [4:0] mk2_sp_low = {1'b0,mk2_sp_base[3:0]} + {1'b0,exe_src_r[3:0]};
+wire [4:0] mk2_sp_mid = {1'b0,mk2_sp_base[7:4]} + {1'b0,exe_src_r[7:4]} + exe_res_c3_r;
+wire [7:0] mk2_sp_high = mk2_sp_base[15:8] + exe_src_r[15:8] + exe_res_c7_r;
+`endif
 
 reg         exe_res_int_enable_r;
 reg         exe_res_int_disable_r;
@@ -1794,7 +1868,19 @@ assign      EXE_IFD_ready    = exe_ready_r;
 assign      EXE_IFD_ime      = (exe_ime_r | (exe_res_int_enable_r & ~IFD_EXE_op[5])) & ~IFD_EXE_int & ~exe_res_int_disable_r; // RETI and disables need bypass.  EI is delayed a clock.
 
 assign      EXE_MCT_req_val     = IFD_EXE_valid & exe_mem_req_r & ^exe_stage[1:0];
-assign      EXE_MCT_req_addr_d1 = ( EXE_MCT_req_wr ? {((IFD_EXE_decode[`DEC_DST] == `OPR_S8 || IFD_EXE_decode[`DEC_DST] == `OPR_C) ? 8'hFF : exe_dst_r[15:8]),exe_dst_r[7:0]}
+// Address operand selection. MIC/MDC and every memory CB instruction decode
+// both operands as HL. Their source and destination latches are therefore
+// identical by ST_MCT_DEC, after the existing one-clock operand-read delay.
+// Mk.II can select the source for both halves of these operations, removing
+// the latency/stage calculation from the 16-bit address-adder critical path.
+// The actual read/write request and all transaction clocks remain unchanged.
+`ifdef MK2
+wire exe_addr_dst = IFD_EXE_decode[`DEC_GRP] == `GRP_MST
+                 || IFD_EXE_decode[`DEC_GRP] == `GRP_CLL;
+`else
+wire exe_addr_dst = EXE_MCT_req_wr;
+`endif
+assign      EXE_MCT_req_addr_d1 = ( exe_addr_dst ? {((IFD_EXE_decode[`DEC_DST] == `OPR_S8 || IFD_EXE_decode[`DEC_DST] == `OPR_C) ? 8'hFF : exe_dst_r[15:8]),exe_dst_r[7:0]}
                                               : {((IFD_EXE_decode[`DEC_SRC] == `OPR_S8 || IFD_EXE_decode[`DEC_SRC] == `OPR_C) ? 8'hFF : exe_src_r[15:8]),exe_src_r[7:0]})
                                   + exe_mem_addr_mod_r;
 assign      EXE_MCT_req_wr = (  IFD_EXE_decode[`DEC_GRP] == `GRP_MST
@@ -1813,6 +1899,29 @@ assign      HLT_EXE_rsp = HLT_REQ_sync & ~IFD_EXE_valid;
 
 reg         dbg_advance_r;
 assign      DBG_advance = dbg_advance_r;
+
+`ifdef MK2
+// MkII register-file writeback. Separate enables prevent destination cases
+// from building data-wide hold muxes. All register writes stay in the
+// original clocked block, including the higher-priority debug path. B/D/A
+// also share one byte selector: their byte destinations have bit 3 set;
+// their pair destinations do not.
+wire mk2_sp_write = IFD_EXE_decode[`DEC_DST] == `OPR_BC
+                 || IFD_EXE_decode[`DEC_DST] == `OPR_DE
+                 || IFD_EXE_decode[`DEC_DST] == `OPR_AF
+                 || IFD_EXE_decode[`DEC_DST] == `OPR_HL
+                 || IFD_EXE_decode[`DEC_DST] == `OPR_SP
+                 || (IFD_EXE_decode[`DEC_DST] == `OPR_PC && exe_res_sp_mod_r);
+wire [15:0] mk2_sp_write_data = (IFD_EXE_decode[`DEC_DST] == `OPR_SP && !exe_res_sp_mod_r)
+                            ? exe_res_r : exe_res_sp_r;
+wire [7:0] mk2_byte_write_data = IFD_EXE_decode[11] ? exe_res_r[7:0] : exe_res_r[15:8];
+wire mk2_hl_modified = (IFD_EXE_decode[`DEC_DST] == `OPR_HL
+                    || IFD_EXE_decode[`DEC_DST] == `OPR_A) && exe_res_hl_mod_r;
+wire [7:0] mk2_h_write_data = mk2_hl_modified ? exe_res_hl_r[15:8]
+                          : IFD_EXE_decode[`DEC_DST] == `OPR_H ? exe_res_r[7:0] : exe_res_r[15:8];
+wire [7:0] mk2_l_write_data = mk2_hl_modified ? exe_res_hl_r[7:0] : exe_res_r[7:0];
+// End MkII register-file writeback.
+`endif
 
 always @(posedge CLK) begin
   if (cpu_ireset_r) begin
@@ -1847,6 +1956,26 @@ always @(posedge CLK) begin
       exe_ctr_r <= exe_complete_r ? 0 : exe_ctr_r + 1;
 
       if (exe_complete_r) begin
+`ifdef MK2
+        if (mk2_sp_write) SP_r <= mk2_sp_write_data;
+        if (IFD_EXE_decode[`DEC_DST] == `OPR_A || IFD_EXE_decode[`DEC_DST] == `OPR_AF)
+          A_r <= mk2_byte_write_data;
+        if (IFD_EXE_decode[`DEC_DST] == `OPR_B || IFD_EXE_decode[`DEC_DST] == `OPR_BC)
+          B_r <= mk2_byte_write_data;
+        if (IFD_EXE_decode[`DEC_DST] == `OPR_C || IFD_EXE_decode[`DEC_DST] == `OPR_BC)
+          C_r <= exe_res_r[7:0];
+        if (IFD_EXE_decode[`DEC_DST] == `OPR_D || IFD_EXE_decode[`DEC_DST] == `OPR_DE)
+          D_r <= mk2_byte_write_data;
+        if (IFD_EXE_decode[`DEC_DST] == `OPR_E || IFD_EXE_decode[`DEC_DST] == `OPR_DE)
+          E_r <= exe_res_r[7:0];
+        if (IFD_EXE_decode[`DEC_DST] == `OPR_H || IFD_EXE_decode[`DEC_DST] == `OPR_HL || mk2_hl_modified)
+          H_r <= mk2_h_write_data;
+        if (IFD_EXE_decode[`DEC_DST] == `OPR_L || IFD_EXE_decode[`DEC_DST] == `OPR_HL || mk2_hl_modified)
+          L_r <= mk2_l_write_data;
+        // All destinations BC..A update flags, including SP and the byte writes.
+        if (IFD_EXE_decode[`DEC_DST] >= `OPR_BC)
+          F_r[7:4] <= IFD_EXE_decode[`DEC_DST] == `OPR_AF ? exe_res_r[7:4] : exe_res_cc_r[7:4];
+`else
         case (IFD_EXE_decode[`DEC_DST])
           //`OPR_I  : exe_src_r <= 0;
           // this is for RET.  could also make its target SP
@@ -1866,6 +1995,7 @@ always @(posedge CLK) begin
           `OPR_HL : begin `HL_r <= exe_res_hl_mod_r ? exe_res_hl_r : exe_res_r; SP_r <= exe_res_sp_r; F_r[7:4] <= exe_res_cc_r[7:4]; end
           `OPR_A  : begin A_r   <= exe_res_r[7:0]; if (exe_res_hl_mod_r) `HL_r <= exe_res_hl_r;       F_r[7:4] <= exe_res_cc_r[7:4]; end
         endcase
+`endif
 
         // delay 1 inst because fetch will see this in the following cycle
         exe_ime_r <= (exe_ime_r | exe_res_int_enable_r) & ~exe_res_int_disable_r & ~IFD_EXE_int;
@@ -1972,22 +2102,32 @@ always @(posedge CLK) begin
           end
         end
         else if (IFD_EXE_op[3:0] == 4'h8) begin
+`ifdef MK2
+          {exe_res_c3_r,exe_res_r[3:0]} <= mk2_sp_low;
+          {exe_res_c7_r,exe_res_r[7:4]} <= mk2_sp_mid;
+          exe_res_r[15:8] <= mk2_sp_high;
+          exe_res_cc_r <= {1'b0,1'b0,exe_res_c3_r,exe_res_c7_r,exe_cc_r[3:0]};
+`endif
           if (~IFD_EXE_op[4]) begin
             // ADD SP,e
+`ifndef MK2
             {exe_res_c3_r,exe_res_r[3:0]} <= exe_dst_r[3:0] + exe_src_r[3:0];
             {exe_res_c7_r,exe_res_r[7:4]} <= exe_dst_r[7:4] + exe_src_r[7:4] + exe_res_c3_r;
             exe_res_r[15:8]               <= exe_dst_r[15:8] + exe_src_r[15:8] + exe_res_c7_r;
             exe_res_cc_r                  <= {1'b0,1'b0,exe_res_c3_r,exe_res_c7_r,exe_cc_r[3:0]};
+`endif
 
             // hack to avoid memory access.  stage is always 0 on first cycle
             exe_lat_add_r <= |exe_ctr_r ? 2 : 1;
           end
           else begin
             // LD HL,SP+e
+`ifndef MK2
             {exe_res_c3_r,exe_res_r[3:0]} <= SP_r[3:0] + exe_src_r[3:0];
             {exe_res_c7_r,exe_res_r[7:4]} <= SP_r[7:4] + exe_src_r[7:4] + exe_res_c3_r;
             exe_res_r[15:8]               <= SP_r[15:8] + exe_src_r[15:8] + exe_res_c7_r;
             exe_res_cc_r                  <= {1'b0,1'b0,exe_res_c3_r,exe_res_c7_r,exe_cc_r[3:0]};
+`endif
 
             exe_lat_add_r <= 1;
           end
@@ -1997,8 +2137,13 @@ always @(posedge CLK) begin
         // ALU
         case (IFD_EXE_op[5:3])
           3'h0,3'h1,3'h2,3'h3: begin // ADD,ADC,SUB,SBC
+`ifdef MK2
+            {exe_res_c3_r,exe_res_r[3:0]} <= mk2_alu_low;
+            {exe_res_c7_r,exe_res_r[7:4]} <= mk2_alu_high;
+`else
             {exe_res_c3_r,exe_res_r[3:0]} <= exe_dst_r[3:0] + ({4{IFD_EXE_op[4]}} ^ exe_src_alu_r[3:0]) + ((IFD_EXE_op[3] & exe_cc_r[4]) ^ (IFD_EXE_op[4]));
             {exe_res_c7_r,exe_res_r[7:4]} <= exe_dst_r[7:4] + ({4{IFD_EXE_op[4]}} ^ exe_src_alu_r[7:4]) + exe_res_c3_r;
+`endif
             exe_res_cc_r              <= {~|exe_res_r[7:0],IFD_EXE_op[4],IFD_EXE_op[4]^exe_res_c3_r,IFD_EXE_op[4]^exe_res_c7_r,exe_cc_r[3:0]};
           end
           3'h4: begin // AND
@@ -2014,8 +2159,13 @@ always @(posedge CLK) begin
             exe_res_cc_r   <= {~|exe_res_r[7:0],1'b0,1'b0,1'b0,exe_cc_r[3:0]};
           end
           3'h7: begin // CP
+`ifdef MK2
+            {exe_res_c3_r,exe_res_cp_r[3:0]} <= mk2_alu_low;
+            {exe_res_c7_r,exe_res_cp_r[7:4]} <= mk2_alu_high;
+`else
             {exe_res_c3_r,exe_res_cp_r[3:0]} <= exe_dst_r[3:0] + ({4{1'b1}} ^ exe_src_alu_r[3:0]) + 1'b1;
             {exe_res_c7_r,exe_res_cp_r[7:4]} <= exe_dst_r[7:4] + ({4{1'b1}} ^ exe_src_alu_r[7:4]) + exe_res_c3_r;
+`endif
             exe_res_cc_r                 <= {~|exe_res_cp_r[7:0],1'b1,~exe_res_c3_r,~exe_res_c7_r,exe_cc_r[3:0]};
           end
         endcase
@@ -2141,6 +2291,14 @@ always @(posedge CLK) begin
   exe_ready_r    <= ~IFD_EXE_valid | (exe_complete_r & ~exe_stall & DBG_EXE_step);
 
   // operand read
+`ifdef MK2
+  if (IFD_EXE_decode[`DEC_SRC] != `OPR_I)
+    exe_src_r <= mk2_operand(IFD_EXE_decode[`DEC_SRC], IFD_EXE_pc_next,
+                            IFD_EXE_op[23:8], `BC_r, `DE_r, SP_r, `AF_r, `HL_r);
+  if (IFD_EXE_decode[`DEC_DST] != `OPR_I)
+    exe_dst_r <= mk2_operand(IFD_EXE_decode[`DEC_DST], IFD_EXE_pc_next,
+                            IFD_EXE_op[23:8], `BC_r, `DE_r, SP_r, `AF_r, `HL_r);
+`else
   case (IFD_EXE_decode[`DEC_SRC])
     //`OPR_I  : exe_src_r <= 0;
     `OPR_PC : exe_src_r[15:0] <= IFD_EXE_pc_next;
@@ -2179,6 +2337,7 @@ always @(posedge CLK) begin
     `OPR_HL : exe_dst_r[15:0] <= `HL_r;
     `OPR_A  : exe_dst_r[15:0] <= {8'h0,A_r};
   endcase
+`endif
 
   // condition code read
   exe_cc_r <= F_r;
@@ -2469,8 +2628,16 @@ vram vram1 (
 `endif
 
 assign TAP_VRAM_WE   = vram_wren;
+`ifdef MK2
+// PPU/OAM-DMA never write port A. When vram_wren is true the selected
+// address is necessarily HDMA's or the CPU's, and the bank is VBK. Keep
+// the read-only masters out of the bridge's dirty-RAM feedback path.
+assign TAP_VRAM_BANK = REG_VBK_r;
+assign TAP_VRAM_ADDR = HDMA_VRAM_active ? hdma_vram_address : MCT_VRAM_address;
+`else
 assign TAP_VRAM_BANK = vram_bank;
 assign TAP_VRAM_ADDR = vram_address;
+`endif
 
 wire        oam_wren    = DMA_active ? DMA_OAM_req_val  : PPU_MCT_oam_active ? 0           : MCT_OAM_wren;
 wire [7:0]  oam_address = DMA_active ? DMA_OAM_address  : PPU_OAM_active ? PPU_OAM_address : MCT_OAM_address;
@@ -2581,7 +2748,9 @@ reg  [3:0]  ppu_oam_lut_cnt_r;
 wire        ppu_oam_lut_full = ppu_oam_lut_cnt_r[3] & ppu_oam_lut_cnt_r[1];
 `endif
 reg  [3:0]  ppu_oam_lut_ypos_r[`NUM_OAM_LUT-1:0];
+`ifndef MK2
 reg  [7:0]  ppu_oam_lut_xpos_r[`NUM_OAM_LUT-1:0];
+`endif
 reg  [5:0]  ppu_oam_lut_index_r[`NUM_OAM_LUT-1:0];
 wire        ppu_oam_end      = ppu_oam_address_r[7] & &ppu_oam_address_r[4:2]; // 159 + 1 = 160 bytes (40 entries of 4 bytes each)
 
@@ -2679,10 +2848,14 @@ assign      PPU_LY_read = (REG_LCDC_r[`LCDC_DS_EN] & ~|(ppu_state_r & ST_PPU_OFF
                         ? REG_LY_r + 8'd1 : REG_LY_r;
 
 wire [2:0]  ppu_bgw_fifo_index_start = (ppu_pix_win_active_r ? REG_WX_r[2:0] : ~REG_SCX_r[2:0]) + 1;
+`ifndef MK2
 reg  [1:0]  ppu_bgw_fifo_r[31:0]; // 4 [tiles] * 8 [pixels/tile] * 2 [bpp]
+`endif
 reg  [7:0]  ppu_pix_bgw_data_r;
 
+`ifndef MK2
 reg  [3:0]  ppu_obj_fifo_r[31:0]; // 4 [tiles] * 8 [pixels/tile] * 1+1+2[bpp,pri,pal]
+`endif
 reg  [7:0]  ppu_obj_fifo_transparent_r;
 reg  [7:0]  ppu_pix_obj_data_r;
 
@@ -2698,21 +2871,33 @@ reg         ppu_dot_start_r;
 reg         ppu_stat_write_r;
 
 // OAM LUT lookup operation
+`ifdef MK2
+wire        ppu_oam_lut_found;
+wire [3:0]  ppu_oam_lut_match;
+wire [7:0]  ppu_oam_position_q;
+`else
 reg         ppu_oam_lut_found;
 reg  [3:0]  ppu_oam_lut_match;
-// The sensitivity list used to name ppu_oam_lut_xpos_r[0] through [9] one by
-// one, which is exactly NUM_OAM_LUT entries only while the LUT has ten of
-// them: an implicit dependence of a combinational block on a `define.
-always @(*) begin
+// XST cannot put an entire unpacked register array in an @* sensitivity
+// list. Flatten only the compared bits, with a width derived from the LUT
+// size, so both tools see the same complete combinational dependency.
+wire [5*`NUM_OAM_LUT-1:0] ppu_oam_lut_tilex;
+genvar oam_slot;
+generate for(oam_slot=0;oam_slot<`NUM_OAM_LUT;oam_slot=oam_slot+1) begin : g_oam_tilex
+  assign ppu_oam_lut_tilex[5*oam_slot +: 5] = ppu_oam_lut_xpos_r[oam_slot][7:3];
+end endgenerate
+always @(ppu_oam_lut_tilex or ppu_tile_ctr_r) begin
   ppu_oam_lut_match = 4'hF;
   ppu_oam_lut_found = 0;
-  for (i = 0; i < `NUM_OAM_LUT; i = i + 1) begin
-    if (ppu_oam_lut_xpos_r[i][7:3] == ppu_tile_ctr_r[4:0] && ~ppu_oam_lut_found) begin
-      ppu_oam_lut_match = i[3:0];
+  for (oam_lookup_i = 0; oam_lookup_i < `NUM_OAM_LUT; oam_lookup_i = oam_lookup_i + 1) begin
+    if (ppu_oam_lut_tilex[5*oam_lookup_i +: 5] == ppu_tile_ctr_r[4:0] && ~ppu_oam_lut_found) begin
+      ppu_oam_lut_match = oam_lookup_i[3:0];
       ppu_oam_lut_found = 1;
     end
   end
 end
+
+`endif
 
 reg         ppu_pix_oam_lut_found_r;
 reg  [3:0]  ppu_pix_oam_lut_match_r;
@@ -2720,6 +2905,27 @@ reg  [7:0]  ppu_pix_oam_tile_num_r;
 reg  [7:0]  ppu_pix_oam_flag_r;
 reg  [7:0]  ppu_oam_obj_xpos_r;
 wire [3:0]  ppu_pix_obj_row = (ppu_scanline_r[3:0] - ppu_oam_lut_ypos_r[ppu_pix_oam_lut_match_r][3:0]) ^ {4{ppu_pix_oam_flag_r[6]}};
+
+`ifdef MK2
+// A sprite covers this line when line-Y is -16..-1 (16 high), or
+// -16..-9 (8 high). Keep the ninth bit: an 8-bit difference would also
+// accept +240..+255, wrapping off-screen sprites onto the visible line.
+wire [8:0] ppu_oam_y_delta = {1'b0,ppu_scanline_r} - {1'b0,ppu_oam_data_r};
+wire ppu_oam_line_hit = (&ppu_oam_y_delta[8:4])
+  && (REG_LCDC_r[`LCDC_SP_SIZE] || !ppu_oam_y_delta[3]);
+wire oam_position_step = !cpu_ireset_r && ppu_dot_edge && DBG_advance;
+wire oam_position_write = oam_position_step && ppu_state_r==ST_PPU_OAM_POS
+  && !ppu_oam_lut_full && ppu_pix_phase_r && !DMA_active
+  && ppu_oam_line_hit;
+gbc_oam_positions #(.SLOTS(`NUM_OAM_LUT)) oam_positions(.CLK(CLK),
+  .CLEAR(oam_position_step && ppu_state_r==ST_PPU_OAM_NEW),
+  .WRITE(oam_position_write), .WADDR(ppu_oam_lut_cnt_r[3:0]),
+  .DATA(ppu_oam_rddata_r - (|ppu_oam_rddata_r ? 8'd8 : 8'd16)),
+  .CONSUME(oam_position_step && ppu_state_r==ST_PPU_PIX_OB2 && !ppu_pix_phase_r),
+  .CADDR(ppu_pix_oam_lut_match_r), .RADDR(ppu_pix_oam_lut_match_r),
+  .TILE(ppu_tile_ctr_r[4:0]), .Q(ppu_oam_position_q),
+  .FOUND(ppu_oam_lut_found), .MATCH(ppu_oam_lut_match));
+`endif
 
 reg         ppu_bgw_fifo_wr_req_r;
 reg  [4:0]  ppu_bgw_fifo_wr_req_index_r;
@@ -2766,7 +2972,12 @@ reg  [8:0]  c6_obj_wr_meta_r;
 // OPRI = 1 (and DMG compatibility) keep the X order the engine implements.
 wire        c6_oam_order = cgb_mode & ~REG_OPRI_r;
 wire [4:0]  c6_ow_i      = ppu_obj_fifo_wr_index_r[4:0];
+`ifdef MK2
+wire [3:0]  ppu_obj_write_data, ppu_obj_read_data;
+wire        c6_ow_free   = (ppu_obj_write_data[1:0] == 2'd0);
+`else
 wire        c6_ow_free   = (ppu_obj_fifo_r[c6_ow_i][1:0] == 2'd0);
+`endif
 wire        c6_ow_wins   = c6_oam_order & |ppu_obj_fifo_wr_data_r[1:0]
                          & (c6_obj_wr_meta_r[8:3] < c6_obj_meta_fifo_r[c6_ow_i][8:3]);
 wire        c6_ow_we     = ppu_obj_fifo_wr_req_clear_r | c6_ow_free | c6_ow_wins;
@@ -2790,6 +3001,23 @@ assign      PPU_REG_lcd_stat = ~ppu_stat_active_r & |ppu_stat_match_r;
 assign      PPU_MCT_vram_active = ppu_vram_active | ppu_cpu_lock;
 assign      PPU_MCT_oam_active  = ppu_oam_active  | ppu_cpu_lock;
 
+`ifdef MK2
+// Explicit canonical LUT memories avoid XST's legacy array/case expansion.
+// The producer's current-address read and the LCD pixel read are independent
+// asynchronous ports; the write still lands on exactly the original edge.
+wire [1:0] ppu_bgw_index;
+gbc_pixel_ram #(.WIDTH(2)) bg_pixels(.CLK(CLK),
+  .WE(~cpu_ireset_r & ~ppu_bgw_fifo_wr_req_r & ppu_bgw_fifo_wr_active_r),
+  .WADDR(ppu_bgw_fifo_wr_index_r), .DATA(ppu_bgw_fifo_wr_data_r),
+  .RADDR(ppu_pix_ctr_r[4:0]), .WRITE_Q(), .READ_Q(ppu_bgw_index));
+gbc_pixel_ram #(.WIDTH(4)) obj_pixels(.CLK(CLK),
+  .WE(~cpu_ireset_r & ~ppu_obj_fifo_wr_req_r & ppu_obj_fifo_wr_active_r & c6_ow_we),
+  .WADDR(c6_ow_i), .DATA(ppu_obj_fifo_wr_data_r),
+  .RADDR(ppu_pix_ctr_r[4:0]), .WRITE_Q(ppu_obj_write_data), .READ_Q(ppu_obj_read_data));
+wire [1:0] ppu_obj_index = ppu_obj_read_data[1:0];
+wire ppu_obj_pal = ppu_obj_read_data[2];
+wire ppu_obj_pri = ppu_obj_read_data[3];
+`else
 wire  [1:0] ppu_bgw_index = ppu_bgw_fifo_r[ppu_pix_ctr_r[4:0]][1:0];
 wire  [1:0] ppu_obj_index = ppu_obj_fifo_r[ppu_pix_ctr_r[4:0]][1:0];
 reg         ppu_obj_pal;
@@ -2837,6 +3065,7 @@ always @(ppu_pix_ctr_r,
     31: {ppu_obj_pri,ppu_obj_pal} = ppu_obj_fifo_r[31][3:2];
   endcase
 end
+`endif
 
 // merge background and object indices and derive pixel values
 assign      PPU_PIXEL = HLT_REQ_sync ? 2'b00
@@ -2871,7 +3100,7 @@ wire [3:0]  c6_bga = c6_bg_attr_fifo_r[ppu_pix_ctr_r[4:0]];
 wire [8:0]  c6_obm = c6_obj_meta_fifo_r[ppu_pix_ctr_r[4:0]];
 
 reg         c6_s0_r, c6_s1_r, c6_s2_r, c6_out_v_r;
-reg  [7:0]  c6_s0_x_r, c6_s0_y_r, c6_s1_x_r, c6_s1_y_r, c6_s2_x_r, c6_s2_y_r, c6_out_x_r, c6_out_y_r;
+(* shreg_extract = "no" *) reg [7:0] c6_s0_x_r, c6_s0_y_r, c6_s1_x_r, c6_s1_y_r, c6_s2_x_r, c6_s2_y_r, c6_out_x_r, c6_out_y_r;
 reg  [1:0]  c6_s0_bgi_r, c6_s0_obi_r;
 reg  [3:0]  c6_s0_bga_r;
 reg  [2:0]  c6_s0_obp_r;
@@ -3088,6 +3317,7 @@ always @(posedge CLK) begin
       ppu_bgw_fifo_wr_data_r <= ppu_bgw_fifo_wr_req_data_r[0];
     end
     else if (ppu_bgw_fifo_wr_active_r) begin
+`ifndef MK2
       case (ppu_bgw_fifo_wr_index_r[4:0])
         0:  ppu_bgw_fifo_r[0 ] <= ppu_bgw_fifo_wr_data_r;
         1:  ppu_bgw_fifo_r[1 ] <= ppu_bgw_fifo_wr_data_r;
@@ -3122,6 +3352,7 @@ always @(posedge CLK) begin
         30: ppu_bgw_fifo_r[30] <= ppu_bgw_fifo_wr_data_r;
         31: ppu_bgw_fifo_r[31] <= ppu_bgw_fifo_wr_data_r;
       endcase
+`endif
       ppu_bgw_fifo_wr_index_r <= ppu_bgw_fifo_wr_index_r + 1;
 
       case (ppu_bgw_fifo_wr_cnt_r[2:0])
@@ -3151,7 +3382,9 @@ always @(posedge CLK) begin
       // CGB: a later sprite also overwrites an opaque pixel if its OAM index
       // is lower (c6_ow_wins); the DMG rule is the c6_ow_free / clear half.
       if (c6_ow_we) begin
+`ifndef MK2
         ppu_obj_fifo_r[c6_ow_i][3:0] <= ppu_obj_fifo_wr_data_r[3:0];
+`endif
         c6_obj_meta_fifo_r[c6_ow_i]  <= c6_obj_wr_meta_r;
       end
       ppu_obj_fifo_wr_index_r <= ppu_obj_fifo_wr_index_r + 1;
@@ -3223,7 +3456,9 @@ always @(posedge CLK) begin
           ppu_oam_address_r <= 0;
 
           // use -16 (instead of -8) in order to put the xpos before the dummy tile for empty entries
-          for (i = 0; i < `NUM_OAM_LUT; i = i + 1) ppu_oam_lut_xpos_r[i] <= 0-16;
+`ifndef MK2
+          for (ppu_write_i = 0; ppu_write_i < `NUM_OAM_LUT; ppu_write_i = ppu_write_i + 1) ppu_oam_lut_xpos_r[ppu_write_i] <= 0-16;
+`endif
 
           // initialize all entries to be invalid
           ppu_oam_lut_cnt_r <= 0;
@@ -3236,9 +3471,15 @@ always @(posedge CLK) begin
         ST_PPU_OAM_POS : begin
           // read in xpos if ypos is on this line
           if (~ppu_oam_lut_full & ppu_pix_phase_r & ~DMA_active) begin
+`ifdef MK2
+            if (ppu_oam_line_hit) begin
+`else
             if (ppu_oam_data_r <= (ppu_scanline_r + 16) && (ppu_scanline_r + 16) < (ppu_oam_data_r + (REG_LCDC_r[`LCDC_SP_SIZE] ? 16 : 8))) begin
+`endif
               ppu_oam_lut_ypos_r[ppu_oam_lut_cnt_r]  <= ppu_oam_data_r[3:0];
+`ifndef MK2
               ppu_oam_lut_xpos_r[ppu_oam_lut_cnt_r]  <= ppu_oam_rddata_r - (|ppu_oam_rddata_r ? 8 : 16);
+`endif
               ppu_oam_lut_index_r[ppu_oam_lut_cnt_r] <= ppu_oam_address_r[7:2];
 
               ppu_oam_lut_cnt_r <= ppu_oam_lut_cnt_r + 1;
@@ -3301,15 +3542,15 @@ always @(posedge CLK) begin
             // CGB: LCDC.0 is the BG/OBJ master priority, not a BG enable, so
             // the tile is kept (the composition below applies the bit).
             // Attribute bit 5 = horizontal flip.
-            for (i = 0; i < 8; i = i + 1) ppu_bgw_fifo_wr_req_data_r[i][0] <= (ppu_first_frame_r|(~REG_LCDC_r[`LCDC_BG_EN] & ~cgb_mode)) ? 1'b0 : (c6_bg_attr_r[5] ? ppu_pix_bgw_data_r[i] : ppu_pix_bgw_data_r[7-i]);
-            for (i = 0; i < 8; i = i + 1) ppu_bgw_fifo_wr_req_data_r[i][1] <= (ppu_first_frame_r|(~REG_LCDC_r[`LCDC_BG_EN] & ~cgb_mode)) ? 1'b0 : (c6_bg_attr_r[5] ? c6_bg_tile_rd[i]         : c6_bg_tile_rd[7-i]);
+            for (ppu_write_i = 0; ppu_write_i < 8; ppu_write_i = ppu_write_i + 1) ppu_bgw_fifo_wr_req_data_r[ppu_write_i][0] <= (ppu_first_frame_r|(~REG_LCDC_r[`LCDC_BG_EN] & ~cgb_mode)) ? 1'b0 : (c6_bg_attr_r[5] ? ppu_pix_bgw_data_r[ppu_write_i] : ppu_pix_bgw_data_r[7-ppu_write_i]);
+            for (ppu_write_i = 0; ppu_write_i < 8; ppu_write_i = ppu_write_i + 1) ppu_bgw_fifo_wr_req_data_r[ppu_write_i][1] <= (ppu_first_frame_r|(~REG_LCDC_r[`LCDC_BG_EN] & ~cgb_mode)) ? 1'b0 : (c6_bg_attr_r[5] ? c6_bg_tile_rd[ppu_write_i]         : c6_bg_tile_rd[7-ppu_write_i]);
             c6_bgw_req_attr_r <= {c6_bg_attr_r[7], c6_bg_attr_r[2:0]};
 
             // clear object fifo for next set of sprite tiles
             ppu_obj_fifo_wr_req_r <= 1;
             ppu_obj_fifo_wr_req_clear_r <= 1;
             ppu_obj_fifo_wr_req_index_r <= {ppu_tile_ctr_next[1:0],3'h0};
-            for (i = 0; i < 8; i = i + 1) ppu_obj_fifo_wr_req_data_r[i][3:0] <= 0;
+            for (ppu_write_i = 0; ppu_write_i < 8; ppu_write_i = ppu_write_i + 1) ppu_obj_fifo_wr_req_data_r[ppu_write_i][3:0] <= 0;
           end
 
           if (ppu_pix_phase_r) begin
@@ -3324,7 +3565,11 @@ always @(posedge CLK) begin
           ppu_pix_phase_r <= ~ppu_pix_phase_r;
         end
         ST_PPU_PIX_OB0 : begin
+`ifdef MK2
+          ppu_oam_obj_xpos_r <= ppu_oam_position_q;
+`else
           ppu_oam_obj_xpos_r <= ppu_oam_lut_xpos_r[ppu_pix_oam_lut_match_r];
+`endif
 
           ppu_oam_address_r <= {ppu_oam_address_r[7:1],1'b1};
 
@@ -3355,7 +3600,9 @@ always @(posedge CLK) begin
           ppu_vram_address_r <= {ppu_vram_address_r[12:1],1'b1};
 
           // clear match for second phase
+`ifndef MK2
           if (~ppu_pix_phase_r) ppu_oam_lut_xpos_r[ppu_pix_oam_lut_match_r] <= 0-16;
+`endif
 
           if (ppu_pix_phase_r) begin
             // get address of next match
@@ -3364,14 +3611,14 @@ always @(posedge CLK) begin
             ppu_obj_fifo_wr_req_r <= 1;
             ppu_obj_fifo_wr_req_clear_r <= 0;
             ppu_obj_fifo_wr_req_index_r <= ppu_oam_obj_xpos_r[4:0];
-            for (i = 0; i < 8; i = i + 1) ppu_obj_fifo_wr_req_data_r[i][0] <= ppu_pix_oam_flag_r[5] ? ppu_pix_obj_data_r[i] : ppu_pix_obj_data_r[7-i];
-            for (i = 0; i < 8; i = i + 1) ppu_obj_fifo_wr_req_data_r[i][1] <= ppu_pix_oam_flag_r[5] ? c6_obj_tile_rd[i]     : c6_obj_tile_rd[7-i];
+            for (ppu_write_i = 0; ppu_write_i < 8; ppu_write_i = ppu_write_i + 1) ppu_obj_fifo_wr_req_data_r[ppu_write_i][0] <= ppu_pix_oam_flag_r[5] ? ppu_pix_obj_data_r[ppu_write_i] : ppu_pix_obj_data_r[7-ppu_write_i];
+            for (ppu_write_i = 0; ppu_write_i < 8; ppu_write_i = ppu_write_i + 1) ppu_obj_fifo_wr_req_data_r[ppu_write_i][1] <= ppu_pix_oam_flag_r[5] ? c6_obj_tile_rd[ppu_write_i]     : c6_obj_tile_rd[7-ppu_write_i];
             // The OAM address still points at THIS sprite ({index, 2'b1x}) on
             // this edge: the next match is loaded into it by the statement
             // above in the same edge.
             c6_obj_req_meta_r <= {ppu_oam_address_r[7:2], cgb_mode ? ppu_pix_oam_flag_r[2:0] : 3'b000};
-            for (i = 0; i < 8; i = i + 1) ppu_obj_fifo_wr_req_data_r[i][2] <= ppu_pix_oam_flag_r[4];
-            for (i = 0; i < 8; i = i + 1) ppu_obj_fifo_wr_req_data_r[i][3] <= ppu_pix_oam_flag_r[7];
+            for (ppu_write_i = 0; ppu_write_i < 8; ppu_write_i = ppu_write_i + 1) ppu_obj_fifo_wr_req_data_r[ppu_write_i][2] <= ppu_pix_oam_flag_r[4];
+            for (ppu_write_i = 0; ppu_write_i < 8; ppu_write_i = ppu_write_i + 1) ppu_obj_fifo_wr_req_data_r[ppu_write_i][3] <= ppu_pix_oam_flag_r[7];
 
             ppu_state_r <= ST_PPU_PIX_OB0;
           end
@@ -3492,7 +3739,34 @@ reg  [7:0]  apu_square1_duty_r;
 reg         apu_square1_sweep_enable_r;
 reg  [3:0]  apu_square1_sweep_timer_r;
 reg  [10:0] apu_square1_sweep_freq_r;
+`ifdef MK2
+// A one-hot multiplier implements the variable right shift in spare MULT18X18
+// hardware. Keep the complete 11-bit quotient and the original 16-bit sum.
+wire [7:0] apu_sweep_scale = 8'h80 >> REG_NR10_r[`NR10_SWEEP_SHIFT];
+(* mult_style = "block" *) wire [17:0] apu_sweep_product =
+    apu_square1_sweep_freq_r * apu_sweep_scale;
+wire [15:0] apu_square1_sweep_freq_next = REG_NR10_r[`NR10_SWEEP_NEG]
+    ? ({5'h00,apu_square1_sweep_freq_r} - {5'h00,apu_sweep_product[17:7]})
+    : ({5'h00,apu_square1_sweep_freq_r} + {5'h00,apu_sweep_product[17:7]});
+// For x in 0..2047, subtraction cannot overflow. Addition overflows exactly
+// when x >= ceil(2048 * 2^shift / (2^shift + 1)). Checking those constant
+// thresholds avoids putting the multiplier and adder on the channel-enable
+// path. The full frequency result and the overflow check's clock are intact.
+wire [7:0] apu_sweep_overflow_by_shift = {
+    apu_square1_sweep_freq_r >= 11'd2033,
+    apu_square1_sweep_freq_r >= 11'd2017,
+    apu_square1_sweep_freq_r >= 11'd1986,
+    apu_square1_sweep_freq_r >= 11'd1928,
+    apu_square1_sweep_freq_r >= 11'd1821,
+    apu_square1_sweep_freq_r >= 11'd1639,
+    apu_square1_sweep_freq_r >= 11'd1366,
+    apu_square1_sweep_freq_r >= 11'd1024};
+wire apu_sweep_overflow = !REG_NR10_r[`NR10_SWEEP_NEG]
+                      && apu_sweep_overflow_by_shift[REG_NR10_r[`NR10_SWEEP_SHIFT]];
+`else
 wire [15:0] apu_square1_sweep_freq_next = REG_NR10_r[`NR10_SWEEP_NEG] ? ({5'h00,apu_square1_sweep_freq_r} - ({5'h00,apu_square1_sweep_freq_r} >> REG_NR10_r[`NR10_SWEEP_SHIFT])) : ({5'h00,apu_square1_sweep_freq_r} + ({5'h00,apu_square1_sweep_freq_r} >> REG_NR10_r[`NR10_SWEEP_SHIFT]));
+wire apu_sweep_overflow = |apu_square1_sweep_freq_next[15:11];
+`endif
 
 wire [12:0] apu_square1_period = {REG_NR14_r[`NR14_FREQ_MSB],REG_NR13_r[`NR13_FREQ_LSB],2'b00};
 wire signed [4:0] apu_square1_output = (apu_square1_enable_r & apu_square1_duty_r[apu_square1_pos_r]) ? {apu_square1_volume_r,1'b0} : 5'h00;
@@ -3522,6 +3796,18 @@ reg  [3:0]  apu_wave_sample_r;
 reg  [3:0]  apu_wave_data_r;
 //reg  [4:0]  apu_wave_data_shifted_r;
 reg  [3:0]  apu_wave_data_shifted_r;
+`ifdef MK2
+// Preserve the existing register transaction gate, including blocked writes
+// while the wave channel is active and the current APU-off behavior.
+wire apu_wave_write = REG_req_val && REG_NR52_r[`NR52_CONTROL_ENABLE]
+                      && (~apu_wave_enable_r | REG_req_dbg) && REG_address[7:4]==4'h3;
+gbc_wave_ram wave_ram(.CLK(CLK), .RST(cpu_ireset_r), .WE(apu_wave_write),
+  .CPU_ADDR(REG_address[3:0]), .WAVE_ADDR(apu_wave_pos_r[4:1]),
+  .DATA(REG_req_data), .CPU_Q(reg_wave_cpu_data), .WAVE_Q(reg_wave_apu_data));
+`else
+assign reg_wave_cpu_data = REG_WAV_r[reg_addr_r[3:0]];
+assign reg_wave_apu_data = REG_WAV_r[apu_wave_pos_r[4:1]];
+`endif
 wire [11:0] apu_wave_period = {REG_NR34_r[`NR34_FREQ_MSB],REG_NR33_r[`NR33_FREQ_LSB],1'b0};
 wire [4:0] apu_wave_output = (apu_wave_enable_r & |REG_NR32_r[`NR32_LEVEL]) ? {apu_wave_data_shifted_r,1'b0} : 5'h00;
 
@@ -3533,7 +3819,16 @@ reg  [2:0]  apu_noise_env_timer_r;
 reg  [3:0]  apu_noise_volume_r;
 reg  [14:0] apu_noise_lfsr_r;
 
+`ifdef MK2
+// Preserve every NR43 period, including shifts 14/15 and their later register
+// changes. Only the implementation of the shifter changes, not timer precision.
+wire [15:0] apu_noise_scale = 16'h0001 << REG_NR43_r[`NR43_LFSR_SHIFT];
+(* mult_style = "block" *) wire [18:0] apu_noise_product =
+    {REG_NR43_r[`NR43_LFSR_DIV],~|REG_NR43_r[`NR43_LFSR_DIV]} * apu_noise_scale;
+wire [21:0] apu_noise_period = {apu_noise_product,3'b000};
+`else
 wire [21:0] apu_noise_period = {15'h0000,REG_NR43_r[`NR43_LFSR_DIV],~|REG_NR43_r[`NR43_LFSR_DIV],3'h0} << REG_NR43_r[`NR43_LFSR_SHIFT];
+`endif
 wire [4:0] apu_noise_output = (apu_noise_enable_r & apu_noise_lfsr_r[0]) ? {apu_noise_volume_r,1'b0} : 5'h00;
 
 wire [6:0]  apu_data[1:0];
@@ -3566,7 +3861,7 @@ assign APU_DAT = {~apu_data_volume_r[1][9],apu_data_volume_r[1][8:0],~apu_data_v
 
 always @(posedge CLK) begin
   // Flop audio state since it is a critical path on MK2
-  for (i = 0; i < 2; i = i + 1) apu_data_r[i] <= apu_data[i];
+  for (apu_mix_i = 0; apu_mix_i < 2; apu_mix_i = apu_mix_i + 1) apu_data_r[apu_mix_i] <= apu_data[apu_mix_i];
 
   apu_data_volume_r[0][9:0] <= apu_data_r[0][6:0] * ({7'h00,REG_NR50_r[`NR50_MASTER_LEFT_VOLUME]}  + 1);
   apu_data_volume_r[1][9:0] <= apu_data_r[1][6:0] * ({7'h00,REG_NR50_r[`NR50_MASTER_RIGHT_VOLUME]} + 1);
@@ -3588,7 +3883,7 @@ always @(posedge CLK) begin
   endcase
 
   apu_wave_sample_update_r <= 0;
-  if (apu_wave_sample_update_r) apu_wave_sample_r <= apu_wave_pos_r[0] ? REG_WAV_r[apu_wave_pos_r[4:1]][3:0] : REG_WAV_r[apu_wave_pos_r[4:1]][7:4];
+  if (apu_wave_sample_update_r) apu_wave_sample_r <= apu_wave_pos_r[0] ? reg_wave_apu_data[3:0] : reg_wave_apu_data[7:4];
 
   if (cpu_ireset_r | ~REG_NR52_r[`NR52_CONTROL_ENABLE]) begin
     REG_NR10_r    <= 8'h00; // FF10
@@ -3620,6 +3915,7 @@ always @(posedge CLK) begin
     REG_NR52_r    <= 8'h00; // FF26
 
     // RT1 uses uninitialized WAV RAM data.  One possible set of SGB2 values used.
+`ifndef MK2
     if (cpu_ireset_r) begin
       REG_WAV_r[0]  <= 8'h08;//8'hAC;
       REG_WAV_r[1]  <= 8'hF7;//8'hDD;
@@ -3638,6 +3934,7 @@ always @(posedge CLK) begin
       REG_WAV_r[14] <= 8'h00;//8'hDA;
       REG_WAV_r[15] <= 8'h9F;//8'h48;
     end
+`endif
 
     apu_frame_step_r <= 0;
 
@@ -3831,7 +4128,7 @@ always @(posedge CLK) begin
       end
 
       // check sweep overflow
-      if (apu_square1_sweep_enable_r & |REG_NR10_r[`NR10_SWEEP_SHIFT] & |apu_square1_sweep_freq_next[15:11]) begin
+      if (apu_square1_sweep_enable_r & |REG_NR10_r[`NR10_SWEEP_SHIFT] & apu_sweep_overflow) begin
         apu_square1_enable_r <= 0;
         apu_square1_sweep_enable_r <= 0;
       end
@@ -3983,8 +4280,10 @@ always @(posedge CLK) begin
         8'h25: REG_NR51_r[7:0] <= REG_req_data[7:0];
         8'h26: {REG_NR52_r[7:7],REG_NR52_r[3:0]} <= {REG_req_data[7:7],REG_req_data[3:0]};
 
+`ifndef MK2
         8'h30, 8'h31, 8'h32, 8'h33, 8'h34, 8'h35, 8'h36, 8'h37,
         8'h38, 8'h39, 8'h3A, 8'h3B, 8'h3C, 8'h3D, 8'h3E, 8'h3F: if (~apu_wave_enable_r | REG_req_dbg) REG_WAV_r[REG_address[3:0]] <= REG_req_data;
+`endif
 
       endcase
     end
@@ -4028,18 +4327,7 @@ wire [7:0]  dbg_hram_rddata;
 wire [7:0]  dbg_hram_wrdata;
 
 `ifdef MK2
-hram hram (
-  .clka(CLK), // input clka
-  .wea(hram_wren), // input [0 : 0] wea
-  .addra(hram_address), // input [6 : 0] addra
-  .dina(hram_wrdata), // input [7 : 0] dina
-  .douta(hram_rddata), // output [7 : 0] douta
-  .clkb(CLK), // input clkb
-  .web(dbg_hram_wren), // input [0 : 0] web
-  .addrb(dbg_hram_address), // input [6 : 0] addrb
-  .dinb(dbg_hram_wrdata), // input [7 : 0] dinb
-  .doutb(dbg_hram_rddata) // output [7 : 0] doutb
-);
+assign dbg_hram_rddata = 8'd0; // SGB_MCU_ACCESS is disabled on Mk.II.
 `endif
 `ifdef MK3
 hram hram (
@@ -4082,6 +4370,15 @@ reg         mct_wr_r;
 reg  [7:0]  mct_mdr_r;
 reg         mct_conflict_r;   // this EXT access collides with the OAM DMA's bus
 wire        mct_bus_idle;     // the controller is not using the system bus
+
+`ifdef MK2
+wire mk2_hram_select = |(mct_state_r & ST_MCT_HRAM);
+gbc_cpu_memory cpu_memory(.CLK(CLK), .DEC_ADDR(dec_addr), .DEC_Q(dec_data),
+  .HRAM_SEL(mk2_hram_select), .HRAM_WE(hram_wren),
+  .HRAM_ADDR(hram_address), .HRAM_DATA(hram_wrdata), .HRAM_Q(hram_rddata),
+  .CRAM_WE(cram_we_a), .CRAM_ADDR_A(cram_a_index), .CRAM_DATA(reg_wr_data_r),
+  .CRAM_Q_A(cram_q_a_r), .CRAM_ADDR_B(cram_b_addr), .CRAM_Q_B(cram_q_b_r));
+`endif
 
 wire [15:0] mct_addr_d1 = mct_src_r ? EXE_MCT_req_addr_d1 : IFD_MCT_req_addr_d1;
 
@@ -4378,16 +4675,22 @@ assign DILATION = dilation_r;
 //   unspent at the next edge is the DMA owing an OAM byte, which is the only
 //   way the transfer can outlast its 160 M-cycles.
 //
-// The count is exported to GBDG +0C and has to read 0 on hardware; GBDG +1C
-// (DILATION) says how often the regime that would have produced it was met.
-reg  [15:0] starvation_r;
+// The diagnostic is exported to GBDG +0C and has to read 0 on hardware.
+// Mk.II retains a sticky fault flag: no player consumes the count, and any
+// nonzero value is a failure. Mk.III retains the original saturating count.
+`ifdef MK2
+localparam STARVATION_BITS=1;
+`else
+localparam STARVATION_BITS=16;
+`endif
+reg [STARVATION_BITS-1:0] starvation_r;
 wire        sys_access_in_flight = ((|(mct_state_r & (ST_MCT_DEC | ST_MCT_EXT | ST_MCT_END)) & ~mct_conflict_r)
                                     | |mct_settle_r)
                                  | (|dma_cred_r);
 always @(posedge CLK) begin
-  if (cpu_ireset_r)                          starvation_r <= 16'd0;
+  if (cpu_ireset_r)                          starvation_r <= 0;
   else if (CLK_BUS_EDGE & sys_access_in_flight & ~&starvation_r)
-                                             starvation_r <= starvation_r + 16'd1;
+                                             starvation_r <= starvation_r + 1'b1;
 end
 assign STARVATION = starvation_r;
 
@@ -4787,6 +5090,7 @@ end
 // be removed entirely or integrated into the MCU pipe (with some
 // concurrency limitations).
 
+`ifdef SGB_MCU_ACCESS
 parameter
   ST_DBG_IDLE     = 8'b00000001,
   ST_DBG_DEC      = 8'b00000010,
@@ -5268,6 +5572,29 @@ always @(posedge CLK) begin
 `endif
 
 end
+`else
+// Mk.II does not expose the optional state-debug window. Cut the controller
+// and its register-read muxes explicitly, rather than leaving a reset-only
+// state machine for the legacy optimizer to discover as unreachable.
+assign MCU_RSP = 1'b0;
+assign MCU_DATA_OUT = 8'd0;
+assign DBG_ADDR = 12'd0;
+assign dbg_vram_wren = 1'b0;
+assign dbg_vram_address = 13'd0;
+assign dbg_vram_bank = 1'b0;
+assign dbg_vram_wrdata = 8'd0;
+assign dbg_oam_wren = 1'b0;
+assign dbg_oam_address = 8'd0;
+assign dbg_oam_wrdata = 8'd0;
+assign dbg_hram_wren = 1'b0;
+assign dbg_hram_address = 7'd0;
+assign dbg_hram_wrdata = 8'd0;
+assign DBG_REG_req_val = 1'b0;
+assign DBG_REG_wren = 1'b0;
+assign DBG_REG_address = 8'd0;
+assign DBG_REG_data = 8'd0;
+assign cram_dbg_addr = 7'd0;
+`endif
 
 reg         step_r;
 assign      DBG_EXE_step = step_r;
@@ -5352,3 +5679,7 @@ assign DBG_BRK = 0;
 `endif
 
 endmodule
+
+`else
+`include "mk3/sgb_cpu.v"
+`endif

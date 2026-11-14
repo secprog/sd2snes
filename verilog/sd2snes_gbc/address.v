@@ -1,3 +1,5 @@
+// MkII port; the MkIII branch includes the unchanged pre-port source.
+`ifdef MK2
 `timescale 1 ns / 1 ns
 //////////////////////////////////////////////////////////////////////////////////
 // Company: Rehkopf
@@ -34,7 +36,6 @@ module address(
   output IS_WRITABLE,       // address somehow mapped as writable area?
   //input [23:0] SAVERAM_MASK,
   //input [23:0] ROM_MASK,
-  output msu_enable,
   //output srtc_enable,
   output gbc_view_enable,
   output gbc_ef_enable,
@@ -43,14 +44,7 @@ module address(
 );
 
 /* feature bits. see src/fpga_spi.c for mapping */
-parameter [2:0]
-  FEAT_DSPX = 0,
-  FEAT_ST0010 = 1,
-  FEAT_SRTC = 2,
-  FEAT_MSU1 = 3,
-  FEAT_213F = 4,
-  FEAT_2100 = 6
-;
+parameter FEAT_213F = 4;
 
 wire [23:0] SRAM_SNES_ADDR;
 
@@ -76,8 +70,6 @@ assign ROM_ADDR = SRAM_SNES_ADDR;
 
 assign ROM_HIT = IS_ROM | IS_WRITABLE;
 
-assign msu_enable = featurebits[FEAT_MSU1] & (!SNES_ADDR[22] && ((SNES_ADDR[15:0] & 16'hfff8) == 16'h2000));
-
 // GBC bridge window (GBC-CORE-CONTRACT.md section 3).  Both live in ROMSEL
 // territory (banks $C0-$FF assert /CART for the whole bank), so the generic
 // IS_ROM path in main.v already turns the data bus around for them; no
@@ -96,3 +88,7 @@ assign r213f_enable = featurebits[FEAT_213F] & (SNES_PA == 8'h3f);
 assign snescmd_enable = ({SNES_ADDR[22], SNES_ADDR[15:9]} == 8'b0_0010101);
 
 endmodule
+
+`else
+`include "mk3/address.v"
+`endif

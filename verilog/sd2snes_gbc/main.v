@@ -195,7 +195,15 @@ reg SNES_reset_strobe = 0;
 reg free_strobe = 0;
 reg ram_free_strobe = 0;
 
+`ifdef MK2
+// Move the deglitch AND across the last address register. Both operands are
+// one stage earlier, so every output bit still changes on the same clock.
+// This removes the AND and its fanout from every downstream address path.
+reg [23:0] SNES_ADDR;
+always @(posedge CLK2) SNES_ADDR <= SNES_ADDRr[5] & SNES_ADDRr[4];
+`else
 wire [23:0] SNES_ADDR = (SNES_ADDRr[6] & SNES_ADDRr[5]);
+`endif
 `ifdef MK2
 // Retimed two stages ahead of the existing deglitch output, not two clocks
 // after it: MATCH describes exactly the same address as SNES_ADDR each cycle.

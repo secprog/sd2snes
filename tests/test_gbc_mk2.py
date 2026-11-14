@@ -71,7 +71,8 @@ module gbc_timeout_actual(input CLK2, input [7:0] SNES_CPU_CLKr,
         address_shift = re.findall(r"^\s*SNES_ADDRr\[\d\] <=[^;]+;", main_source, re.M)
         if len(address_shift) != 7:
             raise RuntimeError("SNES address delay pipeline changed")
-        address_wire = re.search(r"wire \[23:0\] SNES_ADDR =[^;]+;", main_source)[0]
+        address_wire = re.search(r"reg \[23:0\] SNES_ADDR;\s*"
+                                 r"always @\(posedge CLK2\) SNES_ADDR <=[^;]+;", main_source)[0]
         command_start = main_source.index("gbc_command_decode command_decode(")
         command_instance = main_source[command_start:main_source.index(");", command_start)+2]
         view_start = main_source.index("gbc_view_decode view_decode(")

@@ -5,11 +5,22 @@ module gbc_command_tb;
   wire [23:0] ADDRESS;
   wire [8:0] MATCH,VIEW_MATCH;
   reg [8:0] original,original_view;
+  reg [23:0] address_history[0:6];
+  wire [23:0] original_address = address_history[6] & address_history[5];
+  integer stage;
+  always @(posedge CLK2) begin
+    address_history[0] <= SNES_ADDR_IN;
+    for(stage=1;stage<7;stage=stage+1)
+      address_history[stage] <= address_history[stage-1];
+  end
   integer i,j,b,cycles=0,seed=32'h128c73;
   gbc_command_actual dut(.*);
   task tick;
     begin
       #2; CLK2=1; #1;
+      if(cycles>=8 && ADDRESS !== original_address)
+        $fatal(1,"registered deglitch changed cycle=%0d got=%h old=%h",
+               cycles,ADDRESS,original_address);
       for(j=0;j<9;j=j+1) original[j]=(ADDRESS == 24'hef0000+j);
       original_view=0;
       case(ADDRESS[23:16])

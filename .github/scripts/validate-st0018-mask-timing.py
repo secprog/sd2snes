@@ -93,7 +93,8 @@ def contract(out):
     require(git("rev-parse", "HEAD^").decode().strip() in
             (BASE, "0ed56b93ad33fc1f87afa8bb1c920f83c89bc414",
              "d5227a31358c346e7019fc49218da4390a1ec83d",
-             "52c29908093e9f09292ee7c5c84539fe99539c4f"), "Exact reviewed parent chain")
+             "52c29908093e9f09292ee7c5c84539fe99539c4f",
+             "f6a79c87a08f445ac1d1b5ee1cdd8971eda22806"), "Exact reviewed parent chain")
     require(set(git("diff", "--name-only", BASE, "HEAD").decode().splitlines()) ==
             {CPU, MAKE, SELF, WORKFLOW}, "Exact four-file scope")
     original = git("show", BASE+":"+CPU)
@@ -394,14 +395,19 @@ def baseline(out):
     total, seen, rows = 0, set(), []
     with zipfile.ZipFile(io.BytesIO(raw)) as archive:
         members = [x for x in archive.infolist() if not x.is_dir()]
-        require(0 < len(members) <= 128, "Original bounded text files")
+        expected_names={"_temp/fpga-build.log"}|{
+            "sd2snes/sd2snes/verilog/sd2snes_st0018/"+n for n in
+            ("main.bld","main.bgn","main.par","main.syr","main.unroutes","main.twr","main_map.mrp","main_map.psr")}
+        require(len(members)==9 and {x.filename for x in members}==expected_names,
+                "Exact complete nine-file original report and build-log union")
         for entry in members:
             name = PurePosixPath(entry.filename)
             mode = entry.external_attr >> 16
             require(not name.is_absolute() and "\\" not in entry.filename and ":" not in entry.filename and
                     all(x not in ("",".","..") for x in name.parts) and
                     (mode & 0o170000) in (0, stat.S_IFREG), "Safe original regular path")
-            require(name.suffix in REPORTS and name.name.casefold() not in seen, "Expected unique text report")
+            require((name.suffix in REPORTS or entry.filename=="_temp/fpga-build.log") and
+                    name.name.casefold() not in seen, "Expected unique original report/build log")
             seen.add(name.name.casefold())
             require(entry.file_size <= 3_000_000, "Original file cap")
             b = archive.read(entry)
@@ -409,10 +415,11 @@ def baseline(out):
             b.decode("utf-8")
             total += len(b); require(total <= 8_000_000, "Original aggregate cap")
             write(out/name.name, b)
-            rows.append(dict(path=name.name,bytes=len(b),sha256=sha(b)))
+            rows.append(dict(path=name.name,originalPath=entry.filename,bytes=len(b),sha256=sha(b)))
     pins = {"main.par":"008681226fa4aeac64678e2c834706cb7f9a184afe5de102acf884b85ab623aa",
             "main.twr":"bce081d7f76fd76ba24190aa5d4f63803a140fbe79310ace4cfaf9a3609ec832",
             "main_map.mrp":"774892db062fec77ec40caef448b2dbba01317b1db5c22b4544ddcefe6a2de5f"}
+    pins["fpga-build.log"]="f913ce876e8a7c5dd9d778fca04b524543113b893ad3375f3cb69e4018c28ed5"
     for name, pin in pins.items():
         require(sha(read(out/name)) == pin, "Byte-exact original report: "+name)
     write(out/"baseline-index.json",rows)

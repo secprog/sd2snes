@@ -19,8 +19,8 @@ module gbc_apu_period_tb;
         old_sweep=control[3] ? frequency-delta : frequency+delta;
         #1;
         if(sweep !== old_sweep || sweep_overflow !== (|old_sweep[15:11]) || noise !== old_noise)
-          $fatal(1,"APU period mismatch NR10/NR43=%h frequency=%d sweep=%h/%h noise=%h/%h",
-                 control,frequency,sweep,old_sweep,noise,old_noise);
+          $fatal(1,"APU period mismatch NR10/NR43=%h frequency=%d sweep=%h/%h overflow=%b/%b noise=%h/%h",
+                 control,frequency,sweep,old_sweep,sweep_overflow,|old_sweep[15:11],noise,old_noise);
         checks=checks+1;
       end
     end

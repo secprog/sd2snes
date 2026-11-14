@@ -3750,20 +3750,17 @@ wire [15:0] apu_square1_sweep_freq_next = REG_NR10_r[`NR10_SWEEP_NEG]
 // when x >= ceil(2048 * 2^shift / (2^shift + 1)). Checking those constant
 // thresholds avoids putting the multiplier and adder on the channel-enable
 // path. The full frequency result and the overflow check's clock are intact.
-reg apu_sweep_add_overflow;
-always @* begin
-  case (REG_NR10_r[`NR10_SWEEP_SHIFT])
-    0: apu_sweep_add_overflow = apu_square1_sweep_freq_r >= 11'd1024;
-    1: apu_sweep_add_overflow = apu_square1_sweep_freq_r >= 11'd1366;
-    2: apu_sweep_add_overflow = apu_square1_sweep_freq_r >= 11'd1639;
-    3: apu_sweep_add_overflow = apu_square1_sweep_freq_r >= 11'd1821;
-    4: apu_sweep_add_overflow = apu_square1_sweep_freq_r >= 11'd1928;
-    5: apu_sweep_add_overflow = apu_square1_sweep_freq_r >= 11'd1986;
-    6: apu_sweep_add_overflow = apu_square1_sweep_freq_r >= 11'd2017;
-    7: apu_sweep_add_overflow = apu_square1_sweep_freq_r >= 11'd2033;
-  endcase
-end
-wire apu_sweep_overflow = !REG_NR10_r[`NR10_SWEEP_NEG] && apu_sweep_add_overflow;
+wire [7:0] apu_sweep_overflow_by_shift = {
+    apu_square1_sweep_freq_r >= 11'd2033,
+    apu_square1_sweep_freq_r >= 11'd2017,
+    apu_square1_sweep_freq_r >= 11'd1986,
+    apu_square1_sweep_freq_r >= 11'd1928,
+    apu_square1_sweep_freq_r >= 11'd1821,
+    apu_square1_sweep_freq_r >= 11'd1639,
+    apu_square1_sweep_freq_r >= 11'd1366,
+    apu_square1_sweep_freq_r >= 11'd1024};
+wire apu_sweep_overflow = !REG_NR10_r[`NR10_SWEEP_NEG]
+                      && apu_sweep_overflow_by_shift[REG_NR10_r[`NR10_SWEEP_SHIFT]];
 `else
 wire [15:0] apu_square1_sweep_freq_next = REG_NR10_r[`NR10_SWEEP_NEG] ? ({5'h00,apu_square1_sweep_freq_r} - ({5'h00,apu_square1_sweep_freq_r} >> REG_NR10_r[`NR10_SWEEP_SHIFT])) : ({5'h00,apu_square1_sweep_freq_r} + ({5'h00,apu_square1_sweep_freq_r} >> REG_NR10_r[`NR10_SWEEP_SHIFT]));
 wire apu_sweep_overflow = |apu_square1_sweep_freq_next[15:11];

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # GitHub-hosted native qualification only. Never skip fit or timing failures.
 set -euo pipefail
-case "$PROFILE" in compare-lut4-sat|gate-lut4-sat|gate-lut4-sat-area|gate-lut4-sat2|gate-lut4-sat4|gate-lut4-sat8|gate-lut4-choices|gate-lut4-satlut|gate-lut4-satlut2|gate-lut4-satlut128|gate-lut4-satlut-reverse|fixed-mux-sat|compare-sat|lut4-sat|fixed-mux-resub|lut4-resub|fixed-mux-area|lut4-area|fixed-mux|lut4) ;; *) exit 2 ;; esac
+case "$PROFILE" in gate-lut4-satlut-delay|gate-lut4-satlut-delay4|gate-lut4-delay-satlut|gate-lut4-critical-satlut|compare-lut4-sat|gate-lut4-sat|gate-lut4-sat-area|gate-lut4-sat2|gate-lut4-sat4|gate-lut4-sat8|gate-lut4-choices|gate-lut4-satlut|gate-lut4-satlut2|gate-lut4-satlut128|gate-lut4-satlut-reverse|fixed-mux-sat|compare-sat|lut4-sat|fixed-mux-resub|lut4-resub|fixed-mux-area|lut4-area|fixed-mux|lut4) ;; *) exit 2 ;; esac
 root=$PWD
 experiment="$root/.ci-tools/gbc-remap"
 native=$(find "$experiment/native" -name main_native.edf -print -quit)
@@ -92,7 +92,7 @@ cd "$experiment/candidate"
 par_status=0
 par -w "${par_args[@]}" main_map.ncd main.ncd main.pcf || par_status=$?
 trce_status=0
-trce -v 10 -n 10 -u 10 -fastpaths main.ncd main.pcf -o main.twr || trce_status=$?
+trce -v 1 -n 400 -u 10 -fastpaths main.ncd main.pcf -o main.twr || trce_status=$?
 [[ "$par_status" == 0 && "$trce_status" == 0 ]]
 grep -Eq 'Timing Score: 0 \(Setup: 0, Hold: 0' main.par
 grep -Eq 'Timing errors: 0[[:space:]]+Score: 0' main.twr

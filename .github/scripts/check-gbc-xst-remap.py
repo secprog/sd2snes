@@ -24,7 +24,8 @@ def run(name, commands, expect_counterexample=False):
     log = report / (name + ".log")
     # The 128-node structural SAT window exceeded the normal five-minute
     # mapping budget in Actions; keep that larger search bounded separately.
-    timeout = 900 if name == "gate-lut4-satlut128" else 300
+    timeout = 900 if name in {"gate-lut4-satlut128", "gate-lut4-satlut-delay",
+                              "gate-lut4-satlut-delay4", "gate-lut4-delay-satlut"} else 300
     result = subprocess.run(["yosys", "-Q", "-q", "-l", str(log), "-s", str(script)],
                             timeout=timeout)
     if expect_counterexample:
@@ -133,6 +134,14 @@ hard_and_outputs = {c["connections"]["LO"][0] for c in native["cells"].values()
 hard_and_carry = {n for n, c in carry.items()
                   if c["connections"]["DI"][0] in hard_and_outputs}
 compare_carry, gate_carry, short_carry, visited = set(), set(), set(), set()
+critical_carry = set()
+
+
+def critical_timing_cone(name):
+    # The first physically fitted design's worst paths traverse these cones.
+    return "/clk_gen/" in name or "/dirty_bitmap/" in name
+
+
 for name in carry:
     if name in visited:
         continue
@@ -143,6 +152,8 @@ for name in carry:
             chain.add(member)
             pending.extend(carry_edges[member] - chain)
     visited |= chain
+    if any(critical_timing_cone(member) for member in chain):
+        critical_carry |= chain
     if not chain & (sum_carry | hard_and_carry):
         gate_carry |= chain
         if not any("_wg_cy" in n for n in chain):
@@ -169,6 +180,8 @@ resub = ("balance; resub -K 6; rewrite; resub -K 6 -N 2; refactor; "
          "rewrite -z; resub -K 10 -N 2; balance; resub -K 12; refactor -z; "
          "resub -K 12 -N 2; rewrite -z; balance; ")
 area_tail = "dch -f; if -K 4 -a; mfs2; lutpack -S 1"
+structural_sat = ("strash; " + resub + area_tail + "; &get -m -n; "
+                  + "&mfs2 -K 4; " * 4 + "&satlut -N 64 -C 2000; ")
 compress_resub = "; ".join(command.strip() + " -l" for command in resub.split(";")
                            if command.strip()) + "; "
 profiles = (("fixed-mux", False, None),
@@ -224,6 +237,18 @@ profiles = (("fixed-mux", False, None),
             ("gate-lut4-satlut-reverse", True, "strash; " + resub + area_tail +
              "; &get -m -n; " + "&mfs2 -K 4; " * 4 +
              "&satlut -N 64 -C 2000; &satlut -N 64 -C 2000 -r; &put; lutpack -S 1"),
+            # Fit is now demonstrated, but the area mapping leaves thirteen
+            # logic levels on a failing dirty-row path. Try depth-constrained
+            # recovery and retaining the native fast structures in the two
+            # worst cones. Every variant still needs the same proofs and STA.
+            ("gate-lut4-satlut-delay", True, structural_sat +
+             "&mfs2 -K 4 -d -v; &put; lutpack -S 1"),
+            ("gate-lut4-satlut-delay4", True, structural_sat +
+             "&mfs2 -K 4 -d -R 4 -v; &put; lutpack -S 1"),
+            ("gate-lut4-delay-satlut", True, "strash; " + resub +
+             "dch -f; if -K 4; mfs2; lutpack -S 1; &get -m -n; " +
+             "&mfs2 -K 4; " * 4 + "&satlut -N 64 -C 2000; &put; lutpack -S 1"),
+            ("gate-lut4-critical-satlut", True, structural_sat + "&put; lutpack -S 1"),
             # Cost 1/2/4 for LUT4/5/6 reflects their decomposition into real
             # LUT4s plus MUXF5/F6. Let ABC select and group these cones anew.
             ("wide-lut5-resub", True, "strash; " + resub + "dch -f; if -a; mfs2"),
@@ -257,6 +282,12 @@ for profile, remap_mux, abc_script in profiles:
         logic_names |= compare_carry
     if profile.startswith("gate-lut4-"):
         logic_names |= gate_carry
+    if profile == "gate-lut4-critical-satlut":
+        critical_mux = {n for n, c in native["cells"].items()
+                        if critical_timing_cone(n) and c["type"] in {"MUXF5", "MUXF6", "MUXF7", "MUXF8"}}
+        if not critical_carry or not critical_mux:
+            raise ValueError("The reported critical native structures were not found")
+        logic_names -= critical_carry | critical_mux
     if profile == "short-carry-sat":
         logic_names |= short_carry | short_sums
     logic = [c for n, c in native["cells"].items() if n in logic_names]

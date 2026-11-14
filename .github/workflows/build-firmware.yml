@@ -169,7 +169,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        profile: [gate-lut4-satlut, gate-lut4-satlut2, gate-lut4-satlut128, gate-lut4-satlut-reverse]
+        profile: [gate-lut4-satlut-delay, gate-lut4-satlut-delay4, gate-lut4-delay-satlut, gate-lut4-critical-satlut]
         register_duplication: [project]
     uses: ./.github/workflows/gbc-native-remap.yml
     with:

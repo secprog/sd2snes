@@ -254,7 +254,7 @@ uint8_t sgb_update_romprops(snes_romprops_t *romprops, uint8_t *filename) {
     }
     
     /* Same LoROM slot for both cores; only which bitstream boots it differs.
-       core_is_gbc is set by gbc_id(); production Mk.II keeps it at zero. */
+       gbc_id() always selects GBC on MkII and honours GbcMode on MkIII. */
     romprops->fpga_conf = sgb_romprops.core_is_gbc ? FPGA_GBC : FPGA_SGB;
     romprops->load_address = 0x880000;
 

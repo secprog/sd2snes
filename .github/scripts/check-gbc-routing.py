@@ -1,5 +1,6 @@
 """Compile and exercise the actual GBC policy function on hosted runners."""
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 
@@ -8,6 +9,11 @@ source = (root / "src/gbc.c").read_text()
 start = source.index("#ifndef CONFIG_MK2\nstatic uint8_t gbc_ext_is_gbc")
 end = source.index("uint8_t gbc_bios_state", start)
 policy = source[start:end]
+loader = (root / "src/memory.c").read_text()
+start = loader.index("  romprops.has_msu1 = 0;", loader.index('printf("check MSU..."'))
+end = loader.index("  /* Xeno Crisis:", start)
+msu_policy = loader[start:end]
+feature = re.search(r"^#define FEAT_MSU1\s+[^\n]+", (root / "src/fpga_spi.h").read_text(), re.M)[0]
 harness = r'''
 #include <stdint.h>
 #include <stdio.h>
@@ -23,7 +29,20 @@ static void strlcpy_nul(uint8_t *out,const char *in,unsigned n) {
   assert(strlen(in)<n); strcpy((char *)out,in);
 }
 #define printf(...) ((void)0)
-''' + policy + r'''
+''' + policy + "\n" + feature + r'''
+static sgb_romprops_t sgb_romprops;
+static struct { unsigned has_spc7110,has_fx3,has_msu1,fpga_features; } romprops;
+static struct { unsigned has_nes; } nes_romprops;
+static unsigned msu_calls,msu_present;
+static int msu1_check(uint8_t *filename) {
+  assert(filename); msu_calls++;
+  if(msu_present) romprops.fpga_features |= FEAT_MSU1;
+  return msu_present;
+}
+static void load_msu_policy(uint8_t *filename) {
+  struct { uint8_t *filename; } c={filename};
+''' + msu_policy + r'''
+}
 #undef printf
 int main(void) {
   uint8_t *names[]={(uint8_t *)"test.gb",(uint8_t *)"test.GBC",NULL};
@@ -49,6 +68,26 @@ int main(void) {
     checked++;
   }
   printf("PASS: %u actual loader-policy cases; boot, player and feature word agree\n",checked);
+  checked=0;
+  for(unsigned spc=0;spc<2;spc++) for(unsigned fx3=0;fx3<2;fx3++)
+  for(unsigned nes=0;nes<2;nes++) for(unsigned gb=0;gb<2;gb++)
+  for(unsigned gbc=0;gbc<2;gbc++) for(unsigned present=0;present<2;present++) {
+    romprops.has_spc7110=spc; romprops.has_fx3=fx3;
+    romprops.has_msu1=1; romprops.fpga_features=0;
+    nes_romprops.has_nes=nes; sgb_romprops.has_sgb=gb; sgb_romprops.core_is_gbc=gbc;
+    msu_calls=0; msu_present=present;
+    load_msu_policy(names[0]);
+#ifdef CONFIG_MK2
+    unsigned want_call=!nes && !spc && !fx3 && !(gb && gbc);
+#else
+    unsigned want_call=!nes;
+#endif
+    assert(msu_calls==want_call);
+    assert(romprops.has_msu1==(want_call && present));
+    assert(romprops.fpga_features==((want_call && present) ? FEAT_MSU1 : 0));
+    checked++;
+  }
+  printf("PASS: %u actual MSU activation cases; unsupported cores skip file-open side effects\n",checked);
 }
 '''
 with tempfile.TemporaryDirectory(prefix="gbc-routing-") as temp:

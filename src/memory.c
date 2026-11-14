@@ -1481,8 +1481,8 @@ static const uint8_t *load_chip_core(void) {
 }
 
 /* NES, Master System, Atari 2600 and the Game Boy Color core: experimental, and without
-   savestates or the in-game menu.  On the Mk.II a .nes / .sms is refused earlier and a .gbc
-   runs on the Super Game Boy, so there it is true for a .a26 only (the sd2snes_atari core). */
+   savestates or the in-game menu. MkII uses its Atari and GB/GBC players;
+   its .nes / .sms loaders still refuse those games earlier. */
 static int load_is_experimental(void) {
   return nes_romprops.has_nes || sms_active || a26_romprops.has_a26
       || (sgb_romprops.has_sgb && sgb_romprops.core_is_gbc);
@@ -1777,8 +1777,10 @@ uint32_t load_rom(uint8_t* filename, uint32_t base_addr, uint8_t flags) {
      chip on the Mk.II.  The check must be SKIPPED, not undone afterwards: msu1_check()
      raises FEAT_MSU1 itself and leaves the .msu open with a link map.
      The FX3 variant of the GSU core (fpga_gsu3.bit) trades the DAC for the FX3
-     logic, so FX3 carts get the same treatment; classic GSU keeps MSU-1. */
-  if(!romprops.has_spc7110 && !romprops.has_fx3)
+     logic, so FX3 carts get the same treatment; classic GSU keeps MSU-1.
+     The fitted MkII GBC core also omits MSU-1; MkIII retains it. */
+  if(!romprops.has_spc7110 && !romprops.has_fx3
+     && !(sgb_romprops.has_sgb && sgb_romprops.core_is_gbc))
 #endif
   /* The NES core has no MSU-1 data buffer (MSU_DATA is off in sd2snes_nes/config.vh):
      a .msu next to a .nes must not send the game to msu1_loop with a dead MSU-1. */

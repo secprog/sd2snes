@@ -41,14 +41,13 @@ board exclusions, so adding a core cannot silently leave it out of CI.
 
 | FPGA target | Runtime cores (mini is built and packaged in addition) |
 | --- | --- |
-| MkII (19) | base, basex, bootleg, col20, cx4, dsp, dspx, gsu, gsu3, obc1, sa1, sdd1, sgb, sgb_msu, spc7110, st0011, st0018, test, xc |
+| MkII (19) | atari, base, basex, bootleg, col20, cx4, dsp, dspx, gbc, gsu, gsu3, obc1, sa1, sdd1, spc7110, st0011, st0018, test, xc |
 | MkIII LPC / STM32 (23) | a26, base, bootleg, col20, cx4, dsp, gbc, gsu, gsu3, nes, nes_k, nes_mmc3, nes_mmc5, obc1, sa1, sdd1, sgb, sms, spc7110, st0011, st0018, test, xc |
 
 MkII uses separate `basex` and `dspx` images for extended mappers and competition
-carts, and separate SGB feature variants. MkIII includes those mapper features
-in its base/DSP images and uses one SGB image. NES, SMS, Atari and GBC loaders
-are MkIII-only in normal releases; the experimental MkII GBC path below is
-separate. Legacy NES/SMS ISE project files do not enable their MkII MCU loaders.
+carts. Its GB/GBC core replaces both old SGB variants. MkIII includes those mapper
+features in its base/DSP images and retains its SGB and GBC cores. NES and SMS
+loaders remain MkIII-only. Legacy NES/SMS ISE project files do not enable their MkII MCU loaders.
 Other board-specific feature and timing settings are retained.
 
 Complete board sets are verified before publishing `fpga-mk2` / `fpga-mk3`
@@ -58,15 +57,16 @@ also copied to the SD-card package because its boot diagnostics load it from
 the card. Core logs, utilization and timing reports are retained on success
 and failure; a failed core cannot cancel the other core jobs.
 For a focused retry, select `build: fpga` and set `fpga_cores` to targets such as
-`mk2:sgb,mk2:sgb_msu,mk2:gsu`. This builds only those cores without packaging or
+`mk2:gbc,mk2:gsu`. This builds only those cores without packaging or
 cancelling a full release run. Leave that field empty to check all FPGA cores.
 `placement_seeds` optionally tests several MkII map/PAR cost tables in parallel
 (for example `2,3,4`). Seed trials publish separate images and reports; normal
 release builds use the settings committed in each ISE project.
 Every MkII implementation generates a detailed TRACE report, including hold paths
 and paths not covered by the existing constraints. Missing reports, report errors
-and timing violations are build failures; CI explicitly sets `IGNORE_TIMING=0` on
-both FPGA targets.
+and timing violations are build failures unless explicitly accepted. The selected
+MkII GBC implementation has the recorded setup-timing acceptance described below;
+that exception does not relax other cores' timing checks.
 These reports describe the committed timing model, not hardware qualification.
 Legacy MkII cores with no explicit DCM jitter budget or I/O delays still require
 separate timing-budget review and hardware validation, even with Timing Score 0.

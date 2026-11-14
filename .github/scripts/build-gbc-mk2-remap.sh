@@ -5,9 +5,13 @@ set -euo pipefail
 root=$PWD
 experiment="$root/.ci-tools/gbc-remap"
 mkdir -p "$experiment/native" "$experiment/reports"
-for name in main.ngc main_native.edf main_map.mrp vram.ngc oam.ngc snescmd_buf.ngc; do
+for name in main.ngc main_native.edf main_map.mrp; do
   test -s "verilog/sd2snes_gbc/$name"
   cp "verilog/sd2snes_gbc/$name" "$experiment/native/$name"
+done
+for name in vram.ngc oam.ngc snescmd_buf.ngc; do
+  test -s "verilog/sd2snes_sgb/ip/mk2/$name"
+  cp "verilog/sd2snes_sgb/ip/mk2/$name" "$experiment/native/$name"
 done
 git rev-parse HEAD > "$experiment/reports/source-commit.txt"
 sha256sum "$experiment/native/"* > "$experiment/reports/native-files.sha256"

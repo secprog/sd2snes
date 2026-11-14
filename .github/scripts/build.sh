@@ -96,7 +96,7 @@ case "${1:-}" in
     sha256sum misc/nes_snes.bin misc/nes_snes.map misc/sms_snes.bin \
       misc/gbc_snes.bin misc/gbc_snes_mk2.bin misc/a26_snes.bin >> snes/players/source-output.sha256
     # cgb_boot.bin awaits separate collection and acceptance against the unchanged
-    # firmware CRC/size contract; its absence still blocks MkIII packaging.
+    # firmware CRC/size contract; its absence blocks both boards' packaging.
     exit "$menu_text_status"
     ;;
   *)

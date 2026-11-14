@@ -202,6 +202,16 @@ profiles = (("fixed-mux", False, None),
              "; &get -m -n; " + "&mfs2 -K 4; " * 4 + "&put; lutpack -S 1"),
             ("gate-lut4-sat8", True, "strash; " + resub + area_tail +
              "; &get -m -n; " + "&mfs2 -K 4; " * 8 + "&put; lutpack -S 1"),
+            # Recover additional cuts after SAT optimization, then try the
+            # independent structural SAT mapper on the same four-pass base.
+            # The complete native-boundary and serialized-EDIF proofs below
+            # still apply, as do the physical fit and timing requirements.
+            ("gate-lut4-choices", True, "strash; " + resub + area_tail +
+             "; &get -m -n; " + "&mfs2 -K 4; " * 4 +
+             "&mfs2 -K 4 -q; &put; lutpack -S 1"),
+            ("gate-lut4-satlut", True, "strash; " + resub + area_tail +
+             "; &get -m -n; " + "&mfs2 -K 4; " * 4 +
+             "&satlut -N 64 -C 2000; &put; lutpack -S 1"),
             # Cost 1/2/4 for LUT4/5/6 reflects their decomposition into real
             # LUT4s plus MUXF5/F6. Let ABC select and group these cones anew.
             ("wide-lut5-resub", True, "strash; " + resub + "dch -f; if -a; mfs2"),

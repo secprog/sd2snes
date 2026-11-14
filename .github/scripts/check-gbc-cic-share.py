@@ -52,10 +52,10 @@ endmodule
         if negative:
             # Lose the just-computed integrator result while leaving the
             # actual integrator history intact. The next stage must fail.
-            marker = "sgb_comb_work[i] <= sgb_filter_result[i];"
-            if body.count(marker) != 2:
+            marker = "sgb_comb_work[channel] <= sgb_filter_result[channel];"
+            if body.count(marker) != 1:
                 raise RuntimeError("The shared work-register updates changed")
-            candidate = body.replace(marker, "sgb_comb_work[i] <= 0;", 1)
+            candidate = body.replace(marker, "sgb_comb_work[channel] <= 0;", 1)
         source = work / ("negative.v" if negative else "actual.v")
         source.write_text(candidate)
         script = work / "proof.ys"

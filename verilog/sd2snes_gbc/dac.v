@@ -65,6 +65,8 @@ assign sgb_bufi[0] = {{(`SGB_CIC_BITS-10){sgb_apu_dat[9]}}, sgb_apu_dat[9:0]};
 reg [(`SGB_CIC_BITS-1):0] sgb_comb_work[1:0];
 wire sgb_comb_phase = sgb_cicstate == ST1_COMB1 || sgb_cicstate == ST2_COMB2
                       || sgb_cicstate == ST3_COMB3;
+wire sgb_filter_step = sgb_comb_phase || sgb_cicstate == ST4_INT1
+                      || sgb_cicstate == ST5_INT2 || sgb_cicstate == ST6_INT3;
 wire [(`SGB_CIC_BITS-1):0] sgb_filter_input[1:0], sgb_filter_history[1:0];
 wire [(`SGB_CIC_BITS-1):0] sgb_filter_result[1:0];
 genvar channel;
@@ -74,6 +76,13 @@ generate for(channel=0; channel<2; channel=channel+1) begin : g_cic_arithmetic
   assign sgb_filter_history[channel] = sgb_comb_phase ? sgb_ci[0][channel] : sgb_io[0][channel];
   assign sgb_filter_result[channel] = sgb_filter_input[channel]
        + (sgb_filter_history[channel] ^ {`SGB_CIC_BITS{sgb_comb_phase}}) + sgb_comb_phase;
+  // One explicit enable lets XST use the flip-flops' CE pins. Assigning work
+  // separately in the integrator and comb branches creates a word-wide hold
+  // mux even though both branches write exactly the same arithmetic result.
+  always @(posedge clkin)
+    if(reset) sgb_comb_work[channel] <= 0;
+    else if(!sgb_apu_clk_edge_r && sgb_filter_step)
+      sgb_comb_work[channel] <= sgb_filter_result[channel];
 end endgenerate
 `endif
 
@@ -86,9 +95,6 @@ always @(posedge clkin) begin
       {sgb_ci[2][i], sgb_ci[1][i], sgb_ci[0][i]} <= 0;
       {sgb_io[2][i], sgb_io[1][i], sgb_io[0][i]} <= 0;
       {sgb_co[2][i], sgb_co[1][i], sgb_co[0][i]} <= 0;
-`ifdef MK2
-      sgb_comb_work[i] <= 0;
-`endif
     end
     
     sgb_phasediv <= 0;
@@ -104,7 +110,6 @@ always @(posedge clkin) begin
         sgb_io[0][i] <= sgb_io[1][i];
         sgb_io[1][i] <= sgb_io[2][i];
         sgb_io[2][i] <= sgb_filter_result[i];
-        sgb_comb_work[i] <= sgb_filter_result[i];
       end
     if (sgb_cicstate == ST1_COMB1 || sgb_cicstate == ST2_COMB2 || sgb_cicstate == ST3_COMB3)
       for (i = 0; i < 2; i = i + 1) begin
@@ -113,7 +118,6 @@ always @(posedge clkin) begin
         // Every comb stage takes its input from work. INT3 has already
         // placed the final integrator result there before COMB1 starts.
         sgb_ci[2][i] <= sgb_comb_work[i];
-        sgb_comb_work[i] <= sgb_filter_result[i];
         if (sgb_cicstate == ST3_COMB3) sgb_co[2][i] <= sgb_filter_result[i];
       end
 `endif

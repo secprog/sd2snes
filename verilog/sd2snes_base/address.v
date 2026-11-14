@@ -273,6 +273,38 @@ wire [23:0] BSX_ADDR = bsx_regs[2] ? {1'b0, SNES_ADDR[22:0]}
                                    : {2'b00, SNES_ADDR[22:16], SNES_ADDR[14:0]};
 
 
+`ifdef MK2
+`ifdef BASE_EXT
+// Keep every arithmetic branch and its original width, with no shared adder
+// feeding the complete normal mapper. The original patch override remains last.
+wire [23:0] basex_normal_addr;
+basex_normal_mapper_unshared normal_addr_unshared(
+  .MAPPER_DEC(MAPPER_DEC),
+  .IS_SAVERAM(IS_SAVERAM),
+  .SAVERAM_ADDR(SAVERAM_ADDR),
+  .SNES_ADDR(SNES_ADDR),
+  .SAVERAM_MASK(SAVERAM_MASK),
+  .BS_PACK_HIT_HI(BS_PACK_HIT_HI),
+  .BS_PACK_HIT(BS_PACK_HIT),
+  .LOROM_OFF(LOROM_OFF),
+  .BSLOROM_HI(BSLOROM_HI),
+  .BSLOROM_ADDR(BSLOROM_ADDR),
+  .ROM_MASK(ROM_MASK),
+  .MAP_GAMARS(MAP_GAMARS),
+  .BSX_IS_CARTROM(BSX_IS_CARTROM),
+  .BSX_IS_PSRAM(BSX_IS_PSRAM),
+  .BSX_ADDR(BSX_ADDR),
+  .bs_page_enable(bs_page_enable),
+  .bs_page(bs_page),
+  .bs_page_offset(bs_page_offset),
+  .MAP_SUFAMI(MAP_SUFAMI),
+  .ST_SAVERAM_B(ST_SAVERAM_B),
+  .SAVERAM_MASK_B(SAVERAM_MASK_B),
+  .ROM_MASK_B(ROM_MASK_B),
+  .NORMAL_ADDR(basex_normal_addr)
+);
+assign SRAM_SNES_ADDR = IS_PATCH ? SNES_ADDR : basex_normal_addr;
+`else
 assign SRAM_SNES_ADDR = IS_PATCH
                         ? SNES_ADDR
                         : ((MAPPER_DEC[3'b000])
@@ -365,6 +397,101 @@ assign SRAM_SNES_ADDR = IS_PATCH
                                 + 24'hC00000)
                             )
                            : 24'b0);
+`endif
+`else
+assign SRAM_SNES_ADDR = IS_PATCH
+                        ? SNES_ADDR
+                        : ((MAPPER_DEC[3'b000])
+                          ?(IS_SAVERAM
+                            ? SAVERAM_ADDR + ({SNES_ADDR[20:16], SNES_ADDR[12:0]}
+                                            & SAVERAM_MASK)
+                            : BS_PACK_HIT_HI                        /* HiROM pack: $En:0000 -> bank*$10000 */
+                            ? (24'h900000 + {4'h0, SNES_ADDR[19:0]})
+                            : ({1'b0, SNES_ADDR[22:0]} & ROM_MASK))
+
+                          :(MAPPER_DEC[3'b001])
+                          ?(IS_SAVERAM
+                            ? SAVERAM_ADDR + ({SNES_ADDR[20:16], SNES_ADDR[14:0]}
+                                            & SAVERAM_MASK)
+                            : BS_PACK_HIT                          /* LoROM pack: $Cn:8000 -> bank*$8000 */
+                            ? (24'h900000 + {4'h0, LOROM_OFF})
+                            : BSLOROM_HI
+                            ? (BSLOROM_ADDR & ROM_MASK)
+                            : ({1'b0, ~SNES_ADDR[23], SNES_ADDR[22:16], SNES_ADDR[14:0]}
+                               & ROM_MASK))
+
+                            /* Gamars Puzzle.
+                            *
+                            * ROM mapping is otherwise ordinary LoROM.
+                            *
+                            * $31:6000-$61ff
+                            * $41:6000-$61ff
+                            *
+                            * both map to the same SaveRAM offsets $000-$1ff.
+                            */
+                          :(MAP_GAMARS)
+                          ?(IS_SAVERAM
+                            ? SAVERAM_ADDR
+                               + ({15'b0, SNES_ADDR[8:0]} & SAVERAM_MASK)
+                            : ({1'b0,
+                                ~SNES_ADDR[23],
+                                SNES_ADDR[22:16],
+                                SNES_ADDR[14:0]}
+                               & ROM_MASK))
+
+                          :(MAPPER_DEC[3'b010])
+                          ?(IS_SAVERAM
+                            ? SAVERAM_ADDR + ({SNES_ADDR[20:16], SNES_ADDR[12:0]}
+                                            & SAVERAM_MASK)
+                            : ({1'b0, !SNES_ADDR[23], SNES_ADDR[21:0]}
+                               & ROM_MASK))
+                          :(MAPPER_DEC[3'b011])
+                          ?(  IS_SAVERAM
+                              ? SAVERAM_ADDR + {SNES_ADDR[18:16], SNES_ADDR[11:0]}
+                              : BSX_IS_CARTROM
+                              ? (24'h800000 + ({SNES_ADDR[22:16], SNES_ADDR[14:0]} & 24'h0fffff))
+                              : BSX_IS_PSRAM
+                              ? (24'h400000 + (BSX_ADDR & 24'h07FFFF))
+                              : bs_page_enable
+                              ? (24'h900000 + {bs_page,bs_page_offset})
+                              : (BSX_ADDR & 24'h0fffff)
+                           )
+                           :(MAP_SUFAMI)  /* Sufami Turbo */
+                           ?(IS_SAVERAM
+                             ? (SNES_ADDR[20]
+                                ? (ST_SAVERAM_B + ({SNES_ADDR[19:16], SNES_ADDR[15:0]}
+                                                 & SAVERAM_MASK_B))
+                                : (SAVERAM_ADDR + ({SNES_ADDR[19:16], SNES_ADDR[15:0]}
+                                                 & SAVERAM_MASK)))
+                             : (SNES_ADDR[22:21] == 2'b00)   /* ST BIOS, 256 KB */
+                             ? ({4'b0, SNES_ADDR[20:16], SNES_ADDR[14:0]} & 24'h03ffff)
+                             : (SNES_ADDR[22:21] == 2'b01)   /* Slot A ROM */
+                             ? (24'h100000 | ({4'b0, SNES_ADDR[20:16], SNES_ADDR[14:0]}
+                                            & ROM_MASK))
+                             : (24'h700000 | ({4'b0, SNES_ADDR[20:16], SNES_ADDR[14:0]}
+                                            & ROM_MASK_B))  /* Slot B ROM; mask 0 = empty slot */
+                            )
+                           :(MAPPER_DEC[3'b110])
+                           ?(IS_SAVERAM
+                             ? SAVERAM_ADDR + ((SNES_ADDR[14:0] - 15'h6000)
+                                             & SAVERAM_MASK)
+                             :(SNES_ADDR[15]
+                               ?({1'b0, SNES_ADDR[23:16], SNES_ADDR[14:0]})
+                               :({2'b10,
+                                  SNES_ADDR[23],
+                                  SNES_ADDR[21:16],
+                                  SNES_ADDR[14:0]}
+                                )
+                              )
+                            )
+                           :(MAPPER_DEC[3'b111])
+                           ?(IS_SAVERAM
+                             ? SNES_ADDR
+                             : (({1'b0, SNES_ADDR[22:0]} & ROM_MASK)
+                                + 24'hC00000)
+                            )
+                           : 24'b0);
+`endif
 
 assign ROM_ADDR = SRAM_SNES_ADDR;
 
@@ -395,3 +522,127 @@ assign branch1_enable = (SNES_ADDR == 24'h002A1F);
 assign branch2_enable = (SNES_ADDR == 24'h002A59);
 assign branch3_enable = (SNES_ADDR == 24'h002A5E);
 endmodule
+
+`ifdef MK2
+`ifdef BASE_EXT
+// This synthesis boundary changes resource allocation, not mapping semantics.
+// Keep the complete original expression, including all masks, pages and mappers.
+(* keep_hierarchy="yes", resource_sharing="no" *)
+module basex_normal_mapper_unshared(
+  input [7:0] MAPPER_DEC,
+  input IS_SAVERAM,
+  input [23:0] SAVERAM_ADDR,
+  input [23:0] SNES_ADDR,
+  input [23:0] SAVERAM_MASK,
+  input BS_PACK_HIT_HI,
+  input BS_PACK_HIT,
+  input [19:0] LOROM_OFF,
+  input BSLOROM_HI,
+  input [23:0] BSLOROM_ADDR,
+  input [23:0] ROM_MASK,
+  input MAP_GAMARS,
+  input BSX_IS_CARTROM,
+  input BSX_IS_PSRAM,
+  input [23:0] BSX_ADDR,
+  input bs_page_enable,
+  input [9:0] bs_page,
+  input [8:0] bs_page_offset,
+  input MAP_SUFAMI,
+  input [23:0] ST_SAVERAM_B,
+  input [23:0] SAVERAM_MASK_B,
+  input [23:0] ROM_MASK_B,
+  output [23:0] NORMAL_ADDR
+);
+assign NORMAL_ADDR = ((MAPPER_DEC[3'b000])
+                          ?(IS_SAVERAM
+                            ? SAVERAM_ADDR + ({SNES_ADDR[20:16], SNES_ADDR[12:0]}
+                                            & SAVERAM_MASK)
+                            : BS_PACK_HIT_HI                        /* HiROM pack: $En:0000 -> bank*$10000 */
+                            ? (24'h900000 + {4'h0, SNES_ADDR[19:0]})
+                            : ({1'b0, SNES_ADDR[22:0]} & ROM_MASK))
+
+                          :(MAPPER_DEC[3'b001])
+                          ?(IS_SAVERAM
+                            ? SAVERAM_ADDR + ({SNES_ADDR[20:16], SNES_ADDR[14:0]}
+                                            & SAVERAM_MASK)
+                            : BS_PACK_HIT                          /* LoROM pack: $Cn:8000 -> bank*$8000 */
+                            ? (24'h900000 + {4'h0, LOROM_OFF})
+                            : BSLOROM_HI
+                            ? (BSLOROM_ADDR & ROM_MASK)
+                            : ({1'b0, ~SNES_ADDR[23], SNES_ADDR[22:16], SNES_ADDR[14:0]}
+                               & ROM_MASK))
+
+                            /* Gamars Puzzle.
+                            *
+                            * ROM mapping is otherwise ordinary LoROM.
+                            *
+                            * $31:6000-$61ff
+                            * $41:6000-$61ff
+                            *
+                            * both map to the same SaveRAM offsets $000-$1ff.
+                            */
+                          :(MAP_GAMARS)
+                          ?(IS_SAVERAM
+                            ? SAVERAM_ADDR
+                               + ({15'b0, SNES_ADDR[8:0]} & SAVERAM_MASK)
+                            : ({1'b0,
+                                ~SNES_ADDR[23],
+                                SNES_ADDR[22:16],
+                                SNES_ADDR[14:0]}
+                               & ROM_MASK))
+
+                          :(MAPPER_DEC[3'b010])
+                          ?(IS_SAVERAM
+                            ? SAVERAM_ADDR + ({SNES_ADDR[20:16], SNES_ADDR[12:0]}
+                                            & SAVERAM_MASK)
+                            : ({1'b0, !SNES_ADDR[23], SNES_ADDR[21:0]}
+                               & ROM_MASK))
+                          :(MAPPER_DEC[3'b011])
+                          ?(  IS_SAVERAM
+                              ? SAVERAM_ADDR + {SNES_ADDR[18:16], SNES_ADDR[11:0]}
+                              : BSX_IS_CARTROM
+                              ? (24'h800000 + ({SNES_ADDR[22:16], SNES_ADDR[14:0]} & 24'h0fffff))
+                              : BSX_IS_PSRAM
+                              ? (24'h400000 + (BSX_ADDR & 24'h07FFFF))
+                              : bs_page_enable
+                              ? (24'h900000 + {bs_page,bs_page_offset})
+                              : (BSX_ADDR & 24'h0fffff)
+                           )
+                           :(MAP_SUFAMI)  /* Sufami Turbo */
+                           ?(IS_SAVERAM
+                             ? (SNES_ADDR[20]
+                                ? (ST_SAVERAM_B + ({SNES_ADDR[19:16], SNES_ADDR[15:0]}
+                                                 & SAVERAM_MASK_B))
+                                : (SAVERAM_ADDR + ({SNES_ADDR[19:16], SNES_ADDR[15:0]}
+                                                 & SAVERAM_MASK)))
+                             : (SNES_ADDR[22:21] == 2'b00)   /* ST BIOS, 256 KB */
+                             ? ({4'b0, SNES_ADDR[20:16], SNES_ADDR[14:0]} & 24'h03ffff)
+                             : (SNES_ADDR[22:21] == 2'b01)   /* Slot A ROM */
+                             ? (24'h100000 | ({4'b0, SNES_ADDR[20:16], SNES_ADDR[14:0]}
+                                            & ROM_MASK))
+                             : (24'h700000 | ({4'b0, SNES_ADDR[20:16], SNES_ADDR[14:0]}
+                                            & ROM_MASK_B))  /* Slot B ROM; mask 0 = empty slot */
+                            )
+                           :(MAPPER_DEC[3'b110])
+                           ?(IS_SAVERAM
+                             ? SAVERAM_ADDR + ((SNES_ADDR[14:0] - 15'h6000)
+                                             & SAVERAM_MASK)
+                             :(SNES_ADDR[15]
+                               ?({1'b0, SNES_ADDR[23:16], SNES_ADDR[14:0]})
+                               :({2'b10,
+                                  SNES_ADDR[23],
+                                  SNES_ADDR[21:16],
+                                  SNES_ADDR[14:0]}
+                                )
+                              )
+                            )
+                           :(MAPPER_DEC[3'b111])
+                           ?(IS_SAVERAM
+                             ? SNES_ADDR
+                             : (({1'b0, SNES_ADDR[22:0]} & ROM_MASK)
+                                + 24'hC00000)
+                            )
+                           : 24'b0);
+endmodule
+`endif
+`endif

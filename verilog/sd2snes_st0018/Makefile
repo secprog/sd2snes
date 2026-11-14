@@ -18,6 +18,10 @@ HEADER = config.vh
 XIL_IP =
 XIL_IPCORE_DIR = ip/mk2
 
+# Keep the original catalog immutable while CoreGen writes its products.
+XIL_IP_INPUT_DIR := $(XIL_IPCORE_DIR)
+XIL_IPCORE_DIR := $(XIL_IP_INPUT_DIR)/build
+
 INT_IP = pll
 
 include ../settings.mk

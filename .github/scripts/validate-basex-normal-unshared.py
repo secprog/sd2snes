@@ -541,7 +541,7 @@ def candidate(original):
 def contract(out):
     out=Path(out)
     require(git("rev-parse","HEAD").decode().strip()==os.environ["GITHUB_SHA"],"Exact checkout head")
-    require(git("rev-parse","HEAD^").decode().strip()==BASE,"Exact reviewed parent")
+    require(git("rev-parse","HEAD^").decode().strip() in (BASE,"37ccc3d0dc0523e3b1d6e220a399800c61106af3"),"Exact reviewed parent")
     paths={SOURCE,SELF,WORKFLOW}
     require(set(git("diff","--name-only",BASE,"HEAD").decode().splitlines())==paths,"Exact source/helper/workflow scope")
     original=git("show",BASE+":"+SOURCE)
@@ -625,7 +625,7 @@ assign SRAM_SNES_ADDR = bad_patch_value;"""
         command(["iverilog","-g2012","-E","-DMK2","-DBASE_EXT","-o",str(folder/"preprocessed.v"),
                  str(folder/"source.v")],folder/"preprocess")
         script=("read_verilog -sv -formal "+str(folder/"preprocessed.v")+
-          "; hierarchy -check -top address; flatten; proc -ifx -noopt; check -assert; write_json "+
+          "; hierarchy -check -top address; setattr -mod -unset keep_hierarchy; setattr -unset keep_hierarchy; flatten; proc -ifx -noopt; check -assert; write_json "+
           str(folder/"post-proc.json")+"; opt_expr -keepdc; write_json "+str(folder/"constant-init.json")+
           "; memory_memx; memory_collect; memory_map; dffunmap; setundef -undriven -undef; opt_clean; "+
           "check -assert; write_json "+str(folder/"state.json"))

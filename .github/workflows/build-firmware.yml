@@ -36,6 +36,9 @@ on:
         description: Diagnose logic mapping; with mk2_run_id, prove native EDIF remapping and enforce fit/timing
         type: boolean
         default: false
+      gbc_remap_profiles:
+        description: Optional JSON array of native GBC mapping profiles; empty uses the timing experiment matrix
+        type: string
       placement_seeds:
         description: For MkII fpga mode only, optional comma-separated placer seeds (1..100)
         type: string
@@ -169,7 +172,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        profile: [gate-lut4-satlut-delay, gate-lut4-satlut-delay4, gate-lut4-delay-satlut, gate-lut4-critical-satlut]
+        profile: ${{ fromJSON(inputs.gbc_remap_profiles || '["gate-lut4-satlut-delay", "gate-lut4-satlut-delay4", "gate-lut4-delay-satlut", "gate-lut4-critical-satlut"]') }}
         register_duplication: [project]
     uses: ./.github/workflows/gbc-native-remap.yml
     with:

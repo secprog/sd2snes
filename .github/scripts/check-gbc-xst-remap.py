@@ -139,7 +139,8 @@ critical_carry = set()
 
 def critical_timing_cone(name):
     # The first physically fitted design's worst paths traverse these cones.
-    return "/clk_gen/" in name or "/dirty_bitmap/" in name
+    # Native EDIF identifiers sanitize hierarchy separators to underscores.
+    return "_clk_gen_" in name or "_dirty_bitmap_" in name
 
 
 for name in carry:
@@ -283,11 +284,18 @@ for profile, remap_mux, abc_script in profiles:
     if profile.startswith("gate-lut4-"):
         logic_names |= gate_carry
     if profile == "gate-lut4-critical-satlut":
+        mux_types = {"MUXF5", "MUXF6", "MUXF7", "MUXF8"}
         critical_mux = {n for n, c in native["cells"].items()
-                        if critical_timing_cone(n) and c["type"] in {"MUXF5", "MUXF6", "MUXF7", "MUXF8"}}
+                        if critical_timing_cone(n) and c["type"] in mux_types}
         if not critical_carry or not critical_mux:
             raise ValueError("The reported critical native structures were not found")
         logic_names -= critical_carry | critical_mux
+        # Rendering and EDIF splicing select by type OR explicit name. Keep
+        # noncritical muxes selected by name only, so the preserved muxes are
+        # genuinely fixed boundaries in both proofs and the emitted netlist.
+        logic_types -= mux_types
+        print(f"Preserving {len(critical_carry)} critical carry cells and "
+              f"{len(critical_mux)} critical fast multiplexers", flush=True)
     if profile == "short-carry-sat":
         logic_names |= short_carry | short_sums
     logic = [c for n, c in native["cells"].items() if n in logic_names]

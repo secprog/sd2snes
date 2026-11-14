@@ -19,3 +19,12 @@ INT_IP = pll
 
 include ../settings.mk
 include ../common.mk
+
+# Retain the original MAP command while performing a source-pinned two-FF
+# physical relocation after MAP. The shared PAR/TRCE recipe stays unchanged.
+# Explicit main.ngd avoids passing the hook/manifest prerequisites to MAP.
+main_map.ncd: main.ngd dma4_ff_relocation.tcl dma4_ff_physical.tcl dma4_ff_relocation.sha256
+	$(call T,[mk2] fpga_$(CORE) - Map)
+	$(eval XILINX_MAP_OPTS := $(shell $(XILINX_ENV) $(XILINX_BIN)/xtclsh $(XILINX_SCRIPTS)/xgenmapcmd.tcl sd2snes_$(CORE).xise $(ISE_CTABLE)))
+	$(XILINX_ENV) $(XILINX_BIN)/map -p $(XILINX_PART) $(XILINX_MAP_OPTS) -o $@ main.ngd main.pcf || { status=$$?; rm -f "$@"; exit $$status; }
+	$(XILINX_ENV) $(XILINX_BIN)/xtclsh dma4_ff_physical.tcl "$(XILINX_BIN)" main_map.ncd main.pcf dma4_ff_relocation.sha256 || { status=$$?; rm -f "$@"; exit $$status; }

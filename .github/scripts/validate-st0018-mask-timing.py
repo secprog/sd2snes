@@ -94,7 +94,8 @@ def contract(out):
             (BASE, "0ed56b93ad33fc1f87afa8bb1c920f83c89bc414",
              "d5227a31358c346e7019fc49218da4390a1ec83d",
              "52c29908093e9f09292ee7c5c84539fe99539c4f",
-             "f6a79c87a08f445ac1d1b5ee1cdd8971eda22806"), "Exact reviewed parent chain")
+             "f6a79c87a08f445ac1d1b5ee1cdd8971eda22806",
+             "a41a1e1d7d51d3609880fa009bce3220325d3e5d"), "Exact reviewed parent chain")
     require(set(git("diff", "--name-only", BASE, "HEAD").decode().splitlines()) ==
             {CPU, MAKE, SELF, WORKFLOW}, "Exact four-file scope")
     original = git("show", BASE+":"+CPU)
@@ -522,7 +523,7 @@ def parse_timing(par, twr):
     slack = {"setup":[],"hold":[],"other":[]}
     for line in twr.splitlines():
         if line.lstrip().startswith("Slack"):
-            m = re.match(r"\s*Slack(?:\s+\((setup|hold) path\))?:\s*([+-]?\d+(?:\.\d+)?)ns\b",line)
+            m = re.match(r"\s*Slack(?:\s+\((setup|hold) paths?\))?:\s*([+-]?\d+(?:\.\d+)?)ns\b",line)
             require(m is not None,"Every displayed slack parsed")
             slack[m[1] or "other"].append(float(m[2]))
     require(slack["setup"] and slack["hold"],"Actual setup and hold records")
@@ -567,6 +568,11 @@ def controls(out):
         require(original.count(old)==1,"Unique report mutation")
         replacement=original.replace(old,new,1)
         cases.append((name,replacement if key=="par" else par,replacement if key=="twr" else twr,False))
+    plural=twr.replace("(setup path)","(setup paths)").replace("(hold path)","(hold paths)")
+    cases.extend([("plural-clean",par,plural,True),
+                  ("plural-negative-setup",par,plural.replace("0.028ns","-0.001ns"),False),
+                  ("plural-negative-hold",par,plural.replace("0.433ns","-0.001ns"),False),
+                  ("malformed-plural",par,plural.replace("setup paths","setup pathsx"),False)])
     cases.extend([("duplicate-par",par+par,twr,False),("duplicate-trace",par,twr+twr,False)])
     rows=[]
     for name,p,t,expected in cases:

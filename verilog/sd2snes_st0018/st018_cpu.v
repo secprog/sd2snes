@@ -335,7 +335,10 @@ always @* begin
   // LSL keeps bits i >= n; LSR/ASR keep bits i < 32-n (mirror image)
   for (ci = 0; ci < 32; ci = ci + 1) begin
     if (ctl_typ == 2'd0) ctl_mask[ci]    = (ci >= ctl_n);
-    else                 ctl_mask[31-ci] = (ci >= ctl_n);
+    // Assign the same constant-unrolled destination in both branches.
+    // Mirroring the comparison preserves the original complete 32-bit mask
+    // without asking XST to combine complementary partial-vector writes.
+    else                 ctl_mask[ci] = (31-ci >= ctl_n);
   end
 end
 

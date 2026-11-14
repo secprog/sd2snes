@@ -453,8 +453,13 @@ wire        dset    = wr2_r & wr_diff_r;
 // The fourth byte is padding. No byte includes cells from a different row.
 wire [6:0] didx = STAT_OFF[6:0] - 7'h20;
 wire [7:0] dirty_read;
+// This is exactly rd_mask[wr_row2_r] for every valid write row. Compare
+// row numbers directly instead of decoding all rows and selecting one again.
+wire dirty_write_clear = wr_row2_r < 18 && row_frozen_r[wr_row2_r]
+                      && (rd_all || (rd_one && rd_row == wr_row2_r));
 c6_dirty_ram dirty_bitmap(.CLK(CLK), .RST(RST), .ALL(c6_reset),
   .SET(dset), .ROW(wr_row2_r), .COL(wr_col2_r), .CLEAR(rd_mask),
+  .CLEAR_WRITE_ROW(dirty_write_clear),
   .BIDX(didx), .BYTE(dirty_read));
 `else
 wire [5:0]  didx  = STAT_OFF[7] ? {2'b10, STAT_OFF[3:0]} : {1'b0, STAT_OFF[4:0]};

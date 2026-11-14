@@ -6,7 +6,8 @@ module gbc_dirty_ram_tb;
   reg [6:0] BIDX=0;
   wire [7:0] BYTE;
   c6_dirty_ram dut(.CLK(CLK), .RST(RST), .ALL(ALL), .SET(SET),
-    .ROW(ROW), .COL(COL), .CLEAR(CLEAR), .BIDX(BIDX), .BYTE(BYTE));
+    .ROW(ROW), .COL(COL), .CLEAR(CLEAR), .CLEAR_WRITE_ROW(ROW<18 ? CLEAR[ROW] : 1'b0),
+    .BIDX(BIDX), .BYTE(BYTE));
   reg [359:0] expected;
   reg [7:0] expected_byte;
   reg [23:0] expected_row;

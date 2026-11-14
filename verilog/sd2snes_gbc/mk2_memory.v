@@ -217,7 +217,8 @@ endmodule
 // padding removes cross-row reads and their division/parity/bank selection.
 // Tags retain immediate reset/restart/ROW_DONE, and SET still wins CLEAR.
 module c6_dirty_ram(input CLK, RST, ALL, SET, input [4:0] ROW, COL,
-                    input [17:0] CLEAR, input [6:0] BIDX, output reg [7:0] BYTE);
+                    input [17:0] CLEAR, input CLEAR_WRITE_ROW,
+                    input [6:0] BIDX, output reg [7:0] BYTE);
   reg [17:0] valid, default_one;
   wire [17:0] clear_rows = CLEAR | {18{RST}};
   wire set_ok = SET && ROW < 18 && COL < 20;
@@ -229,7 +230,10 @@ module c6_dirty_ram(input CLK, RST, ALL, SET, input [4:0] ROW, COL,
   (* ram_style = "distributed" *) reg [19:0] even_rows [0:15];
   (* ram_style = "distributed" *) reg [19:0] odd_rows [0:15];
   wire [19:0] write_word = ROW[0] ? odd_rows[ROW[4:1]] : even_rows[ROW[4:1]];
-  wire [19:0] base_word = clear_rows[ROW] ? 20'd0
+  // The caller supplies CLEAR[ROW] directly from its command comparison.
+  // Re-selecting that bit from the decoded 18-row vector adds a long mux
+  // path before the RAM write. Reset and SET-over-CLEAR priority are intact.
+  wire [19:0] base_word = (RST || CLEAR_WRITE_ROW) ? 20'd0
                          : valid[ROW] ? write_word : {20{default_one[ROW]}};
   wire [19:0] read_even = even_rows[BIDX[6:3]], read_odd = odd_rows[BIDX[6:3]];
   reg [7:0] read_byte, mask_byte;

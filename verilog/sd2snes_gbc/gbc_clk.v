@@ -255,6 +255,14 @@ reg [15:0] tgt_sum_r;
 reg [16:0] tgt_diff_r;
 reg [15:0] tgt_low_r, k2_lo_low_r;
 reg [16:0] k2_hi_low_r;
+reg signed [16:0] slew_delta_r;
+reg slew_lo_wrap_r;
+// Compare against constants in the commit stage instead of comparing two
+// variable 16-bit bounds there. The difference is sampled with the bounds.
+// Preserve even the wrapped lower-bound case for every 16-bit rate value.
+wire slew_up = slew_delta_r > 17'sd8429;
+wire slew_down = slew_lo_wrap_r ? slew_delta_r < 17'sd57107
+                               : slew_delta_r < -17'sd8429;
 `else
 reg  signed [23:0] tgt_r;
 reg  signed [23:0] k2_hi_r;     // k2 + slew, registered so ST_SLEW2 only compares
@@ -335,6 +343,7 @@ always @(posedge CLK) begin
 `ifdef MK2
     tgt_sum_r <= 0; tgt_diff_r <= 0; tgt_low_r <= 0;
     k2_hi_low_r <= 0; k2_lo_low_r <= 0;
+    slew_delta_r <= 0; slew_lo_wrap_r <= 0;
     p_large_r <= 0; p_negative_r <= 0;
 `else
     tgt_r      <= 24'sd0;
@@ -477,6 +486,8 @@ always @(posedge CLK) begin
 `ifdef MK2
         k2_hi_low_r <= {1'b0,rate_low_r} + 17'd8429;
         k2_lo_low_r <= rate_low_r - 16'd8429;
+        slew_delta_r <= $signed({1'b0,tgt_low_r}) - $signed({1'b0,rate_low_r});
+        slew_lo_wrap_r <= rate_low_r < 16'd8429;
 `else
         k2_hi_r <= k2_cur_w + slew_w;
         k2_lo_r <= k2_cur_w - slew_w;
@@ -490,8 +501,8 @@ always @(posedge CLK) begin
         if (!exact_mode)
 `ifdef MK2
           rate_low_r <= !locked_q ? tgt_low_r
-                      : ({1'b0,tgt_low_r} > k2_hi_low_r) ? k2_hi_low_r[15:0]
-                      : (tgt_low_r < k2_lo_low_r) ? k2_lo_low_r : tgt_low_r;
+                      : slew_up ? k2_hi_low_r[15:0]
+                      : slew_down ? k2_lo_low_r : tgt_low_r;
 `else
           k2_r <= (tgt_r > k2_hi_r) ? k2_hi_r[K2_BITS-1:0]
                 : (tgt_r < k2_lo_r) ? k2_lo_r[K2_BITS-1:0]

@@ -41,11 +41,11 @@ board exclusions, so adding a core cannot silently leave it out of CI.
 
 | FPGA target | Runtime cores (mini is built and packaged in addition) |
 | --- | --- |
-| MkII (19) | atari, base, basex, bootleg, col20, cx4, dsp, dspx, gbc, gsu, gsu3, obc1, sa1, sdd1, spc7110, st0011, st0018, test, xc |
+| MkII (21) | atari, base, basex, bootleg, col20, cx4, dsp, dspx, gbc, gsu, gsu3, obc1, sa1, sdd1, sgb, sgb_msu, spc7110, st0011, st0018, test, xc |
 | MkIII LPC / STM32 (23) | a26, base, bootleg, col20, cx4, dsp, gbc, gsu, gsu3, nes, nes_k, nes_mmc3, nes_mmc5, obc1, sa1, sdd1, sgb, sms, spc7110, st0011, st0018, test, xc |
 
 MkII uses separate `basex` and `dspx` images for extended mappers and competition
-carts. Its GB/GBC core replaces both old SGB variants. MkIII includes those mapper
+carts. Its GB/GBC core is available alongside both SGB variants. MkIII includes those mapper
 features in its base/DSP images and retains its SGB and GBC cores. NES and SMS
 loaders remain MkIII-only. Legacy NES/SMS ISE project files do not enable their MkII MCU loaders.
 Other board-specific feature and timing settings are retained.
@@ -84,8 +84,11 @@ single board. These commands do not bypass FPGA timing or synthesis guards.
 The MkII port retains both rendering modes, the complete 160x144 image, C6
 colour conversion and the existing GB audio output. C6 uses external SRAM
 and a planar row cache on MkII. Its wire-$05 player must be paired with the
-MkII core; the MkIII player uses wire $03. MkII now routes every `.gb` and
-`.gbc` image through this core, replacing the old SGB variants in its package.
+MkII core; the MkIII player uses wire $03. Both boards default to `GbcMode=0`
+(Auto): a `.gbc` extension or CGB-capable header selects GBC; other Game Boy
+images select SGB. `Prefer SGB` and `Prefer GBC` remain available globally and
+per game. MkII packages retain `fpga_sgb.bit` and `fpga_sgb_msu.bit` alongside
+`fpga_gbc.bit`; only the selected core is loaded into the FPGA.
 MkIII keeps its original core, MSU-1 path and configurable SGB/GBC routing.
 Hosted source-identity checks compare MkIII against the pre-port commit and
 MkII against the accepted layout before implementation.

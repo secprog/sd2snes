@@ -29,7 +29,7 @@ on:
         options: [none, all, clock]
         default: none
       gbc_mcu_check:
-        description: Also compile the default MkII GB/GBC firmware with a freshly built bootstrap
+        description: Also compile MkII SGB/GBC firmware with a freshly built bootstrap
         type: boolean
         default: false
       gbc_yosys_check:
@@ -209,6 +209,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 .github/scripts/check-fpga-manifest.py self-test
+          python3 .github/scripts/check-fpga-manifest.py matrix
           bash .github/scripts/check-mcu.sh --self-test
 
   prepare-software:
@@ -610,7 +611,7 @@ jobs:
 
   gbc-mcu:
     if: inputs.build == 'fpga' && inputs.gbc_mcu_check && contains(inputs.fpga_cores, 'mk2:gbc')
-    name: Check default MkII GB/GBC firmware
+    name: Check MkII SGB/GBC firmware
     needs: [mini-mk2, prepare-software]
     runs-on: ubuntu-24.04
     timeout-minutes: 45

@@ -228,9 +228,8 @@ typedef struct __attribute__ ((__packed__)) _cfg_block {
      the Super Game Boy can run keeps its border and SGB colourisation), 2 = Prefer GBC (every
      Game Boy image). Read at load time by gbc_id() (src/gbc.c), which rewrites the boot ROM,
      the SNES-side image and the FPGA core for that one load; the enum is gbc_mode_t in gbc.h
-     and the value IS the clamp max in cfg_items[], so do not renumber. MkIII-only selection:
-     MkII always uses the GB/GBC core for .gb/.gbc, regardless of this byte
-     (the menu greys the selector on a Mk.II). YAML GbcMode + menu "Game Boy Color mode" (SGB
+     and the value IS the clamp max in cfg_items[], so do not renumber. Both boards use
+     this selection and default to Auto. YAML GbcMode + menu "Game Boy Color mode" (SGB
      menu). Default 0. */
   uint8_t  gbc_sync;                /* CFG @ $1D2: how the GBC core clocks the Game Boy --
      0 = Genlock (the GB frame is locked to the SNES frame, 60.0988 Hz / +0.62%, so the SNES

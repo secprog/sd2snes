@@ -115,7 +115,7 @@ static const struct { uint16_t off; uint8_t fl, ap; } gameopt_list[] = {
   GO(sgb_spr_increase,        F_SGB, AP_GB),              /* config.yml has it on the Mk.III only */
   GO(sgb_clock_fix,           F_SGB, AP_GB),
   GO(sgb_volume_boost,        0, AP_GB),                  /* the GBC core's chipfeat has it too */
-  GO(gbc_mode,                GAMEOPT_F_MK3, AP_GB),
+  GO(gbc_mode,                0, AP_GB),
   GO(gbc_sync,                0, AP_GB),                 /* GBC core on either board */
   GO(gbc_stretch,             0, AP_GB),
   GO(gb_rotate_buttons,       0, AP_GB),                  /* SGB BIOS patch / GBC player block, at load */
@@ -172,10 +172,6 @@ static int go_na(unsigned i) {
   uint8_t ap = gameopt_list[i].ap;
   if(!(ap & go_cls & AP_ALL)) return 1;
   if((ap >> 5) && !(go_cls & GO_CHIP(ap >> 5))) return 1;
-#ifdef CONFIG_MK2
-  /* Every MkII Game Boy game uses the GBC player, without SGB hooks or MSU-1. */
-  if((go_cls & AP_ALL) == AP_GB && ((GO_FL(i) & F_SGB) || (ap & AP_MSU))) return 1;
-#endif
   return go_board_na(i);
 }
 
@@ -396,10 +392,8 @@ static void go_stage(const uint8_t *val, uint8_t result) {
   b[GAMEOPT_H_RESULT] = result;
   for(unsigned i = 0; i < GO_N; i++) {
     uint16_t off = GO_OFF(i) | ((GO_FL(i) & GAMEOPT_F_LIVE) ? 0x8000 : 0);
-#ifndef CONFIG_MK2
-    /* MkIII can select either core; MkII always uses the GBC player. */
+    /* Both boards can select either Game Boy core. */
     if(go_cls == AP_GB) off |= (GO_FL(i) & (F_SGB | F_GBC)) << 11;
-#endif
     b[GAMEOPT_VAL + i] = go_na(i) ? GAMEOPT_V_NA : val[i];
     b[GAMEOPT_GLOBAL + i] = go_active ? go_glob[i] : *go_cfg(i);
     b[GAMEOPT_OFF + 2 * i] = off;

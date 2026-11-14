@@ -6,7 +6,7 @@ import tempfile
 
 root = Path(__file__).resolve().parents[2]
 source = (root / "src/gbc.c").read_text()
-start = source.index("#ifndef CONFIG_MK2\nstatic uint8_t gbc_ext_is_gbc")
+start = source.index("static uint8_t gbc_ext_is_gbc")
 end = source.index("uint8_t gbc_bios_state", start)
 policy = source[start:end]
 loader = (root / "src/memory.c").read_text()
@@ -54,11 +54,8 @@ int main(void) {
     strcpy((char *)SGBFW,"legacy-boot"); strcpy((char *)SGBSR,"legacy-player");
     CFG.gbc_mode=mode; CFG.gbc_sync=sync; CFG.sgb_volume_boost=v;
     gbc_id(&p,names[n]);
-#ifdef CONFIG_MK2
-    unsigned want=has;
-#else
+    /* MkII and MkIII share Auto / Prefer SGB / Prefer GBC selection. */
     unsigned want=has && (mode==1 ? cgb==0xc0 : mode==2 ? 1 : (n==1 || (cgb&0x80)));
-#endif
     assert(p.core_is_gbc==want);
     assert(p.has_sgb==has && p.header.name[15]==cgb);
     assert(!strcmp((char *)SGBFW,want ? GBC_BOOT_FILE_STR : "legacy-boot"));

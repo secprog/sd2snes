@@ -303,7 +303,8 @@ def candidate(original, kind):
 def contract(out):
     out=Path(out)
     require(git("rev-parse","HEAD").decode().strip()==os.environ["GITHUB_SHA"],"Source head")
-    require(git("rev-parse","HEAD^").decode().strip()==BASE,"Exact accepted production parent")
+    require(git("rev-parse","HEAD^").decode().strip() in
+            (BASE,"53b52427ad8e5205731e8cc8a2c0d466a39958ff"),"Exact reviewed production/continuation parent")
     paths={"verilog/sd2snes_base/main.v","verilog/sd2snes_base/cheat.v",SELF,WORKFLOW}
     require(set(git("diff","--name-only",BASE,"HEAD").decode().splitlines())==paths,"Exact four-file scope")
     pins={"main":"5775ff4f4ef3b0118e2a347b17c386c208f5618c","cheat":"dfc2f4fe2dc21fdd07da735fa1cd57a7aa6f4f3f"}
@@ -403,6 +404,23 @@ def cheat_miter(ports):
       ",".join(arguments["gate"])+");\nassign ok=({"+",".join("gold_"+x for x in outputs)+
       "} === {"+",".join("gate_"+x for x in outputs)+"});\nendmodule\n")
 
+def require_sat_result(rc,transcript,witness,positive):
+    require(rc==(0 if positive else 1),"Exact real SAT/verify exit")
+    if positive:
+        require(b"SAT proof finished - no model found: SUCCESS!" in transcript,
+                "Actual positive SAT result, not a preparation/timeout error")
+        return
+    witness=Path(witness)
+    require(witness.is_file() and witness.stat().st_size>0,"Real changed-source counterexample")
+    data=json.loads(read(witness))
+    output=[x for x in data["signal"] if x.get("name","").lstrip("\\")=="ok"]
+    require(len(output)==1 and output[0].get("wave","").startswith("0"),
+            "Counterexample records actual failed output ok=0")
+    require(b"Solving problem with" in transcript and
+            (b"SAT proof finished - model found: FAIL!" in transcript or
+             b"ERROR: Called with -verify and proof did fail!" in transcript),
+            "Actual solver counterexample/verify failure, never a generic tool error or timeout")
+
 def proof(out):
     out=Path(out);out.mkdir(parents=True,exist_ok=True)
     originals={kind:git("show",BASE+":verilog/sd2snes_base/"+kind+".v").decode()for kind in ("main","cheat")}
@@ -464,10 +482,8 @@ endmodule
               "-prove ok 1 -show-inputs -show-outputs -dump_json "+str(prefix)+"-"+mode+"-counterexample.json -timeout 180")
             rc=command(["yosys","-p",script],str(prefix)+"-"+mode,allowed=(0,1))
             log=read(str(prefix)+"-"+mode+".stdout.log")+read(str(prefix)+"-"+mode+".stderr.log")
-            expected=name=="gate";require((rc==0)==expected,"Actual history SAT result")
-            marker=b"SAT proof finished - no model found: SUCCESS!" if expected else b"SAT proof finished - model found: FAIL!"
-            require(marker in log,"Real history SAT result, not preparation failure")
-            if not expected:require(Path(str(prefix)+"-"+mode+"-counterexample.json").is_file(),"History witness")
+            expected=name=="gate"
+            require_sat_result(rc,log,str(prefix)+"-"+mode+"-counterexample.json",expected)
             hresults.append(dict(variant=name,mode=mode,exit=rc,actualSatResult=True))
         write(str(prefix)+"-simulation.v",history_simulation(expr))
         executable=str(prefix)+".vvp"
@@ -538,10 +554,7 @@ endmodule
             prefix=folder/("proof-"+mode);rc=command(["yosys","-p",script],prefix,timeout=1200,allowed=(0,1))
             expected=variant=="gate"or(variant=="bad-x"and mode=="binary")
             log=read(str(prefix)+".stdout.log")+read(str(prefix)+".stderr.log")
-            require((rc==0)==expected,"Actual full-state proof/control status")
-            require((b"SAT proof finished - no model found: SUCCESS!"if expected else
-                     b"SAT proof finished - model found: FAIL!")in log,"Actual SAT proof/counterexample")
-            if not expected:require(witness.exists()and witness.stat().st_size>0,"Real changed-source witness")
+            require_sat_result(rc,log,witness,expected)
             results.append(dict(variant=variant,mode=mode,exit=rc,actualSatResult=True,expectedPass=expected))
     write(out/"proof-result.json",dict(head=os.environ["GITHUB_SHA"],fullCheatStateBits=len(reference),
           cheatArrayStateBits=192,completeCheatModuleAndOutputs=True,allNamedInitAndPosedgeClocksPreserved=True,

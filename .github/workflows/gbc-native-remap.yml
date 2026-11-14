@@ -24,7 +24,7 @@ on:
         type: choice
         required: true
         default: fixed-mux-sat
-        options: [compare-lut4-sat, gate-lut4-sat, gate-lut4-sat-area, gate-lut4-sat2, gate-lut4-sat4, gate-lut4-sat8, gate-lut4-choices, gate-lut4-satlut, fixed-mux-sat, compare-sat, lut4-sat, fixed-mux-resub, lut4-resub, fixed-mux-area, lut4-area, fixed-mux, lut4]
+        options: [compare-lut4-sat, gate-lut4-sat, gate-lut4-sat-area, gate-lut4-sat2, gate-lut4-sat4, gate-lut4-sat8, gate-lut4-choices, gate-lut4-satlut, gate-lut4-satlut2, gate-lut4-satlut128, gate-lut4-satlut-reverse, fixed-mux-sat, compare-sat, lut4-sat, fixed-mux-resub, lut4-resub, fixed-mux-area, lut4-area, fixed-mux, lut4]
       register_duplication:
         description: Candidate MAP register duplication (reference retains project options)
         type: choice

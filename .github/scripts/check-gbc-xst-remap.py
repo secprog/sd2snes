@@ -212,6 +212,15 @@ profiles = (("fixed-mux", False, None),
             ("gate-lut4-satlut", True, "strash; " + resub + area_tail +
              "; &get -m -n; " + "&mfs2 -K 4; " * 4 +
              "&satlut -N 64 -C 2000; &put; lutpack -S 1"),
+            ("gate-lut4-satlut2", True, "strash; " + resub + area_tail +
+             "; &get -m -n; " + "&mfs2 -K 4; " * 4 +
+             "&satlut -N 64 -C 2000; &satlut -N 64 -C 2000; &put; lutpack -S 1"),
+            ("gate-lut4-satlut128", True, "strash; " + resub + area_tail +
+             "; &get -m -n; " + "&mfs2 -K 4; " * 4 +
+             "&satlut -N 128 -C 5000; &put; lutpack -S 1"),
+            ("gate-lut4-satlut-reverse", True, "strash; " + resub + area_tail +
+             "; &get -m -n; " + "&mfs2 -K 4; " * 4 +
+             "&satlut -N 64 -C 2000; &satlut -N 64 -C 2000 -r; &put; lutpack -S 1"),
             # Cost 1/2/4 for LUT4/5/6 reflects their decomposition into real
             # LUT4s plus MUXF5/F6. Let ABC select and group these cones anew.
             ("wide-lut5-resub", True, "strash; " + resub + "dch -f; if -a; mfs2"),

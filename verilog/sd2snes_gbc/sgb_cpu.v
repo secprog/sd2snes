@@ -2906,11 +2906,15 @@ wire [3:0]  ppu_pix_obj_row = (ppu_scanline_r[3:0] - ppu_oam_lut_ypos_r[ppu_pix_
 
 `ifdef MK2
 // A sprite covers this line when line-Y is -16..-1 (16 high), or
-// -16..-9 (8 high). Keep the ninth bit: an 8-bit difference would also
-// accept +240..+255, wrapping off-screen sprites onto the visible line.
-wire [8:0] ppu_oam_y_delta = {1'b0,ppu_scanline_r} - {1'b0,ppu_oam_data_r};
-wire ppu_oam_line_hit = (&ppu_oam_y_delta[8:4])
-  && (REG_LCDC_r[`LCDC_SP_SIZE] || !ppu_oam_y_delta[3]);
+// -16..-9 (8 high). Compute both nibble differences in parallel instead of
+// carrying a borrow through all nine bits and then reducing five sum bits.
+// The upper difference is either zero with a low-nibble borrow, or -1
+// without one. Its fifth bit rejects off-screen +240..+255 wraparound.
+wire [4:0] ppu_oam_low_delta = {1'b0,ppu_scanline_r[3:0]} - {1'b0,ppu_oam_data_r[3:0]};
+wire [4:0] ppu_oam_high_delta = {1'b0,ppu_scanline_r[7:4]} - {1'b0,ppu_oam_data_r[7:4]};
+wire ppu_oam_line_hit = ((ppu_oam_high_delta == 5'd0 && ppu_oam_low_delta[4])
+                    || ((&ppu_oam_high_delta) && !ppu_oam_low_delta[4]))
+  && (REG_LCDC_r[`LCDC_SP_SIZE] || !ppu_oam_low_delta[3]);
 wire oam_position_step = !cpu_ireset_r && ppu_dot_edge && DBG_advance;
 wire oam_position_write = oam_position_step && ppu_state_r==ST_PPU_OAM_POS
   && !ppu_oam_lut_full && ppu_pix_phase_r && !DMA_active

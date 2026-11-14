@@ -1899,8 +1899,11 @@ reg         dbg_advance_r;
 assign      DBG_advance = dbg_advance_r;
 
 `ifdef MK2
-// A single SP enable and two-way data mux avoids decoding every destination
-// again in each data bit. Preserve the original PC/POP/SP write conditions.
+// MkII register-file writeback. Separate enables prevent destination cases
+// from building data-wide hold muxes. All register writes stay in the
+// original clocked block, including the higher-priority debug path. B/D/A
+// also share one byte selector: their byte destinations have bit 3 set;
+// their pair destinations do not.
 wire mk2_sp_write = IFD_EXE_decode[`DEC_DST] == `OPR_BC
                  || IFD_EXE_decode[`DEC_DST] == `OPR_DE
                  || IFD_EXE_decode[`DEC_DST] == `OPR_AF
@@ -1909,11 +1912,13 @@ wire mk2_sp_write = IFD_EXE_decode[`DEC_DST] == `OPR_BC
                  || (IFD_EXE_decode[`DEC_DST] == `OPR_PC && exe_res_sp_mod_r);
 wire [15:0] mk2_sp_write_data = (IFD_EXE_decode[`DEC_DST] == `OPR_SP && !exe_res_sp_mod_r)
                             ? exe_res_r : exe_res_sp_r;
-always @(posedge CLK) begin
-  if (cpu_ireset_r) SP_r <= 16'h0000;
-  else if (CLK_BUS_EDGE && exe_advance_r && exe_complete_r && mk2_sp_write)
-    SP_r <= mk2_sp_write_data;
-end
+wire [7:0] mk2_byte_write_data = IFD_EXE_decode[11] ? exe_res_r[7:0] : exe_res_r[15:8];
+wire mk2_hl_modified = (IFD_EXE_decode[`DEC_DST] == `OPR_HL
+                    || IFD_EXE_decode[`DEC_DST] == `OPR_A) && exe_res_hl_mod_r;
+wire [7:0] mk2_h_write_data = mk2_hl_modified ? exe_res_hl_r[15:8]
+                          : IFD_EXE_decode[`DEC_DST] == `OPR_H ? exe_res_r[7:0] : exe_res_r[15:8];
+wire [7:0] mk2_l_write_data = mk2_hl_modified ? exe_res_hl_r[7:0] : exe_res_r[7:0];
+// End MkII register-file writeback.
 `endif
 
 always @(posedge CLK) begin
@@ -1934,9 +1939,7 @@ always @(posedge CLK) begin
     // That does not stop the CPU; it silently corrupts data, which is worse.
     // (PC_r is not here: it is already cleared by the IFD block above, and a
     //  register driven from two always blocks is a hard synthesis error.)
-`ifndef MK2
     SP_r <= 16'h0000;
-`endif
     A_r  <= 8'h00;
     F_r  <= 8'h00;
     B_r  <= 8'h00;
@@ -1952,20 +1955,24 @@ always @(posedge CLK) begin
 
       if (exe_complete_r) begin
 `ifdef MK2
-        case (IFD_EXE_decode[`DEC_DST])
-          `OPR_BC : begin `BC_r <= exe_res_r; F_r[7:4] <= exe_res_cc_r[7:4]; end
-          `OPR_DE : begin `DE_r <= exe_res_r; F_r[7:4] <= exe_res_cc_r[7:4]; end
-          `OPR_SP : begin F_r[7:4] <= exe_res_cc_r[7:4]; end
-          `OPR_AF : begin A_r <= exe_res_r[15:8]; F_r[7:4] <= exe_res_r[7:4]; end
-          `OPR_B  : begin B_r <= exe_res_r[7:0]; F_r[7:4] <= exe_res_cc_r[7:4]; end
-          `OPR_C  : begin C_r <= exe_res_r[7:0]; F_r[7:4] <= exe_res_cc_r[7:4]; end
-          `OPR_D  : begin D_r <= exe_res_r[7:0]; F_r[7:4] <= exe_res_cc_r[7:4]; end
-          `OPR_E  : begin E_r <= exe_res_r[7:0]; F_r[7:4] <= exe_res_cc_r[7:4]; end
-          `OPR_H  : begin H_r <= exe_res_r[7:0]; F_r[7:4] <= exe_res_cc_r[7:4]; end
-          `OPR_L  : begin L_r <= exe_res_r[7:0]; F_r[7:4] <= exe_res_cc_r[7:4]; end
-          `OPR_HL : begin `HL_r <= exe_res_hl_mod_r ? exe_res_hl_r : exe_res_r; F_r[7:4] <= exe_res_cc_r[7:4]; end
-          `OPR_A  : begin A_r <= exe_res_r[7:0]; if (exe_res_hl_mod_r) `HL_r <= exe_res_hl_r; F_r[7:4] <= exe_res_cc_r[7:4]; end
-        endcase
+        if (mk2_sp_write) SP_r <= mk2_sp_write_data;
+        if (IFD_EXE_decode[`DEC_DST] == `OPR_A || IFD_EXE_decode[`DEC_DST] == `OPR_AF)
+          A_r <= mk2_byte_write_data;
+        if (IFD_EXE_decode[`DEC_DST] == `OPR_B || IFD_EXE_decode[`DEC_DST] == `OPR_BC)
+          B_r <= mk2_byte_write_data;
+        if (IFD_EXE_decode[`DEC_DST] == `OPR_C || IFD_EXE_decode[`DEC_DST] == `OPR_BC)
+          C_r <= exe_res_r[7:0];
+        if (IFD_EXE_decode[`DEC_DST] == `OPR_D || IFD_EXE_decode[`DEC_DST] == `OPR_DE)
+          D_r <= mk2_byte_write_data;
+        if (IFD_EXE_decode[`DEC_DST] == `OPR_E || IFD_EXE_decode[`DEC_DST] == `OPR_DE)
+          E_r <= exe_res_r[7:0];
+        if (IFD_EXE_decode[`DEC_DST] == `OPR_H || IFD_EXE_decode[`DEC_DST] == `OPR_HL || mk2_hl_modified)
+          H_r <= mk2_h_write_data;
+        if (IFD_EXE_decode[`DEC_DST] == `OPR_L || IFD_EXE_decode[`DEC_DST] == `OPR_HL || mk2_hl_modified)
+          L_r <= mk2_l_write_data;
+        // All destinations BC..A update flags, including SP and the byte writes.
+        if (IFD_EXE_decode[`DEC_DST] >= `OPR_BC)
+          F_r[7:4] <= IFD_EXE_decode[`DEC_DST] == `OPR_AF ? exe_res_r[7:4] : exe_res_cc_r[7:4];
 `else
         case (IFD_EXE_decode[`DEC_DST])
           //`OPR_I  : exe_src_r <= 0;

@@ -2,9 +2,11 @@
 
 Extract the production reset/advance/complete guards and destination cases.
 All operands, old registers, decode bits and controls are unconstrained. The
-negative control loses one POP destination's SP write and must be rejected.
+negative controls lose a POP destination's SP write and swap the shared byte
+selector. Both must be rejected.
 """
 from pathlib import Path
+from collections import Counter
 import re
 import subprocess
 import tempfile
@@ -22,19 +24,36 @@ with tempfile.TemporaryDirectory(prefix="gbc-writeback-proof-") as tmp:
         cpu = preprocessed.read_text()
         marker = "always @(posedge CLK) begin\n  if (cpu_ireset_r) begin\n    exe_ctr_r <= 0;"
         start = cpu.index(marker) + len("always @(posedge CLK) begin")
-        end = cpu.index("endcase", start) + len("endcase")
+        end = cpu.index("// delay 1 inst because fetch", start)
         body = cpu[start:end] + "\nend\nend\nend\n"
+        debug_start = cpu.index("// debug writes", end)
+        debug_end = cpu.index("\nend\n", debug_start)
+        body += cpu[debug_start:debug_end]
         # These three independent control-register writes precede writeback;
         # the register-file proof neither observes nor changes them.
-        body = re.sub(r"\b(?:exe_ctr_r|exe_ime_r|dbg_advance_r)\s*<=\s*[^;]+;", "", body)
+        body = re.sub(r"\b(?:exe_ctr_r|exe_ime_r|dbg_advance_r)\s*<=\s*[^;]+;", ";", body)
         definitions = ""
         if board == "MK2":
+            wb_start = cpu.index("// MkII register-file writeback.")
+            wb_end = cpu.index("// End MkII register-file writeback.", wb_start)
+            writeback = cpu[wb_start:wb_end]
             definitions = "\n".join(re.findall(
-                r"wire\s+(?:\[[^\]]+\]\s+)?mk2_sp_write(?:_data)?\s*=.*?;", cpu, re.S))
-            sp_start = cpu.index("always @(posedge CLK) begin", cpu.index("wire mk2_sp_write"))
-            sp_end = cpu.index("\nend", sp_start)
-            body += cpu[sp_start + len("always @(posedge CLK) begin"):sp_end]
+                r"wire\s+(?:\[[^\]]+\]\s+)?mk2_\w+\s*=.*?;", writeback, re.S))
         body = re.sub(r"//[^\n]*", "", body)
+
+        assignments = r"(\{[^{}]+\}|\w+(?:\[[^\]]+\])?)\s*<=\s*([^;]+);"
+
+        def register_writes(text):
+            text = re.sub(r"//[^\n]*|/\*.*?\*/", "", text, flags=re.S)
+            return Counter((lhs, rhs) for lhs, rhs in re.findall(assignments, text)
+                           if set(re.findall(r"\b\w+_r\b", lhs)) & registers.keys())
+
+        # Cover every writer in the full preprocessed CPU, including debug
+        # overrides. This catches an omitted path or a second clocked driver.
+        if register_writes(cpu) != register_writes(body):
+            raise RuntimeError("The proof omitted a register-file writer")
+        if register_writes(cpu) != register_writes(cpu[start:debug_end]):
+            raise RuntimeError("Register-file writes occur outside their clocked block")
 
         def next_state(match):
             lhs = match[1]
@@ -45,8 +64,8 @@ with tempfile.TemporaryDirectory(prefix="gbc-writeback-proof-") as tmp:
                 lhs = re.sub(r"\b" + name + r"\b", prefix + "_" + name, lhs)
             return lhs + " = " + match[2] + ";"
 
-        body, count = re.subn(r"(\{[^{}]+\}|\w+(?:\[[^\]]+\])?)\s*<=\s*([^;]+);", next_state, body)
-        if count < 20 or "<=" in body:
+        body, count = re.subn(assignments, next_state, body)
+        if count < 18 or "<=" in body:
             raise RuntimeError("Incomplete register writeback extraction")
         declarations = "\n".join(f"reg [{width - 1}:0] {prefix}_{name};" for name, width in registers.items())
         defaults = "\n".join(f"{prefix}_{name} = {name};" for name in registers)
@@ -57,18 +76,23 @@ with tempfile.TemporaryDirectory(prefix="gbc-writeback-proof-") as tmp:
  input cpu_ireset_r,CLK_BUS_EDGE,exe_advance_r,exe_complete_r,
  input exe_res_sp_mod_r,exe_res_hl_mod_r,
  input [15:0] IFD_EXE_decode,exe_res_r,exe_res_sp_r,exe_res_hl_r,
- input [7:0] exe_res_cc_r, output equivalent);
+ input [7:0] exe_res_cc_r,REG_address,REG_req_data,
+ input REG_req_dbg,reg_src_r, output equivalent);
 """ + "\n".join(blocks)
     actual = "{" + ",".join("actual_" + name for name in registers) + "}"
     reference = "{" + ",".join("reference_" + name for name in registers) + "}"
     body += f"assign equivalent = {actual} == {reference};\nendmodule\n"
-    for negative in (False, True):
+    for mutation in ("actual", "missing-pop-de", "swapped-byte"):
         candidate = body
-        if negative:
+        if mutation == "missing-pop-de":
             candidate, count = re.subn(r"IFD_EXE_decode\[11:8\] == 4'd5\s*\|\|", "", candidate, count=1)
             if count != 1:
                 raise RuntimeError("Cannot construct the missing-POP-DE negative control")
-        source = work / ("negative.v" if negative else "actual.v")
+        elif mutation == "swapped-byte":
+            candidate, count = re.subn(r"IFD_EXE_decode\[11\] \?", "!IFD_EXE_decode[11] ?", candidate)
+            if count != 1:
+                raise RuntimeError("Cannot construct the swapped-byte negative control")
+        source = work / (mutation + ".v")
         source.write_text(candidate)
         script = work / "proof.ys"
         script.write_text(f'read_verilog "{source}"\nprep -top check\n'
@@ -76,10 +100,10 @@ with tempfile.TemporaryDirectory(prefix="gbc-writeback-proof-") as tmp:
         result = subprocess.run(["yosys", "-Q", "-s", str(script)],
                                 capture_output=True, text=True, timeout=120)
         log = result.stdout + result.stderr
-        if negative:
+        if mutation != "actual":
             if result.returncode == 0 or "proof did fail" not in log:
-                raise RuntimeError("SAT accepted the missing-POP-DE control\n" + log)
+                raise RuntimeError("SAT accepted the " + mutation + " control\n" + log)
         elif result.returncode or "SUCCESS" not in log:
             raise RuntimeError("Register-file next-state equivalence failed\n" + log)
-    print("PASS: all 80 register-file bits preserve every reset, hold and write condition; "
-          "SAT rejects the missing-POP-DE control")
+    print("PASS: all 80 register-file bits preserve every reset, hold, write and debug override; "
+          "SAT rejects missing-POP-DE and swapped-byte controls")

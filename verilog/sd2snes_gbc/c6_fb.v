@@ -240,6 +240,12 @@ reg  [63:0] acc_r;
 wire [63:0] acc_nx = {acc_r[55:0], px8};
 wire [17:0] rd_mask;
 
+// ROW_DONE decode ($EF0007). Declare the command signals before the cache
+// invalidation expression: the Spartan-3 XST front end requires this order.
+wire        rd_all     = rowdone_wr_r & (wr_data_r == 8'hFF);
+wire        rd_one     = rowdone_wr_r & (wr_data_r < 8'd18);
+wire [4:0]  rd_row     = wr_data_r[4:0];
+
 `ifdef GBC_EXTERNAL_FB
 reg         wr0_r, wr_last0_r;
 reg [4:0]   wr_row_r, wr_col_r;
@@ -325,9 +331,6 @@ end
 //-------------------------------------------------------------------
 // ROW_DONE decode ($EF0007)
 //-------------------------------------------------------------------
-wire        rd_all     = rowdone_wr_r & (wr_data_r == 8'hFF);
-wire        rd_one     = rowdone_wr_r & (wr_data_r < 8'd18);
-wire [4:0]  rd_row     = wr_data_r[4:0];
 wire        rd_hit_one = rd_one & row_frozen_r[rd_row];
 wire        rd_bad     = rowdone_wr_r & ~rd_all & ~rd_hit_one;
 `ifdef GBC_EXTERNAL_FB

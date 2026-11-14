@@ -2861,11 +2861,16 @@ reg  [7:0]  ppu_oam_obj_xpos_r;
 wire [3:0]  ppu_pix_obj_row = (ppu_scanline_r[3:0] - ppu_oam_lut_ypos_r[ppu_pix_oam_lut_match_r][3:0]) ^ {4{ppu_pix_oam_flag_r[6]}};
 
 `ifdef MK2
+// A sprite covers this line when line-Y is -16..-1 (16 high), or
+// -16..-9 (8 high). Keep the ninth bit: an 8-bit difference would also
+// accept +240..+255, wrapping off-screen sprites onto the visible line.
+wire [8:0] ppu_oam_y_delta = {1'b0,ppu_scanline_r} - {1'b0,ppu_oam_data_r};
+wire ppu_oam_line_hit = (&ppu_oam_y_delta[8:4])
+  && (REG_LCDC_r[`LCDC_SP_SIZE] || !ppu_oam_y_delta[3]);
 wire oam_position_step = !cpu_ireset_r && ppu_dot_edge && DBG_advance;
 wire oam_position_write = oam_position_step && ppu_state_r==ST_PPU_OAM_POS
   && !ppu_oam_lut_full && ppu_pix_phase_r && !DMA_active
-  && ppu_oam_data_r <= (ppu_scanline_r + 16)
-  && (ppu_scanline_r + 16) < (ppu_oam_data_r + (REG_LCDC_r[`LCDC_SP_SIZE] ? 16 : 8));
+  && ppu_oam_line_hit;
 gbc_oam_positions #(.SLOTS(`NUM_OAM_LUT)) oam_positions(.CLK(CLK),
   .CLEAR(oam_position_step && ppu_state_r==ST_PPU_OAM_NEW),
   .WRITE(oam_position_write), .WADDR(ppu_oam_lut_cnt_r[3:0]),
@@ -3420,7 +3425,11 @@ always @(posedge CLK) begin
         ST_PPU_OAM_POS : begin
           // read in xpos if ypos is on this line
           if (~ppu_oam_lut_full & ppu_pix_phase_r & ~DMA_active) begin
+`ifdef MK2
+            if (ppu_oam_line_hit) begin
+`else
             if (ppu_oam_data_r <= (ppu_scanline_r + 16) && (ppu_scanline_r + 16) < (ppu_oam_data_r + (REG_LCDC_r[`LCDC_SP_SIZE] ? 16 : 8))) begin
+`endif
               ppu_oam_lut_ypos_r[ppu_oam_lut_cnt_r]  <= ppu_oam_data_r[3:0];
 `ifndef MK2
               ppu_oam_lut_xpos_r[ppu_oam_lut_cnt_r]  <= ppu_oam_rddata_r - (|ppu_oam_rddata_r ? 8 : 16);

@@ -828,17 +828,24 @@ wire [6:0]  c6_cram_addr;
 wire        cram_b_busy = CRAM_RD_REQ | c6_cram_req;
 wire [6:0]  cram_b_addr = CRAM_RD_REQ ? CRAM_RD_ADDR : c6_cram_req ? c6_cram_addr : cram_dbg_addr;
 
+`ifdef MK2
+// The CPU's HRAM and palette accesses share port A of one block RAM.
+// The MCT/REG controller proof checks the read window as well as writes;
+// port B remains dedicated to the unchanged snapshot/pixel arbitration.
+wire [7:0] cram_q_a_r;
+wire [7:0] cram_q_b_r;
+`else
 (* ram_style = "distributed" *) reg  [7:0]  cram_r[0:127];
 reg  [7:0]  cram_q_a_r;
 reg  [7:0]  cram_q_b_r;
-reg         cram_b_busy_d1_r;
-
 always @(posedge CLK) begin
   if (cram_we_a) cram_r[cram_a_index] <= reg_wr_data_r;
   cram_q_a_r <= cram_r[cram_a_index];
   cram_q_b_r <= cram_r[cram_b_addr];
-  cram_b_busy_d1_r <= cram_b_busy;
 end
+`endif
+reg         cram_b_busy_d1_r;
+always @(posedge CLK) cram_b_busy_d1_r <= cram_b_busy;
 
 assign CRAM_RD_DATA = cram_q_b_r;
 
@@ -1370,7 +1377,7 @@ wire [15:0] dec_data;
 // PC with bypass
 wire [15:0] ifd_pc = EXE_IFD_redirect ? EXE_IFD_target : PC_r;
 
-// Mk.II shares this ROM with HRAM; the instance is in the MCT section.
+// Mk.II's decoder is in cpu_memory beside the shared HRAM/palette block.
 `ifdef MK3
 dec_table dec (
   .clock(CLK),        // input clock
@@ -4214,9 +4221,6 @@ wire [7:0]  dbg_hram_rddata;
 wire [7:0]  dbg_hram_wrdata;
 
 `ifdef MK2
-gbc_decode_hram decode_hram(.CLK(CLK), .DEC_ADDR(dec_addr), .DEC_Q(dec_data),
-  .HRAM_WE(hram_wren), .HRAM_ADDR(hram_address), .HRAM_DATA(hram_wrdata),
-  .HRAM_Q(hram_rddata));
 assign dbg_hram_rddata = 8'd0; // SGB_MCU_ACCESS is disabled on Mk.II.
 `endif
 `ifdef MK3
@@ -4260,6 +4264,15 @@ reg         mct_wr_r;
 reg  [7:0]  mct_mdr_r;
 reg         mct_conflict_r;   // this EXT access collides with the OAM DMA's bus
 wire        mct_bus_idle;     // the controller is not using the system bus
+
+`ifdef MK2
+wire mk2_hram_select = |(mct_state_r & ST_MCT_HRAM);
+gbc_cpu_memory cpu_memory(.CLK(CLK), .DEC_ADDR(dec_addr), .DEC_Q(dec_data),
+  .HRAM_SEL(mk2_hram_select), .HRAM_WE(hram_wren),
+  .HRAM_ADDR(hram_address), .HRAM_DATA(hram_wrdata), .HRAM_Q(hram_rddata),
+  .CRAM_WE(cram_we_a), .CRAM_ADDR_A(cram_a_index), .CRAM_DATA(reg_wr_data_r),
+  .CRAM_Q_A(cram_q_a_r), .CRAM_ADDR_B(cram_b_addr), .CRAM_Q_B(cram_q_b_r));
+`endif
 
 wire [15:0] mct_addr_d1 = mct_src_r ? EXE_MCT_req_addr_d1 : IFD_MCT_req_addr_d1;
 

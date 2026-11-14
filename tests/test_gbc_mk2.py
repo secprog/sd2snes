@@ -288,7 +288,7 @@ module gbc_sram_arb_model(
         decode_hram = Path(tmp) / "decode-hram.vvp"
         compile_decode = [args.iverilog, "-g2012", "-s", "gbc_decode_hram_tb",
                           "-o", str(decode_hram), str(root / "tests/rtl/gbc_decode_hram_tb.v"),
-                          str(root / "verilog/sd2snes_gbc/mk2_decode_hram.v")]
+                          str(root / "verilog/sd2snes_gbc/mk2_cpu_memory.v")]
         if args.ivl_base:
             compile_decode += ["-B", args.ivl_base]
         subprocess.run(compile_decode, check=True)

@@ -1,6 +1,6 @@
 CORE = gbc
 
-VSRC = c6_fb.v c6_sram.v mk2_memory.v mk2_decode_hram.v dcm.v address.v cheat.v clk_test.v dac.v gbc_bridge.v gbc_clk.v main.v mcu_cmd.v sd_dma.v spi.v sgb.v sgb_cpu.v
+VSRC = c6_fb.v c6_sram.v mk2_memory.v mk2_cpu_memory.v dcm.v address.v cheat.v clk_test.v dac.v gbc_bridge.v gbc_clk.v main.v mcu_cmd.v sd_dma.v spi.v sgb.v sgb_cpu.v
 VHSRC =
 
 HEADER = config.vh

@@ -54,9 +54,13 @@ integer apu_mix_i;
         source.write_text(actual + modules["reference"])
         script = work / "proof.ys"
         script.write_text(f'read_verilog "{source}"\n'
+                          # Lower the array assignments and processes before
+                          # flattening the two modules into a miter. Flattening
+                          # their unlowered memories can lose the sample wires.
+                          'proc\nmemory_map\nopt\ncheck -assert\n'
                           'miter -equiv -flatten actual reference check\n'
                           'prep -top check\n'
-                          'memory_map\nopt\n'
+                          'check -assert\n'
                           # Two sample stages: after two arbitrary input
                           # clocks, no initial register value can affect the
                           # comparison. No zero initialization is assumed.

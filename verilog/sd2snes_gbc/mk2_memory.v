@@ -224,23 +224,29 @@ module c6_dirty_ram(input CLK, RST, ALL, SET, input [4:0] ROW, COL,
   wire [17:0] set_rows = set_ok ? (18'd1 << ROW) : 18'd0;
   wire [19:0] col_mask = 20'd1 << COL;
   wire [4:0] read_row = BIDX[6:2];
-  (* ram_style = "distributed" *) reg [19:0] rows [0:31];
+  // Keep each parity in a 16-deep RAM. Selecting the byte before combining
+  // the banks avoids a 20-bit, 32-deep read mux and a wide nibble shifter.
+  (* ram_style = "distributed" *) reg [19:0] even_rows [0:15];
+  (* ram_style = "distributed" *) reg [19:0] odd_rows [0:15];
+  wire [19:0] write_word = ROW[0] ? odd_rows[ROW[4:1]] : even_rows[ROW[4:1]];
   wire [19:0] base_word = clear_rows[ROW] ? 20'd0
-                       : valid[ROW] ? rows[ROW] : {20{default_one[ROW]}};
-  wire [23:0] read_word = read_row[0] ? {rows[read_row],4'd0}
-                                              : {4'd0,rows[read_row]};
-  wire [23:0] row_mask = read_row[0] ? 24'hfffff0 : 24'h0fffff;
+                       : valid[ROW] ? write_word : {20{default_one[ROW]}};
+  wire [19:0] read_even = even_rows[BIDX[6:3]], read_odd = odd_rows[BIDX[6:3]];
   reg [7:0] read_byte, mask_byte;
   always @(posedge CLK) begin
-    if(set_ok && !ALL) rows[ROW] <= base_word | col_mask;
+    if(set_ok && !ALL && !ROW[0]) even_rows[ROW[4:1]] <= base_word | col_mask;
+    if(set_ok && !ALL &&  ROW[0])  odd_rows[ROW[4:1]] <= base_word | col_mask;
     valid <= ALL ? 18'd0 : ((valid & ~clear_rows) | set_rows);
     default_one <= ALL ? 18'h3ffff : (default_one & ~clear_rows);
   end
   always @(*) begin
-    case(BIDX[1:0])
-      0: begin read_byte=read_word[7:0]; mask_byte=row_mask[7:0]; end
-      1: begin read_byte=read_word[15:8]; mask_byte=row_mask[15:8]; end
-      2: begin read_byte=read_word[23:16]; mask_byte=row_mask[23:16]; end
+    case(BIDX[2:0])
+      0: begin read_byte=read_even[7:0]; mask_byte=8'hff; end
+      1: begin read_byte=read_even[15:8]; mask_byte=8'hff; end
+      2: begin read_byte={4'd0,read_even[19:16]}; mask_byte=8'h0f; end
+      4: begin read_byte={read_odd[3:0],4'd0}; mask_byte=8'hf0; end
+      5: begin read_byte=read_odd[11:4]; mask_byte=8'hff; end
+      6: begin read_byte=read_odd[19:12]; mask_byte=8'hff; end
       default: begin read_byte=0; mask_byte=0; end
     endcase
     BYTE = read_row >= 18 ? 8'd0 : valid[read_row] ? read_byte

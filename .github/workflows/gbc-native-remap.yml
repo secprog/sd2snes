@@ -21,6 +21,9 @@ on:
       map_continue:
         type: boolean
         default: false
+      ignore_timing:
+        type: boolean
+        default: false
   workflow_dispatch:
     inputs:
       native_run:
@@ -49,6 +52,10 @@ on:
         default: false
       map_continue:
         description: Continue MAP packing and placement with extra effort (same constraints)
+        type: boolean
+        default: false
+      ignore_timing:
+        description: Generate an experimental timing-unverified image after successful fit and routing
         type: boolean
         default: false
 
@@ -112,17 +119,18 @@ jobs:
           set -euo pipefail
           native=$(find .ci-tools/gbc-remap/native -name main_native.edf -print -quit)
           python3 .github/scripts/check-gbc-xst-remap.py "$native" .ci-tools/gbc-remap/reports "$PROFILE"
-      - name: Check native round trip and implement with strict timing
+      - name: Check native round trip and implement (timing override ${{ inputs.ignore_timing }})
         env:
           PROFILE: ${{ inputs.profile }}
           MAP_DUPLICATION: ${{ inputs.register_duplication }}
           PLACEMENT_SEED: ${{ inputs.placement_seed }}
           PAR_CONTINUE: ${{ inputs.par_continue }}
           MAP_CONTINUE: ${{ inputs.map_continue }}
+          IGNORE_TIMING: ${{ inputs.ignore_timing && '1' || '0' }}
         run: |
           set -o pipefail
           docker run --rm --user 0:0 --mac-address 08:00:27:68:c9:35 \
-            --volume "$GITHUB_WORKSPACE:/work" --workdir /work --env PROFILE --env MAP_DUPLICATION --env PLACEMENT_SEED --env PAR_CONTINUE --env MAP_CONTINUE \
+            --volume "$GITHUB_WORKSPACE:/work" --workdir /work --env PROFILE --env MAP_DUPLICATION --env PLACEMENT_SEED --env PAR_CONTINUE --env MAP_CONTINUE --env IGNORE_TIMING \
             --entrypoint /bin/bash sd2snes-ci:mk2 \
             .github/scripts/implement-gbc-remap.sh 2>&1 | tee .ci-tools/gbc-remap/reports/implementation.log
       - uses: actions/upload-artifact@v4

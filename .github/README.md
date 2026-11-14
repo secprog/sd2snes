@@ -89,9 +89,19 @@ SGB. `MK2_GBC_EXPERIMENTAL=1` enables the separate MCU loader policy.
 
 Physical fits have been measured, but the port has not yet passed the
 committed MkII setup-timing requirements. A passing RTL proof or resource
-count alone does not qualify an FPGA image. The remapping workflow generates
-`fpga_gbc.bit` only after native MAP/PAR and TRACE report zero timing errors.
+count alone does not qualify an FPGA image. By default, the remapping workflow
+generates `fpga_gbc.bit` only after MAP/PAR and TRACE report zero timing errors.
+An explicit manual `ignore_timing=true` also permits an experimental image with
+setup violations, provided native tools, fit, routing, hold and component
+switching checks pass. It writes `TIMING-UNVERIFIED.txt` and
+`timing-unverified-image.sha256`; it never labels that image timing-qualified.
 Console validation is also required before treating this as a supported port.
+
+The accepted experimental candidate uses RTL `476d1a19`, native run
+`43607129297`, profile `gate-lut4-delay-satlut`, seed `11`, and normal MAP/PAR
+effort. Run `43612271241` measured 7,161/7,168 LUTs and 3,584/3,584 slices,
+with -0.832 ns setup slack (36 errors) and no hold errors. The user accepted
+that setup miss on 2026-11-14. Later area/timing experiments were withdrawn.
 
 Use GitHub Actions for all compilation and simulation. First dispatch
 `build-firmware.yml` with `build=fpga`, `fpga_cores=mk2:gbc` and
@@ -125,7 +135,7 @@ must reproduce the native resource report. Each seed then undergoes its own
 strict implementation checks with the original clock constraints.
 For a measured near miss, `gbc_par_continue=true` selects PAR's documented
 extra recovery effort (`-xe c`), within the workflow's 90-minute timeout.
-It does not change the clock, timing requirements or image-generation gates.
+It does not change the clock or timing requirements.
 `gbc_map_continue=true` independently enables MAP's extra packing and placement
 effort (`-xe c`). Both options default to false and are recorded in the reports.
 Reports and any qualified image are uploaded as

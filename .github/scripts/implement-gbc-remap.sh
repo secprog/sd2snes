@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# GitHub-hosted native qualification only. Never skip fit or timing failures.
+# GitHub-hosted implementation. Timing overrides produce experimental images.
 set -euo pipefail
 case "$PROFILE" in gate-lut4-satlut-delay|gate-lut4-satlut-delay4|gate-lut4-delay-satlut|gate-lut4-critical-satlut|gate-lut4-window-satlut|compare-lut4-sat|gate-lut4-sat|gate-lut4-sat-area|gate-lut4-sat2|gate-lut4-sat4|gate-lut4-sat8|gate-lut4-choices|gate-lut4-satlut|gate-lut4-satlut2|gate-lut4-satlut128|gate-lut4-satlut-reverse|fixed-mux-sat|compare-sat|lut4-sat|fixed-mux-resub|lut4-resub|fixed-mux-area|lut4-area|fixed-mux|lut4) ;; *) exit 2 ;; esac
 root=$PWD
@@ -151,10 +151,36 @@ par -w "${candidate_par_args[@]}" main_map.ncd main.ncd main.pcf || par_status=$
 trce_status=0
 trce -v 1 -n 400 -u 10 -fastpaths main.ncd main.pcf -o main.twr || trce_status=$?
 [[ "$par_status" == 0 && "$trce_status" == 0 ]]
-grep -Eq 'Timing Score: 0 \(Setup: 0, Hold: 0' main.par
-grep -Eq 'Timing errors: 0[[:space:]]+Score: 0' main.twr
+image_status=qualified
+case "${IGNORE_TIMING:-0}" in
+  0)
+    grep -Eq 'Timing Score: 0 \(Setup: 0, Hold: 0' main.par
+    grep -Eq 'Timing errors: 0[[:space:]]+Score: 0' main.twr
+    ;;
+  1)
+    # Explicit manual acceptance of the measured setup miss. This does not
+    # relax resource fit, native tool errors, routing, hold or switching limits.
+    grep -q '^All signals are completely routed\.' main.par
+    grep -Eq '^Number of error messages: 0[[:space:]]*$' main.par
+    grep -Eq 'Timing Score: [0-9]+ \(Setup: [0-9]+, Hold: 0, Component Switching Limit: 0\)' main.par
+    grep -Eq '^Timing errors: [0-9]+[[:space:]]+Score: [0-9]+[[:space:]]+\(Setup/Max: [0-9]+, Hold: 0\)' main.twr
+    image_status=timing-unverified
+    {
+      echo 'EXPERIMENTAL MKII GBC IMAGE - SETUP TIMING NOT QUALIFIED'
+      echo 'Generated with the explicit workflow input ignore_timing=true.'
+      echo 'Use the matching MkII wire-$05 player and experimental MCU firmware.'
+      echo 'Hardware stability has not been verified.'
+      printf 'Profile: %s; placement seed: %s\n' "$PROFILE" "$seed"
+      grep 'Timing Score:' main.par
+      grep '^Timing errors:' main.twr
+      grep 'SETUP.*ns|' main.par
+    } > "$experiment/reports/TIMING-UNVERIFIED.txt"
+    cat "$experiment/reports/TIMING-UNVERIFIED.txt"
+    ;;
+  *) exit 2 ;;
+esac
 xtclsh "$root/verilog/xilinx_scripts/xgenbitgenfile.tcl" "$project" "$experiment/candidate/main.ut"
 bitgen -f main.ut main.ncd
 make -C "$root" host-tools
 "$root/utils/rle" main.bit fpga_gbc.bit
-sha256sum fpga_gbc.bit > "$experiment/reports/qualified-image.sha256"
+sha256sum fpga_gbc.bit > "$experiment/reports/$image_status-image.sha256"

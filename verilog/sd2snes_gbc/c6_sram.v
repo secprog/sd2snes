@@ -29,8 +29,7 @@ module c6_sram(
   input [4:0] PREPARE_ROW,
   input STRETCH,
   input [17:0] FROZEN,
-  input INVALIDATE_CACHE,
-  output [4:0] CACHE_ROW,
+  input [17:0] INVALIDATE,
   input [15:0] VADDR,
   output [7:0] VIEW_BYTE,
   output [7:0] READY_ROW,
@@ -104,8 +103,7 @@ module c6_sram(
       ? ({1'b0,column,2'b00} + {3'b000,column}) : {column,3'b000};
   wire [7:0] source_x = start_x + {5'd0,pixel};
   wire [18:0] source_addr = {3'b111,cache_row,source_x[7:3],line,source_x[2:0]};
-  assign CACHE_ROW = cache_row;
-  wire invalidating = INVALIDATE_CACHE;
+  wire invalidating = INVALIDATE[cache_row];
   assign READY_ROW = cache_valid && !invalidating && !OVERFLOW
                    ? {3'b000,cache_row} : 8'hff;
   reg view_ok;

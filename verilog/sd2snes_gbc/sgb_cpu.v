@@ -2906,15 +2906,11 @@ wire [3:0]  ppu_pix_obj_row = (ppu_scanline_r[3:0] - ppu_oam_lut_ypos_r[ppu_pix_
 
 `ifdef MK2
 // A sprite covers this line when line-Y is -16..-1 (16 high), or
-// -16..-9 (8 high). Compute both nibble differences in parallel instead of
-// carrying a borrow through all nine bits and then reducing five sum bits.
-// The upper difference is either zero with a low-nibble borrow, or -1
-// without one. Its fifth bit rejects off-screen +240..+255 wraparound.
-wire [4:0] ppu_oam_low_delta = {1'b0,ppu_scanline_r[3:0]} - {1'b0,ppu_oam_data_r[3:0]};
-wire [4:0] ppu_oam_high_delta = {1'b0,ppu_scanline_r[7:4]} - {1'b0,ppu_oam_data_r[7:4]};
-wire ppu_oam_line_hit = ((ppu_oam_high_delta == 5'd0 && ppu_oam_low_delta[4])
-                    || ((&ppu_oam_high_delta) && !ppu_oam_low_delta[4]))
-  && (REG_LCDC_r[`LCDC_SP_SIZE] || !ppu_oam_low_delta[3]);
+// -16..-9 (8 high). Keep the ninth bit: an 8-bit difference would also
+// accept +240..+255, wrapping off-screen sprites onto the visible line.
+wire [8:0] ppu_oam_y_delta = {1'b0,ppu_scanline_r} - {1'b0,ppu_oam_data_r};
+wire ppu_oam_line_hit = (&ppu_oam_y_delta[8:4])
+  && (REG_LCDC_r[`LCDC_SP_SIZE] || !ppu_oam_y_delta[3]);
 wire oam_position_step = !cpu_ireset_r && ppu_dot_edge && DBG_advance;
 wire oam_position_write = oam_position_step && ppu_state_r==ST_PPU_OAM_POS
   && !ppu_oam_lut_full && ppu_pix_phase_r && !DMA_active
@@ -3837,25 +3833,6 @@ wire [6:0]  apu_data[1:0];
 reg  [6:0] apu_data_r[1:0];
 reg  [9:0] apu_data_volume_r[1:0];
 
-`ifdef MK2
-// Two parallel six-bit pair sums replace three serial additions. Five-bit
-// channel values sum to at most 62 per pair and 124 overall, so no carry is
-// discarded. The existing sample and master-volume registers stay in place.
-genvar apu_mix_ch;
-generate for (apu_mix_ch=0; apu_mix_ch<2; apu_mix_ch=apu_mix_ch+1) begin : g_apu_mix
-  wire [4:0] square1 = apu_square1_output[4:0]
-                    & {5{REG_NR51_r[4*apu_mix_ch] & REG_NR52_r[`NR52_CONTROL_ENABLE]}};
-  wire [4:0] square2 = apu_square2_output[4:0]
-                    & {5{REG_NR51_r[4*apu_mix_ch+1] & REG_NR52_r[`NR52_CONTROL_ENABLE]}};
-  wire [4:0] wave_ch = apu_wave_output[4:0]
-                    & {5{REG_NR51_r[4*apu_mix_ch+2] & REG_NR52_r[`NR52_CONTROL_ENABLE]}};
-  wire [4:0] noise_ch = apu_noise_output[4:0]
-                     & {5{REG_NR51_r[4*apu_mix_ch+3] & REG_NR52_r[`NR52_CONTROL_ENABLE]}};
-  wire [5:0] squares = {1'b0,square1} + {1'b0,square2};
-  wire [5:0] others = {1'b0,wave_ch} + {1'b0,noise_ch};
-  assign apu_data[apu_mix_ch] = {1'b0,squares} + {1'b0,others};
-end endgenerate
-`else
 assign apu_data[0][6:0] = ( ((apu_square1_output[4:0] & {5{REG_NR51_r[`NR51_SELECT_LEFT_CH0]  & REG_NR52_r[`NR52_CONTROL_ENABLE]}}))
                           + ((apu_square2_output[4:0] & {5{REG_NR51_r[`NR51_SELECT_LEFT_CH1]  & REG_NR52_r[`NR52_CONTROL_ENABLE]}}))
                           + ((apu_wave_output[4:0]    & {5{REG_NR51_r[`NR51_SELECT_LEFT_CH2]  & REG_NR52_r[`NR52_CONTROL_ENABLE]}}))
@@ -3866,7 +3843,6 @@ assign apu_data[1][6:0] = ( ((apu_square1_output[4:0] & {5{REG_NR51_r[`NR51_SELE
                           + ((apu_wave_output[4:0]    & {5{REG_NR51_r[`NR51_SELECT_RIGHT_CH2] & REG_NR52_r[`NR52_CONTROL_ENABLE]}}))
                           + ((apu_noise_output[4:0]   & {5{REG_NR51_r[`NR51_SELECT_RIGHT_CH3] & REG_NR52_r[`NR52_CONTROL_ENABLE]}}))
                           );
-`endif
 
 assign APU_REG_enable = {apu_noise_enable_r, apu_wave_enable_r, apu_square2_enable_r, apu_square1_enable_r};
 

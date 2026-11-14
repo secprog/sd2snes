@@ -132,19 +132,10 @@ reg         hold_eff_r, en_eff_r;                              // in force (LY=0
 // decode off the 84 MHz path.
 reg         ctl_wr_r, rowdone_wr_r;
 reg  [7:0]  wr_data_r;
-`ifdef GBC_EXTERNAL_FB
-// Decode the command in the existing input stage. These flags take effect
-// on the same clock as rowdone_wr_r, before the frozen-row and dirty muxes.
-reg         rowdone_all_r, rowdone_one_r;
-`endif
 always @(posedge CLK) begin
   ctl_wr_r     <= CTL_WR & ~RST;
   rowdone_wr_r <= ROWDONE_WR & ~RST;
   if (CTL_WR | ROWDONE_WR) wr_data_r <= WR_DATA;
-`ifdef GBC_EXTERNAL_FB
-  rowdone_all_r <= ROWDONE_WR & ~RST & (WR_DATA == 8'hFF);
-  rowdone_one_r <= ROWDONE_WR & ~RST & (WR_DATA < 8'd18);
-`endif
 end
 
 always @(posedge CLK) begin
@@ -249,17 +240,6 @@ reg  [63:0] acc_r;
 wire [63:0] acc_nx = {acc_r[55:0], px8};
 wire [17:0] rd_mask;
 
-// ROW_DONE decode ($EF0007). Declare the command signals before the cache
-// invalidation expression: the Spartan-3 XST front end requires this order.
-`ifdef GBC_EXTERNAL_FB
-wire        rd_all     = rowdone_all_r;
-wire        rd_one     = rowdone_one_r;
-`else
-wire        rd_all     = rowdone_wr_r & (wr_data_r == 8'hFF);
-wire        rd_one     = rowdone_wr_r & (wr_data_r < 8'd18);
-`endif
-wire [4:0]  rd_row     = wr_data_r[4:0];
-
 `ifdef GBC_EXTERNAL_FB
 reg         wr0_r, wr_last0_r;
 reg [4:0]   wr_row_r, wr_col_r;
@@ -267,11 +247,6 @@ reg [2:0]   wr_line_r;
 wire        wr2_r, wr_last2_r, wr_diff_r;
 wire [4:0]  wr_row2_r, wr_col2_r;
 wire [7:0]  cache_ready_row;
-wire [4:0] cache_row;
-// The cached row has the same direct ROW_DONE comparison as the dirty write
-// row. Avoid decoding an 18-bit clear vector and selecting its cached bit.
-wire cache_clear = cache_row < 18 && row_frozen_r[cache_row]
-                 && (rd_all || (rd_one && rd_row == cache_row));
 // READY depends on the row-release decode and the cache tag. Register it
 // before the status mux; the complete SNES view still settles in <=3 clocks.
 reg [7:0] cache_ready_status;
@@ -298,7 +273,7 @@ c6_sram storage(
   .COMMIT(wr2_r), .COMMIT_ROW(wr_row2_r), .COMMIT_COL(wr_col2_r),
   .COMMIT_LAST(wr_last2_r), .COMMIT_DIFF(wr_diff_r), .OVERFLOW(fb_overflow),
   .PREPARE(prepare_r), .PREPARE_ROW(prepare_row_r), .STRETCH(ctl_stretch_r),
-  .FROZEN(row_frozen_r), .INVALIDATE_CACHE(cache_clear), .CACHE_ROW(cache_row),
+  .FROZEN(row_frozen_r), .INVALIDATE(rd_mask),
   .VADDR(VADDR), .VIEW_BYTE(VIEW_BYTE), .READY_ROW(cache_ready_row),
   .MEM_REQ(FB_MEM_REQ), .MEM_WR(FB_MEM_WR), .MEM_ADDR(FB_MEM_ADDR),
   .MEM_DATA(FB_MEM_DATA), .MEM_ACK(FB_MEM_ACK), .MEM_Q(FB_MEM_Q)
@@ -345,6 +320,9 @@ end
 //-------------------------------------------------------------------
 // ROW_DONE decode ($EF0007)
 //-------------------------------------------------------------------
+wire        rd_all     = rowdone_wr_r & (wr_data_r == 8'hFF);
+wire        rd_one     = rowdone_wr_r & (wr_data_r < 8'd18);
+wire [4:0]  rd_row     = wr_data_r[4:0];
 wire        rd_hit_one = rd_one & row_frozen_r[rd_row];
 wire        rd_bad     = rowdone_wr_r & ~rd_all & ~rd_hit_one;
 `ifdef GBC_EXTERNAL_FB

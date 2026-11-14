@@ -1,7 +1,7 @@
 """Prove the production sprite line predicate for all inputs in Actions.
 
 Compare with the unchanged MkIII predicate, including every off-screen Y and
-scanline value. The negative control deliberately drops the upper sign bit.
+scanline value. The negative control deliberately drops the ninth delta bit.
 """
 from pathlib import Path
 import re
@@ -22,7 +22,7 @@ with tempfile.TemporaryDirectory(prefix="gbc-oam-range-proof-") as tmp:
     actual = sources["MK2"]
     reference = sources["MK3"]
     definitions = []
-    for name in ("ppu_oam_low_delta", "ppu_oam_high_delta", "ppu_oam_line_hit"):
+    for name in ("ppu_oam_y_delta", "ppu_oam_line_hit"):
         definitions.append(re.search(r"wire\s+(?:\[[^\]]+\]\s+)?" + name +
                                      r"\s*=.*?;", actual, re.S)[0])
     declarations = []
@@ -50,7 +50,7 @@ with tempfile.TemporaryDirectory(prefix="gbc-oam-range-proof-") as tmp:
     for negative in (False, True):
         candidate = body
         if negative:
-            candidate, count = re.subn(r"&ppu_oam_high_delta\)", "&ppu_oam_high_delta[3:0])", body)
+            candidate, count = re.subn(r"ppu_oam_y_delta\[8:4\]", "ppu_oam_y_delta[7:4]", body)
             if count != 1:
                 raise RuntimeError("Cannot construct the missing-sign-bit negative control")
         source = work / ("negative.v" if negative else "actual.v")

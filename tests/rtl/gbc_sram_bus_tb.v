@@ -41,7 +41,7 @@ module gbc_sram_bus_tb;
   c6_sram producer(.CLK(clk),.RST(rst),.WR(wr),.WR_ROW(row),.WR_COL(col),
     .WR_LINE(line),.WR_LAST(last),.WR_PIXELS(pixels),.COMMIT(commit),
     .OVERFLOW(overflow),.PREPARE(1'b0),.PREPARE_ROW(5'd0),.STRETCH(1'b0),
-    .FROZEN(18'd0),.INVALIDATE_CACHE(1'b0),.VADDR(16'd0),.MEM_REQ(req),.MEM_WR(mwr),
+    .FROZEN(18'd0),.INVALIDATE(18'd0),.VADDR(16'd0),.MEM_REQ(req),.MEM_WR(mwr),
     .MEM_ADDR(addr),.MEM_DATA(data),.MEM_ACK(ack),.MEM_Q(q));
   reg [7:0] ram[0:524287];
   // SRAM output settles 45 ns after address/enable changes. Writes commit on

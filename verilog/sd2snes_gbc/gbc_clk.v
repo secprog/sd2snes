@@ -235,9 +235,6 @@ localparam [3:0] ST_IDLE  = 4'd0,
 // K2_MAX + SLEW_UNLOCKED = 1787013, both far inside +-8388607. Mk.II narrows
 // the stored intermediates using the bounds above. k2_cur_w explicitly
 // zero-extends the unsigned rate before interpreting it as a signed value.
-`ifdef MK2
-(* fsm_encoding = "compact" *)
-`endif
 reg  [3:0]        st_r;
 reg  [16:0]       dot_q;        // frame_dot_ctr latched at the strobe
 reg               frozen_q;     // this update only republishes K2_NOM + K_i

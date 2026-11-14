@@ -292,9 +292,6 @@ parameter SNES_DEAD_TIMEOUT = 17'd84000; // 1ms
 
 parameter ROM_CYCLE_LEN = 4'd7;
 
-`ifdef MK2
-(* fsm_encoding = "compact" *)
-`endif
 reg [8:0] STATE;
 initial STATE = ST_IDLE;
 
@@ -980,9 +977,6 @@ parameter ST_RAM_MCU_RD_ADDR     = 8'b00000010;
 parameter ST_RAM_MCU_RD_END      = 8'b00000100;
 parameter ST_RAM_MCU_WR_ADDR     = 8'b00001000;
 parameter ST_RAM_MCU_WR_END      = 8'b00010000;
-`ifdef MK2
-(* fsm_encoding = "compact" *)
-`endif
 reg [7:0] RAM_STATE; initial RAM_STATE = ST_RAM_IDLE;
 `ifdef GBC_EXTERNAL_FB
 parameter ST_RAM_FB_RD_ADDR      = 8'b00100000;

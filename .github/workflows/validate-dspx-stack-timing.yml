@@ -1,4 +1,4 @@
-name: Validate one DSPX DMA4 placement change with unchanged RTL
+name: Validate DSPX DMA4 FF and final enable placement with unchanged RTL
 on:
   workflow_dispatch:
 permissions:
@@ -18,13 +18,13 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - name: Bind unchanged RTL and exact two new physical LOC constraints
+      - name: Bind unchanged RTL and exact two FF plus final CE LUT LOC constraints
         run: |
           set -euo pipefail
           report="$RUNNER_TEMP/dspx-native"
           mkdir -p "$report"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test "$(git hash-object --no-filters .github/scripts/validate-dspx-dma-placement.py)" = cd18db59f30c46afe343b311f6d238c8aab9c713
+          test "$(git hash-object --no-filters .github/scripts/validate-dspx-dma-placement.py)" = 7e59bc2e94dbd9518160536c9a920972d90a8ba0
           test "$(git hash-object --no-filters .github/scripts/post-sync-evidence.py)" = fdb60667eb015c3769b2adc452864396ff64e9e7
           test "$(git hash-object --no-filters verilog/sd2snes_dsp/main.v)" = 82c29e4d6a6b3a3f894d810bbc69e3fd9915b019
           test "$(git hash-object --no-filters verilog/sd2snes_dsp/upd77c25.v)" = 0374661e4196db07b7206ff31b691004cfb53f74

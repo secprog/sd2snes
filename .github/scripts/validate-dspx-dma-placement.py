@@ -16,12 +16,15 @@ if os.environ.get('GITHUB_ACTIONS') != 'true':
 
 BEST = '4d0199bf639629284546858b2b92abcd840b48a9'
 SITE = 'SLICE_X31Y39'
+DRIVER_SITE = 'SLICE_X31Y38'
+DRIVER_LOGICAL = 'snes_dma/dma_r_4_not00012'
 TARGETS = ['snes_dma/dma_r_4_1', 'snes_dma/dma_r_4_6']
 EXTRA = (
-    '# DSPX only: constrain the two worst DMA4 CE endpoints in the reviewed driver region.\n'
+    '# DSPX only: keep the worst DMA4 CE pair and its final enable LUT in adjacent slices.\n'
     '# Original RTL, parent pin/period/jitter constraints and seed 68 stay unchanged.\n'
     'INST "snes_dma/dma_r_4_1" LOC = SLICE_X31Y39;\n'
     'INST "snes_dma/dma_r_4_6" LOC = SLICE_X31Y39;\n'
+    'INST "snes_dma/dma_r_4_not00012" LOC = SLICE_X31Y38;\n'
 ).encode()
 MAP = ('map -p xc3s400-4pq208 -timing -logic_opt on -ol high -xe n -t 68 '
        '-register_duplication on -cm area -detail -ir off -ignore_keep_hierarchy '
@@ -43,7 +46,7 @@ def save(path, value):
     Path(path).write_text(json.dumps(value, indent=2)+'\n', encoding='utf-8')
 
 def ucf(extra, parent, generated=None):
-    need(extra == EXTRA, 'Only exact two new FF LOC constraints allowed')
+    need(extra == EXTRA, 'Only exact two FF and one final CE LUT LOC constraints allowed')
     if generated is not None:
         need(generated == extra + parent, 'Generated UCF must be exact extra followed by unchanged parent')
 
@@ -150,15 +153,21 @@ def physical(instances,nets,pcf,baseline_pcf):
         names=[n for n,body in nets.items() if ('outpin',comp,pin) in PIN.findall(body)]
         need(names==[row['logical']],'Target Q output net changed')
     hard={(c,site) for c,site in locs if (c,site) not in set(original_locs)}
-    need(hard=={(comp,SITE)} and len(locs)==113,'Exact mapped COMP hard LOC not uniquely preserved in PCF')
     ce=nets[expected['CE']];drivers=[(c,pin) for direction,c,pin in PIN.findall(ce) if direction=='outpin']
     need(len(drivers)==1 and drivers[0][0] in instances,'CE driver missing/ambiguous')
     driver,pin=drivers[0];where=position(instances[driver])
     neighborhood={'R'+str(r)+'C'+str(c) for r in [12,13,14] for c in [15,16,17]}
     need(where is not None and where[0] in neighborhood,'Actual CE driver left reviewed bounded neighborhood; no native trial')
     need(pin in ['X','Y'],'Unexpected CE source kind')
+    need(where==('R13C16',DRIVER_SITE),'Final CE driver not at exact reviewed adjacent site')
+    slot='F' if pin=='X' else 'G'
+    need((slot+':'+DRIVER_LOGICAL+':#LUT:') in instances[driver]
+         and ('FXMUX::F' if slot=='F' else 'GYMUX::G') in instances[driver].split(),
+         'Exact final CE logical LUT must directly drive actual target enable')
+    need(hard=={(comp,SITE),(driver,DRIVER_SITE)} and len(locs)==114,
+         'Two exact mapped COMP hard LOCs not uniquely preserved in PCF')
     return dict(targets=rows,targetComponent=comp,targetSite=SITE,bindings=expected,
-        actualCeDriver=dict(component=driver,pin=pin,position=where),hardPcfLocation=dict(component=comp,site=SITE),
+        actualCeDriver=dict(component=driver,pin=pin,position=where),hardPcfLocations=[dict(component=comp,site=SITE),dict(component=driver,site=DRIVER_SITE)],
         originalIoLocCount=112,allOriginalIoLocsPreserved=True,legalMapPackingObserved=True,
         limits='Exact mapped placement/FF pin semantics and hard PCF LOC; not a routed-checkpoint or timing/hardware proof.')
 
@@ -317,13 +326,13 @@ def self_test(output):
         'FFX:snes_dma/dma_r_4_1:#FF FFY:snes_dma/dma_r_4_6:#FF '
         'DXMUX::0 DYMUX::0 BXINV::BX BYINV::BY CEINV::CE CLKINV::CLK SRINV::SR SYNC_ATTR::SYNC '
         'FFX_INIT_ATTR::INIT0 FFY_INIT_ATTR::INIT0 FFX_SR_ATTR::SRLOW FFY_SR_ATTR::SRLOW REVUSED::#OFF ";\n'
-        'inst "driver" "SLICEL",placed R13C16 SLICE_X31Y38 , cfg " F:ce:#LUT:D=A1 FXMUX::F ";\n'
+        'inst "driver" "SLICEL",placed R13C16 SLICE_X31Y38 , cfg " F:snes_dma/dma_r_4_not00012:#LUT:D=A1 FXMUX::F ";\n'
         'net "CLK2", inpin "target" CLK;\nnet "SNES_reset_strobe", inpin "target" SR;\n'
         'net "BUS_DATA<1>", inpin "target" BX;\nnet "BUS_DATA<6>", inpin "target" BY;\n'
         'net "snes_dma/dma_r_4_not0001", outpin "driver" X, inpin "target" CE;\n'
         'net "snes_dma/dma_r_4_1", outpin "target" XQ;\nnet "snes_dma/dma_r_4_6", outpin "target" YQ;')
     base=''.join('COMP "io'+str(i)+'" LOCATE = SITE "P'+str(i)+'" LEVEL 1;\n' for i in range(112))
-    pcf=base+'COMP "target" LOCATE = SITE "SLICE_X31Y39" LEVEL 1;\n'
+    pcf=base+'COMP "target" LOCATE = SITE "SLICE_X31Y39" LEVEL 1;\nCOMP "driver" LOCATE = SITE "SLICE_X31Y38" LEVEL 1;\n'
     def run(text,pcf_text=pcf):
         instances,nets=parse(text);return physical(instances,nets,pcf_text,base)
     record('exact placed FFs with hard COMP and direct pins',lambda:run(raw),True)
@@ -345,11 +354,13 @@ def self_test(output):
         ('"snes_dma/dma_r_4_not0001"','"OTHERCE"','wrong enable'),
         ('outpin "driver" X','outpin "missing" X','driver body missing'),
         ('outpin "driver" X','outpin "driver" XQ','unexpected CE source kind'),
-        ('outpin "target" XQ','outpin "target" Y','wrong target Q output')]:
+        ('outpin "target" XQ','outpin "target" Y','wrong target Q output'),
+        ('placed R13C16 SLICE_X31Y38','placed R13C16 SLICE_X30Y38','nearby but not declared CE site'),
+        ('F:snes_dma/dma_r_4_not00012:#LUT:','F:wrong:#LUT:','wrong final CE logical LUT')]:
         need(raw.count(old)==1,'Unambiguous control mutation')
         record(label,lambda a=old,b=new:run(raw.replace(a,b)),False)
     for label,changed in [
-        ('hard location missing',base),('soft location',pcf.replace('= SITE "SLICE','= SOFT SITE "SLICE')),
+        ('hard location missing',base),('final CE hard location missing',pcf.replace('COMP "driver" LOCATE = SITE "SLICE_X31Y38" LEVEL 1;\n','')),('soft location',pcf.replace('= SITE "SLICE','= SOFT SITE "SLICE')),
         ('wrong COMP name',pcf.replace('COMP "target"','COMP "wrong"')),
         ('duplicate location',pcf+pcf.splitlines()[-1]+'\n'),
         ('I/O pin changed',pcf.replace('SITE "P1"','SITE "P999"'))]:

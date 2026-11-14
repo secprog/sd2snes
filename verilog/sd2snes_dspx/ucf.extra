@@ -1,4 +1,5 @@
-# DSPX only: constrain the two worst DMA4 CE endpoints in the reviewed driver region.
+# DSPX only: keep the worst DMA4 CE pair and its final enable LUT in adjacent slices.
 # Original RTL, parent pin/period/jitter constraints and seed 68 stay unchanged.
 INST "snes_dma/dma_r_4_1" LOC = SLICE_X31Y39;
 INST "snes_dma/dma_r_4_6" LOC = SLICE_X31Y39;
+INST "snes_dma/dma_r_4_not00012" LOC = SLICE_X31Y38;

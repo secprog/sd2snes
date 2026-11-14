@@ -781,6 +781,67 @@ assign P1O = REG_P1_r[5:4];
 
 assign REG_MCT_rsp_val = |(reg_state_r & ST_REG_END) & ~reg_src_r;
 assign REG_DBG_rsp_val = |(reg_state_r & ST_REG_END) &  reg_src_r;
+`ifdef MK2
+// At most one IO address matches. Pull the read bus down from its $ff default
+// using only the selected register's zero bits. Keep the original case below
+// as the Mk.III implementation and the independent formal-proof reference.
+wire [7:0] mk2_io_read_data =
+    (~{8{reg_addr_r == 8'h00}} | ({2'b11, REG_P1_r[5:0]})) &
+    (~{8{reg_addr_r == 8'h01}} | (REG_SB_r)) &
+    (~{8{reg_addr_r == 8'h02}} | ({REG_SC_r[7],6'h3F,REG_SC_r[0]})) &
+    (~{8{reg_addr_r == 8'h04}} | (REG_DIV_r[15:8])) &
+    (~{8{reg_addr_r == 8'h05}} | (REG_TIMA_r)) &
+    (~{8{reg_addr_r == 8'h06}} | (REG_TMA_r)) &
+    (~{8{reg_addr_r == 8'h07}} | ({5'h1F,REG_TAC_r[2:0]})) &
+    (~{8{reg_addr_r == 8'h0F}} | (REG_IF_r)) &
+    (~{8{reg_addr_r == 8'h10}} | ({1'h1,REG_NR10_r[6:0]})) &
+    (~{8{reg_addr_r == 8'h11}} | ({REG_NR11_r[7:6],6'h3F})) &
+    (~{8{reg_addr_r == 8'h12}} | (REG_NR12_r[7:0])) &
+    (~{8{reg_addr_r == 8'h14}} | ({1'h1,REG_NR14_r[6],6'h3F})) &
+    (~{8{reg_addr_r == 8'h16}} | ({REG_NR21_r[7:6],6'h3F})) &
+    (~{8{reg_addr_r == 8'h17}} | (REG_NR22_r[7:0])) &
+    (~{8{reg_addr_r == 8'h19}} | ({1'h1,REG_NR24_r[6],6'h3F})) &
+    (~{8{reg_addr_r == 8'h1A}} | ({REG_NR30_r[7:7],7'h7F})) &
+    (~{8{reg_addr_r == 8'h1C}} | ({1'h1,REG_NR32_r[6:5],5'h1F})) &
+    (~{8{reg_addr_r == 8'h1E}} | ({1'h1,REG_NR34_r[6],6'h3F})) &
+    (~{8{reg_addr_r == 8'h21}} | (REG_NR42_r)) &
+    (~{8{reg_addr_r == 8'h22}} | (REG_NR43_r)) &
+    (~{8{reg_addr_r == 8'h23}} | ({1'h1,REG_NR44_r[6],6'h3F})) &
+    (~{8{reg_addr_r == 8'h24}} | (REG_NR50_r)) &
+    (~{8{reg_addr_r == 8'h25}} | (REG_NR51_r)) &
+    (~{8{reg_addr_r == 8'h26}} | ({REG_NR52_r[7:7],3'h7,({4{REG_NR52_r[7]}} & {APU_REG_enable})})) &
+    (~{8{reg_addr_r[7:4] == 4'h3}} | ((APU_REG_enable[2] & ~reg_src_r) ? 8'hFF : reg_wave_cpu_data)) &
+    (~{8{reg_addr_r == 8'h40}} | (REG_LCDC_r)) &
+    (~{8{reg_addr_r == 8'h41}} | ({1'b1,REG_STAT_r[6:0]})) &
+    (~{8{reg_addr_r == 8'h42}} | (REG_SCY_r)) &
+    (~{8{reg_addr_r == 8'h43}} | (REG_SCX_r)) &
+    (~{8{reg_addr_r == 8'h44}} | (PPU_LY_read)) &
+    (~{8{reg_addr_r == 8'h45}} | (REG_LYC_r)) &
+    (~{8{reg_addr_r == 8'h46}} | (REG_DMA_r)) &
+    (~{8{reg_addr_r == 8'h47}} | (REG_BGP_r)) &
+    (~{8{reg_addr_r == 8'h48}} | (REG_OBP0_r)) &
+    (~{8{reg_addr_r == 8'h49}} | (REG_OBP1_r)) &
+    (~{8{reg_addr_r == 8'h4A}} | (REG_WY_r)) &
+    (~{8{reg_addr_r == 8'h4B}} | (REG_WX_r)) &
+    (~{8{reg_addr_r == 8'h4C}} | (REG_KEY0_r)) &
+    (~{8{reg_addr_r == 8'h4D}} | (cgb_mode ? {cpu_speed_r,6'h3F,REG_KEY1_r[0]} : 8'hFF)) &
+    (~{8{reg_addr_r == 8'h4F}} | ({7'h7F,REG_VBK_r})) &
+    (~{8{reg_addr_r == 8'h50}} | ({7'h7F,REG_BOOT_r[`BOOT_ROM_DI]})) &
+    (~{8{reg_addr_r == 8'h55}} | (cgb_mode ? {~hdma_running,hdma_left} : 8'hFF)) &
+    (~{8{reg_addr_r == 8'h56}} | (cgb_mode ? {REG_RP_r[2:1],5'h1F,REG_RP_r[0]} : 8'hFF)) &
+    (~{8{reg_addr_r == 8'h68}} | ({REG_BCPS_ai_r,1'b1,REG_BCPS_r})) &
+    (~{8{reg_addr_r == 8'h69 || reg_addr_r == 8'h6B}} | ((cram_cpu_ok & ~cram_blocked) ? cram_q_a_r : 8'hFF)) &
+    (~{8{reg_addr_r == 8'h6A}} | ({REG_OCPS_ai_r,1'b1,REG_OCPS_r})) &
+    (~{8{reg_addr_r == 8'h6C}} | ({7'h7F,REG_OPRI_r})) &
+    (~{8{reg_addr_r == 8'h70}} | (cgb_mode ? {5'h1F,REG_SVBK_r} : 8'hFF)) &
+    (~{8{reg_addr_r == 8'h72}} | (REG_PSWX_r)) &
+    (~{8{reg_addr_r == 8'h73}} | (REG_PSWY_r)) &
+    (~{8{reg_addr_r == 8'h74}} | (cgb_mode ? REG_PSW_r : 8'hFF)) &
+    (~{8{reg_addr_r == 8'h75}} | ({1'b1,REG_PGB_r,4'hF})) &
+    (~{8{reg_addr_r == 8'h76 || reg_addr_r == 8'h77}} | (8'h00)) &
+    (~{8{reg_addr_r == 8'hFF}} | ({3'h0,REG_IE_r[4:0]}));
+`endif
+
 assign REG_data = reg_mdr_r;
 
 assign REG_DMA_start = reg_dma_start_r;
@@ -1278,6 +1339,9 @@ always @(posedge CLK) begin
           8'hFF: begin reg_mdr_r[7:0] <= {3'h0,REG_IE_r[4:0]};          if (reg_wr_r) REG_IE_r[4:0]   <= reg_wr_data_r[4:0]; end
           default: reg_mdr_r <= 8'hFF;
         endcase
+`ifdef MK2
+        reg_mdr_r <= mk2_io_read_data;
+`endif
 
         reg_state_r <= ST_REG_END;
       end

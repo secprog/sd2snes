@@ -77,7 +77,7 @@ jobs:
           RTL_ONLY: ${{ inputs.gbc_rtl_only }}
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends iverilog
+          sudo apt-get install -y --no-install-recommends iverilog yosys
           if [[ "$RTL_ONLY" == all || "$RTL_ONLY" == clock ]]; then exit 0; fi
           sudo apt-get install -y --no-install-recommends cmake g++
           cmake -S .ci-tools/asar-src/src -B .ci-tools/asar-build -DCMAKE_BUILD_TYPE=Release \
@@ -92,6 +92,9 @@ jobs:
           args=()
           if [[ "$RTL_ONLY" == clock ]]; then args+=(--clock-only); fi
           python3 tests/test_gbc_mk2.py "${args[@]}" | tee "$RUNNER_TEMP/gbc-rtl.log"
+          if [[ "$RTL_ONLY" != clock ]]; then
+            python3 .github/scripts/check-gbc-io-read.py | tee "$RUNNER_TEMP/gbc-io-proof.log"
+          fi
       - name: Assemble and validate both wire protocols and existing player behavior
         if: inputs.gbc_rtl_only != 'all' && inputs.gbc_rtl_only != 'clock'
         run: |

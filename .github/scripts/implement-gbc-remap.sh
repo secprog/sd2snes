@@ -12,6 +12,27 @@ xtclsh "$root/.github/scripts/gbc-remap-options.tcl" "$root" "$experiment/report
 read -r -a map_args < "$experiment/reports/map.options"
 read -r -a par_args < "$experiment/reports/par.options"
 candidate_args=("${map_args[@]}")
+candidate_par_args=("${par_args[@]}")
+# UG628 documents cost tables 1..100 for Spartan-3 MAP and PAR. Explore only
+# physical placement; the native round trip retains the project options.
+seed=${PLACEMENT_SEED:-3}
+[[ "$seed" =~ ^([1-9]|[1-9][0-9]|100)$ ]]
+changed=0
+for i in "${!candidate_args[@]}"; do
+  if [[ "${candidate_args[$i]}" == -t ]]; then
+    candidate_args[$((i+1))]=$seed
+    changed=$((changed+1))
+  fi
+done
+[[ "$changed" == 1 ]]
+changed=0
+for i in "${!candidate_par_args[@]}"; do
+  if [[ "${candidate_par_args[$i]}" == -t ]]; then
+    candidate_par_args[$((i+1))]=$seed
+    changed=$((changed+1))
+  fi
+done
+[[ "$changed" == 1 ]]
 case "${MAP_DUPLICATION:-project}" in
   project) ;;
   off)
@@ -31,8 +52,11 @@ esac
 # The unchanged reconstruction must still use the exact native project options.
 candidate_args+=(-detail)
 printf '%s\n' "${candidate_args[*]}" > "$experiment/reports/candidate-map.options"
+printf '%s\n' "${candidate_par_args[*]}" > "$experiment/reports/candidate-par.options"
 printf 'MAP options: %s\n' "${map_args[*]}"
 printf 'PAR options: %s\n' "${par_args[*]}"
+printf 'Candidate MAP options: %s\n' "${candidate_args[*]}"
+printf 'Candidate PAR options: %s\n' "${candidate_par_args[*]}"
 
 mkdir -p "$experiment/baseline" "$experiment/candidate"
 cp "$experiment/reports/native-reconstructed.edf" "$experiment/baseline/main.edf"
@@ -90,7 +114,7 @@ done
 
 cd "$experiment/candidate"
 par_status=0
-par -w "${par_args[@]}" main_map.ncd main.ncd main.pcf || par_status=$?
+par -w "${candidate_par_args[@]}" main_map.ncd main.ncd main.pcf || par_status=$?
 trce_status=0
 trce -v 1 -n 400 -u 10 -fastpaths main.ncd main.pcf -o main.twr || trce_status=$?
 [[ "$par_status" == 0 && "$trce_status" == 0 ]]

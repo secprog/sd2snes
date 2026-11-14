@@ -170,16 +170,18 @@ jobs:
   gbc-native-remap:
     if: inputs.build == 'fpga' && inputs.fpga_cores == 'mk2:gbc' && inputs.gbc_yosys_check && inputs.mk2_run_id != ''
     needs: gbc-checks
-    name: Native GBC remap (${{ matrix.profile }}, duplication ${{ matrix.register_duplication }})
+    name: Native GBC remap (${{ matrix.profile }}, seed ${{ matrix.seed }}, duplication ${{ matrix.register_duplication }})
     strategy:
       fail-fast: false
       matrix:
         profile: ${{ fromJSON(inputs.gbc_remap_profiles || '["gate-lut4-satlut-delay", "gate-lut4-satlut-delay4", "gate-lut4-delay-satlut", "gate-lut4-critical-satlut"]') }}
+        seed: ${{ fromJSON(format('[{0}]', inputs.placement_seeds || '3')) }}
         register_duplication: [project]
     uses: ./.github/workflows/gbc-native-remap.yml
     with:
       native_run: ${{ inputs.mk2_run_id }}
       profile: ${{ matrix.profile }}
+      placement_seed: ${{ matrix.seed }}
       register_duplication: ${{ matrix.register_duplication }}
 
   package-contract:

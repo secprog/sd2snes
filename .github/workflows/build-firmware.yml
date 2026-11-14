@@ -98,6 +98,7 @@ jobs:
             python3 .github/scripts/check-gbc-sp-add.py | tee "$RUNNER_TEMP/gbc-sp-add-proof.log"
             python3 .github/scripts/check-gbc-oam-range.py | tee "$RUNNER_TEMP/gbc-oam-range-proof.log"
             python3 .github/scripts/check-gbc-cic-share.py | tee "$RUNNER_TEMP/gbc-cic-share-proof.log"
+            python3 .github/scripts/check-gbc-audio-range.py | tee "$RUNNER_TEMP/gbc-audio-range-proof.log"
           fi
       - name: Assemble and validate both wire protocols and existing player behavior
         if: inputs.gbc_rtl_only != 'all' && inputs.gbc_rtl_only != 'clock'

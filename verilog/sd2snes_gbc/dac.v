@@ -110,7 +110,9 @@ always @(posedge clkin) begin
       for (i = 0; i < 2; i = i + 1) begin
         sgb_ci[0][i] <= sgb_ci[1][i];
         sgb_ci[1][i] <= sgb_ci[2][i];
-        sgb_ci[2][i] <= sgb_filter_input[i];
+        // Every comb stage takes its input from work. INT3 has already
+        // placed the final integrator result there before COMB1 starts.
+        sgb_ci[2][i] <= sgb_comb_work[i];
         sgb_comb_work[i] <= sgb_filter_result[i];
         if (sgb_cicstate == ST3_COMB3) sgb_co[2][i] <= sgb_filter_result[i];
       end
@@ -197,8 +199,15 @@ assign sgb_vol_sample = sgb_data_ch * $signed({1'b0, sgb_vol_reg});
 reg signed [25:0] sgb_vol_sample_r;
 always @(posedge clkin) sgb_vol_sample_r <= sgb_vol_sample;
 wire signed [25:0] vol_sample = sgb_vol_sample_r;
+`ifdef MK2
+// The filter supplies a signed ten-bit value shifted left by four. The
+// largest selectable boost is 3.5, so every result is in [-28672,28616].
+// Saturation is unreachable; retain the exact original truncation to 16 bits.
+wire signed [15:0] vol_sample_sat = vol_sample[23:8];
+`else
 wire signed [15:0] vol_sample_sat = ((vol_sample[25:23] == 3'b000 || vol_sample[25:23] == 3'b111) ? vol_sample[23:8]
                       : vol_sample[25] ? 16'sh8000 : 16'sh7fff);
+`endif
 always @(posedge clkin) begin
   if (sclk_falling) begin
     sdout_reg <= smpshift[15];

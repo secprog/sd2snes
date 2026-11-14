@@ -167,8 +167,8 @@ case "${IGNORE_TIMING:-0}" in
     image_status=timing-unverified
     {
       echo 'EXPERIMENTAL MKII GBC IMAGE - SETUP TIMING NOT QUALIFIED'
-      echo 'Generated with the explicit workflow input ignore_timing=true.'
-      echo 'Use the matching MkII wire-$05 player and experimental MCU firmware.'
+      echo 'Generated with explicit MkII GBC setup-timing acceptance (IGNORE_TIMING=1).'
+      echo 'Use the matching MkII wire-$05 player and default GB/GBC MCU firmware.'
       echo 'Hardware stability has not been verified.'
       printf 'Profile: %s; placement seed: %s\n' "$PROFILE" "$seed"
       grep 'Timing Score:' main.par

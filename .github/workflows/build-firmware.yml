@@ -69,7 +69,7 @@ concurrency:
 
 jobs:
   gbc-checks:
-    if: inputs.build == 'fpga' && contains(inputs.fpga_cores, 'gbc')
+    if: inputs.build != 'software' && inputs.build != 'menus' && (inputs.build != 'fpga' || inputs.fpga_cores == '' || contains(inputs.fpga_cores, 'gbc'))
     name: Check GBC framebuffer, GB audio and both SNES players
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -262,9 +262,9 @@ jobs:
           target: ${{ matrix.board }}
 
   fpga-core:
-    if: ${{ !cancelled() && needs.fpga-plan.result == 'success' && (needs.prepare-fpga.result == 'success' || (inputs.build == 'fpga' && contains(inputs.fpga_cores, 'gbc'))) }}
+    if: ${{ !cancelled() && needs.fpga-plan.result == 'success' && (needs.gbc-checks.result == 'success' || needs.gbc-checks.result == 'skipped') && (needs.prepare-fpga.result == 'success' || (inputs.build == 'fpga' && contains(inputs.fpga_cores, 'gbc'))) }}
     name: Build ${{ matrix.board }} core ${{ matrix.core }}${{ matrix.seed && format(' seed {0}', matrix.seed) || '' }}
-    needs: [fpga-plan, prepare-fpga]
+    needs: [fpga-plan, prepare-fpga, gbc-checks]
     runs-on: ubuntu-22.04
     timeout-minutes: 360
     strategy:
@@ -273,6 +273,15 @@ jobs:
       matrix: ${{ fromJSON(needs.fpga-plan.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Verify the selected MkII logic and original MkIII core
+        if: matrix.board == 'mk2' && matrix.core == 'gbc'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends iverilog
+          python3 .github/scripts/check-gbc-board-isolation.py
 
       - name: Verify SMS clock-enable timing model
         if: matrix.board == 'mk3' && matrix.core == 'sms'
@@ -305,8 +314,20 @@ jobs:
           bash .github/scripts/report-activity.sh "$container_name" &
           activity_pid=$!
           trap 'kill "$activity_pid" 2>/dev/null || true; wait "$activity_pid" 2>/dev/null || true' EXIT
+          set +e
           docker run "${args[@]}" --env ISE_CTABLE --env IGNORE_TIMING --entrypoint /bin/bash "sd2snes-ci:$BOARD" \
             .github/scripts/build.sh "$BOARD" "$CORE" 2>&1 | tee "$RUNNER_TEMP/fpga-build.log"
+          statuses=("${PIPESTATUS[@]}")
+          set -e
+          [[ "${statuses[1]}" == 0 ]]
+          if [[ "${statuses[0]}" != 0 ]]; then
+            # XST's native mapping is too large; the proved LUT remap below
+            # is the implementation used for the new MkII default core.
+            [[ "$BOARD:$CORE" == mk2:gbc ]]
+            test -s verilog/sd2snes_gbc/main.ngc
+            grep -q 'ERROR:Map:237' verilog/sd2snes_gbc/main_map.mrp
+            if grep 'ERROR:' "$RUNNER_TEMP/fpga-build.log" | grep -v 'ERROR:Map:237'; then exit 1; fi
+          fi
 
       - name: Export experimental MkII GBC synthesis for resource analysis
         if: always() && matrix.board == 'mk2' && matrix.core == 'gbc'
@@ -341,6 +362,29 @@ jobs:
           python3 .github/scripts/check-gbc-smallmem-native.py \
             verilog/sd2snes_gbc/main_synth.v "$RUNNER_TEMP/gbc-vendor-bram.v" \
             | tee "$RUNNER_TEMP/gbc-smallmem-vendor.log"
+
+      - name: Install pinned GBC remapping tools
+        if: matrix.board == 'mk2' && matrix.core == 'gbc'
+        run: bash .github/scripts/install-gbc-logic-tools.sh
+
+      - name: Implement the selected MkII GB/GBC layout
+        if: matrix.board == 'mk2' && matrix.core == 'gbc'
+        run: bash .github/scripts/build-gbc-mk2-remap.sh
+
+      - name: Retain MkII GBC implementation and timing acceptance
+        if: always() && matrix.board == 'mk2' && matrix.core == 'gbc'
+        uses: actions/upload-artifact@v4
+        with:
+          name: gbc-mk2-default-implementation${{ matrix.seed && format('-seed-{0}', matrix.seed) || '' }}
+          path: |
+            .ci-tools/gbc-remap/reports/
+            .ci-tools/gbc-remap/candidate/*.mrp
+            .ci-tools/gbc-remap/candidate/*.par
+            .ci-tools/gbc-remap/candidate/*.twr
+            .ci-tools/gbc-remap/candidate/*.bgn
+            .ci-tools/gbc-remap/candidate/fpga_gbc.bit
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Collect FPGA image
         env:
@@ -765,12 +809,15 @@ jobs:
           body = package.read_bytes()
           if not body:
               raise SystemExit('Empty board package')
+          timing_unverified = policy == '1' or board == 'mk2'
           receipt = {
               'schema': 'sd2snes-package-build-qualification-v1',
               'board': board, 'sourceCommit': os.environ['GITHUB_SHA'],
               'runId': os.environ['GITHUB_RUN_ID'], 'runAttempt': os.environ['GITHUB_RUN_ATTEMPT'],
-              'ignoreTiming': policy == '1', 'timingThresholdsRequired': policy == '0',
-              'timingStatus': 'unverified-user-waiver' if policy == '1' else 'normal-build-gates-required',
+              'ignoreTiming': policy == '1', 'timingThresholdsRequired': not timing_unverified,
+              'timingStatus': ('unverified-user-accepted-gbc-setup' if board == 'mk2' else
+                               'unverified-user-waiver' if policy == '1' else 'normal-build-gates-required'),
+              'gbcSetupAccepted': board == 'mk2',
               'nativeToolFailuresIgnored': False, 'buildAndPackageChecksPassed': True,
               'hardwareQualified': False,
               'package': {'name': package.name, 'bytes': len(body), 'sha256': hashlib.sha256(body).hexdigest()},
@@ -785,7 +832,8 @@ jobs:
           (upload / 'build-qualification.json').write_text(json.dumps(receipt, indent=2, sort_keys=True) + '\n')
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
               summary.write(board + ': package built and checked at ' + os.environ['GITHUB_SHA'] + '.\n\n')
-              summary.write(('Timing thresholds were explicitly ignored. This package is timing-unverified. '
+              summary.write(('The accepted MkII GBC setup miss is included; this package is timing-unverified. '
+                             if board == 'mk2' else 'Timing thresholds were explicitly ignored. This package is timing-unverified. '
                              if policy == '1' else 'Normal build timing gates were required. ')
                             + 'Native tool failures were not ignored. Hardware qualification was not performed.\n')
           PY
@@ -793,7 +841,7 @@ jobs:
       - name: Upload board firmware package
         uses: actions/upload-artifact@v4
         with:
-          name: sd2snes-firmware-${{ matrix.board }}-${{ github.sha }}${{ env.IGNORE_TIMING == '1' && '-timing-unverified' || '' }}
+          name: sd2snes-firmware-${{ matrix.board }}-${{ github.sha }}${{ (env.IGNORE_TIMING == '1' || matrix.board == 'mk2') && '-timing-unverified' || '' }}
           path: ${{ runner.temp }}/package-${{ matrix.board }}/
           if-no-files-found: error
           retention-days: 14

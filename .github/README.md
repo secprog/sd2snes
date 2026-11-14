@@ -84,8 +84,11 @@ single board. These commands do not bypass FPGA timing or synthesis guards.
 The MkII port retains both rendering modes, the complete 160x144 image, C6
 colour conversion and the existing GB audio output. C6 uses external SRAM
 and a planar row cache on MkII. Its wire-$05 player must be paired with the
-MkII core; the MkIII player uses wire $03. Normal MkII releases still select
-SGB. `MK2_GBC_EXPERIMENTAL=1` enables the separate MCU loader policy.
+MkII core; the MkIII player uses wire $03. MkII now routes every `.gb` and
+`.gbc` image through this core, replacing the old SGB variants in its package.
+MkIII keeps its original core, MSU-1 path and configurable SGB/GBC routing.
+Hosted source-identity checks compare MkIII against the pre-port commit and
+MkII against the accepted layout before implementation.
 
 Physical fits have been measured, but the port has not yet passed the
 committed MkII setup-timing requirements. A passing RTL proof or resource
@@ -101,7 +104,12 @@ The accepted experimental candidate uses RTL `476d1a19`, native run
 `43607129297`, profile `gate-lut4-delay-satlut`, seed `11`, and normal MAP/PAR
 effort. Run `43612271241` measured 7,161/7,168 LUTs and 3,584/3,584 slices,
 with -0.832 ns setup slack (36 errors) and no hold errors. The user accepted
-that setup miss on 2026-11-14. Later area/timing experiments were withdrawn.
+that setup miss on 2026-11-14. Later area/timing experiments were withdrawn. Normal MkII GBC Actions builds
+now run that remapping profile and seed after native synthesis, label the image
+and MkII package timing-unverified, and retain the actual timing reports.
+The native MAP capacity error is expected only before the proved remapping;
+final fit, routing, native-tool errors, hold and switching-limit checks remain
+mandatory. Other cores keep their existing timing policy.
 
 Use GitHub Actions for all compilation and simulation. First dispatch
 `build-firmware.yml` with `build=fpga`, `fpga_cores=mk2:gbc` and
@@ -109,8 +117,8 @@ Use GitHub Actions for all compilation and simulation. First dispatch
 and exports native synthesis in `fpga-reports-mk2-gbc`, including after the
 expected native capacity failure. To check MkIII too, select
 `fpga_cores=mk2:gbc,mk3:gbc`. `gbc_mcu_check=true` additionally compiles the
-normal and experimental MkII firmware against a freshly built bootstrap.
-The MCU artifact retains each policy's matching card modules and boot screen
+default MkII GB/GBC firmware against a freshly built bootstrap.
+The MCU artifact retains the matching card modules and boot screen
 alongside its firmware and overlays.
 Those compiler-check artifacts are not complete SD-card release packages.
 
@@ -148,8 +156,8 @@ and [CS4344 data sheet](https://statics.cirrus.com/pubs/proDatasheet/CS4344-45-4
 The SNES internal sound-chip sample rate therefore does
 not establish a lower precision requirement for this path. The MkII arithmetic
 and filter changes preserve the existing output, checked against the SGB
-reference across every volume setting. MSU-1 is absent from this GBC core;
-SA-1 was never instantiated in it.
+reference across every volume setting. MSU-1 is absent from the MkII GBC implementation. MkIII retains its original
+MSU-1 path; SA-1 was never instantiated in either GBC core.
 
 `Compare CX4 RTL timing` is a manual diagnostic workflow. It compares the current
 `cx4.v` and `main.v` with both files from sttng's ST0011/ST0018/COL20 reference,

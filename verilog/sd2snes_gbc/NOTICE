@@ -38,10 +38,10 @@ GBC-CORE-CONTRACT.md.
                 Status +$93 bit 0 reports a sticky producer FIFO overflow;
                 overflow invalidates the cache rather than exposing torn data.
 
-The GBC configuration contains no SA-1 instance. It also no longer contains
-MSU-1 hardware: the data/register interface, PCM buffer/interpolator, mixer
-and MCU controls have been removed. dac.v retains the GB APU's original CIC
-filter, volume boost, saturation and I2S serializer on both boards.
+The GBC configuration contains no SA-1 instance. Only Mk.II removes the
+MSU-1 data/register interface, PCM buffer/interpolator, mixer and MCU controls.
+The mk3/ sources preserve the original Mk.III core, including its MSU-1 path.
+The hosted board-isolation check proves active source identity on both boards.
 On Mk.II the CIC stages share arithmetic by rotating their state between
 the existing stage clocks. They retain all 28 bits and publish the same
 sample on the same clock. The audio test compares the full filter state,
@@ -55,12 +55,15 @@ the existing write gate and read-before-write sample behavior are preserved.
 
 Mk.II status
 ------------
-This is an experimental port, excluded from normal Mk.II packages and MCU
-routing until native implementation and console validation are complete.
-The original SGB core remains the normal Mk.II Game Boy core. An explicit
-MCU build with MK2_GBC_EXPERIMENTAL=1 enables GBC routing and uses a separate
-obj-mk2-gbc directory, so it cannot reuse production objects. The GBC route
-never selects the SGB/MSU variant. The Mk.II GBC port keeps both VRAM banks,
+The fitted GB/GBC core is now the default for all Mk.II Game Boy images,
+including existing configurations. The package replaces fpga_sgb.bit and
+fpga_sgb_msu.bit with fpga_gbc.bit and includes its wire-$05 SNES player and
+accepted SameBoy boot ROM/license. No opt-in MCU flag is required.
+The user accepted the measured -0.832 ns setup miss on 2026-11-14. The image
+and Mk.II packages are marked timing-unverified; console stability has not
+been established. The selected profile is gate-lut4-delay-satlut, seed 11,
+normal MAP/PAR effort, with 7161 LUTs and 3584 slices in run 43612271241.
+The Mk.II GBC port keeps both VRAM banks,
 the colour pipeline, HDMA and double speed. Small memories use LUT RAM;
 the optional MCU state-debug window is omitted there.
 Wire $05 also omits status fields unused by the SNES player: +$0A/+$0B,
@@ -86,19 +89,15 @@ The player image must remain below SRAM $70000, reserved for video storage.
 Build and verify on GitHub Actions (Build firmware, FPGA mode):
   fpga_cores = mk2:gbc,mk3:gbc
   ignore_timing = false
-The explicit mk2:gbc selector runs the experimental ISE build without adding
-it to production inventories. The same run executes tests/test_gbc_mk2.py,
-assembles both player variants, and runs the existing SNES-player tests.
-It uploads native resource/timing reports and the two player images.
-Wire $05 uses gbc_snes_mk2.bin; wire $03 keeps gbc_snes.bin. A mismatched pair
-fails the existing version check. No additional image quantisation is used.
-The optional gbc_mcu_check input builds a real Mk.II bootstrap, then compiles
-and links production and experimental MCU firmware in separate object trees.
-These checks do not qualify a GBC bitstream or replace console validation.
-The optional gbc_yosys_check input runs an independent Spartan-3 synthesis
-mapping diagnostic. Combine it with gbc_rtl_only=all to avoid a native build.
-Its resource estimate includes ten RAMB16s inside the unchanged CoreGen
-wrappers. It does not enable production routing or publish a bitstream.
+The Mk.II Actions job synthesizes, proves the selected LUT remap, places and
+routes it, and generates the bitstream with the accepted setup-timing policy.
+The board-isolation and functional checks run before this path. Mk.III builds
+its unchanged Quartus project. Wire $05 uses gbc_snes_mk2.bin; wire $03 keeps
+gbc_snes.bin. A mismatched pair fails the existing version check. No additional
+image quantisation is used. gbc_mcu_check builds the default Mk.II firmware
+and its matching modules against a freshly built bootstrap.
+See .github/README.md for the implementation provenance and manual remap inputs.
+
 
 
 Block RAM rules

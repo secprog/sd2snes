@@ -4,7 +4,7 @@
 // HRAM_SEL is driven by the real MCT state, whose mutual exclusion and read
 // windows are proved in check-gbc-smallmem.py. Reads remain one clock late,
 // including READ_FIRST when either port addresses the byte being written.
-// The decoder uses LUT ROM instead of occupying the second RAM port. Every
+// The decoder uses logic instead of occupying the second RAM port. Every
 // opcode is checked against the original SGB CoreGen COE in hosted tests.
 module gbc_cpu_memory(input CLK,
   input [7:0] DEC_ADDR, output reg [15:0] DEC_Q,
@@ -13,7 +13,6 @@ module gbc_cpu_memory(input CLK,
   input CRAM_WE, input [6:0] CRAM_ADDR_A, input [7:0] CRAM_DATA,
   output [7:0] CRAM_Q_A,
   input [6:0] CRAM_ADDR_B, output reg [7:0] CRAM_Q_B);
-  (* rom_style = "distributed" *) reg [15:0] decode [0:255];
   (* ram_style = "block" *) reg [7:0] bytes [0:255];
   wire [7:0] cpu_addr = HRAM_SEL ? {1'b1,HRAM_ADDR} : {1'b0,CRAM_ADDR_A};
   wire [7:0] cpu_data = HRAM_SEL ? HRAM_DATA : CRAM_DATA;
@@ -24,265 +23,79 @@ module gbc_cpu_memory(input CLK,
     // HRAM retains its zero initialization. Palette power-up data is not
     // specified by the GB interface; the boot ROM programs its contents.
     for(init_i=0;init_i<256;init_i=init_i+1) bytes[init_i]=0;
-    decode[  0] = 16'h0000;
-    decode[  1] = 16'h8431;
-    decode[  2] = 16'h14f8;
-    decode[  3] = 16'h0442;
-    decode[  4] = 16'h0882;
-    decode[  5] = 16'h0883;
-    decode[  6] = 16'h4821;
-    decode[  7] = 16'h0ff5;
-    decode[  8] = 16'ha368;
-    decode[  9] = 16'h0e44;
-    decode[ 10] = 16'h1f49;
-    decode[ 11] = 16'h0443;
-    decode[ 12] = 16'h0992;
-    decode[ 13] = 16'h0993;
-    decode[ 14] = 16'h4921;
-    decode[ 15] = 16'h0ff5;
-    decode[ 16] = 16'h0000;
-    decode[ 17] = 16'h8531;
-    decode[ 18] = 16'h15f8;
-    decode[ 19] = 16'h0552;
-    decode[ 20] = 16'h0aa2;
-    decode[ 21] = 16'h0aa3;
-    decode[ 22] = 16'h4a21;
-    decode[ 23] = 16'h0ff5;
-    decode[ 24] = 16'h4126;
-    decode[ 25] = 16'h0e54;
-    decode[ 26] = 16'h1f59;
-    decode[ 27] = 16'h0553;
-    decode[ 28] = 16'h0bb2;
-    decode[ 29] = 16'h0bb3;
-    decode[ 30] = 16'h4b21;
-    decode[ 31] = 16'h0ff5;
-    decode[ 32] = 16'h4126;
-    decode[ 33] = 16'h8e31;
-    decode[ 34] = 16'h1ef8;
-    decode[ 35] = 16'h0ee2;
-    decode[ 36] = 16'h0cc2;
-    decode[ 37] = 16'h0cc3;
-    decode[ 38] = 16'h4c21;
-    decode[ 39] = 16'h0ff4;
-    decode[ 40] = 16'h4126;
-    decode[ 41] = 16'h0ee4;
-    decode[ 42] = 16'h1fe9;
-    decode[ 43] = 16'h0ee3;
-    decode[ 44] = 16'h0dd2;
-    decode[ 45] = 16'h0dd3;
-    decode[ 46] = 16'h4d21;
-    decode[ 47] = 16'h0ff4;
-    decode[ 48] = 16'h4126;
-    decode[ 49] = 16'h8631;
-    decode[ 50] = 16'h1ef8;
-    decode[ 51] = 16'h0662;
-    decode[ 52] = 16'h2eea;
-    decode[ 53] = 16'h2eeb;
-    decode[ 54] = 16'h5e28;
-    decode[ 55] = 16'h0ff4;
-    decode[ 56] = 16'h4126;
-    decode[ 57] = 16'h0e64;
-    decode[ 58] = 16'h1fe9;
-    decode[ 59] = 16'h0663;
-    decode[ 60] = 16'h0ff2;
-    decode[ 61] = 16'h0ff3;
-    decode[ 62] = 16'h4f21;
-    decode[ 63] = 16'h0ff4;
-    decode[ 64] = 16'h0881;
-    decode[ 65] = 16'h0891;
-    decode[ 66] = 16'h08a1;
-    decode[ 67] = 16'h08b1;
-    decode[ 68] = 16'h08c1;
-    decode[ 69] = 16'h08d1;
-    decode[ 70] = 16'h18e9;
-    decode[ 71] = 16'h08f1;
-    decode[ 72] = 16'h0981;
-    decode[ 73] = 16'h0991;
-    decode[ 74] = 16'h09a1;
-    decode[ 75] = 16'h09b1;
-    decode[ 76] = 16'h09c1;
-    decode[ 77] = 16'h09d1;
-    decode[ 78] = 16'h19e9;
-    decode[ 79] = 16'h09f1;
-    decode[ 80] = 16'h0a81;
-    decode[ 81] = 16'h0a91;
-    decode[ 82] = 16'h0aa1;
-    decode[ 83] = 16'h0ab1;
-    decode[ 84] = 16'h0ac1;
-    decode[ 85] = 16'h0ad1;
-    decode[ 86] = 16'h1ae9;
-    decode[ 87] = 16'h0af1;
-    decode[ 88] = 16'h0b81;
-    decode[ 89] = 16'h0b91;
-    decode[ 90] = 16'h0ba1;
-    decode[ 91] = 16'h0bb1;
-    decode[ 92] = 16'h0bc1;
-    decode[ 93] = 16'h0bd1;
-    decode[ 94] = 16'h1be9;
-    decode[ 95] = 16'h0bf1;
-    decode[ 96] = 16'h0c81;
-    decode[ 97] = 16'h0c91;
-    decode[ 98] = 16'h0ca1;
-    decode[ 99] = 16'h0cb1;
-    decode[100] = 16'h0cc1;
-    decode[101] = 16'h0cd1;
-    decode[102] = 16'h1ce9;
-    decode[103] = 16'h0cf1;
-    decode[104] = 16'h0d81;
-    decode[105] = 16'h0d91;
-    decode[106] = 16'h0da1;
-    decode[107] = 16'h0db1;
-    decode[108] = 16'h0dc1;
-    decode[109] = 16'h0dd1;
-    decode[110] = 16'h1de9;
-    decode[111] = 16'h0df1;
-    decode[112] = 16'h1e88;
-    decode[113] = 16'h1e98;
-    decode[114] = 16'h1ea8;
-    decode[115] = 16'h1eb8;
-    decode[116] = 16'h1ec8;
-    decode[117] = 16'h1ed8;
-    decode[118] = 16'h0000;
-    decode[119] = 16'h1ef8;
-    decode[120] = 16'h0f81;
-    decode[121] = 16'h0f91;
-    decode[122] = 16'h0fa1;
-    decode[123] = 16'h0fb1;
-    decode[124] = 16'h0fc1;
-    decode[125] = 16'h0fd1;
-    decode[126] = 16'h1fe9;
-    decode[127] = 16'h0ff1;
-    decode[128] = 16'h0f84;
-    decode[129] = 16'h0f94;
-    decode[130] = 16'h0fa4;
-    decode[131] = 16'h0fb4;
-    decode[132] = 16'h0fc4;
-    decode[133] = 16'h0fd4;
-    decode[134] = 16'h1fec;
-    decode[135] = 16'h0ff4;
-    decode[136] = 16'h0f84;
-    decode[137] = 16'h0f94;
-    decode[138] = 16'h0fa4;
-    decode[139] = 16'h0fb4;
-    decode[140] = 16'h0fc4;
-    decode[141] = 16'h0fd4;
-    decode[142] = 16'h1fec;
-    decode[143] = 16'h0ff4;
-    decode[144] = 16'h0f84;
-    decode[145] = 16'h0f94;
-    decode[146] = 16'h0fa4;
-    decode[147] = 16'h0fb4;
-    decode[148] = 16'h0fc4;
-    decode[149] = 16'h0fd4;
-    decode[150] = 16'h1fec;
-    decode[151] = 16'h0ff4;
-    decode[152] = 16'h0f84;
-    decode[153] = 16'h0f94;
-    decode[154] = 16'h0fa4;
-    decode[155] = 16'h0fb4;
-    decode[156] = 16'h0fc4;
-    decode[157] = 16'h0fd4;
-    decode[158] = 16'h1fec;
-    decode[159] = 16'h0ff4;
-    decode[160] = 16'h0f84;
-    decode[161] = 16'h0f94;
-    decode[162] = 16'h0fa4;
-    decode[163] = 16'h0fb4;
-    decode[164] = 16'h0fc4;
-    decode[165] = 16'h0fd4;
-    decode[166] = 16'h1fec;
-    decode[167] = 16'h0ff4;
-    decode[168] = 16'h0f84;
-    decode[169] = 16'h0f94;
-    decode[170] = 16'h0fa4;
-    decode[171] = 16'h0fb4;
-    decode[172] = 16'h0fc4;
-    decode[173] = 16'h0fd4;
-    decode[174] = 16'h1fec;
-    decode[175] = 16'h0ff4;
-    decode[176] = 16'h0f84;
-    decode[177] = 16'h0f94;
-    decode[178] = 16'h0fa4;
-    decode[179] = 16'h0fb4;
-    decode[180] = 16'h0fc4;
-    decode[181] = 16'h0fd4;
-    decode[182] = 16'h1fec;
-    decode[183] = 16'h0ff4;
-    decode[184] = 16'h0f84;
-    decode[185] = 16'h0f94;
-    decode[186] = 16'h0fa4;
-    decode[187] = 16'h0fb4;
-    decode[188] = 16'h0fc4;
-    decode[189] = 16'h0fd4;
-    decode[190] = 16'h1fec;
-    decode[191] = 16'h0ff4;
-    decode[192] = 16'h016f;
-    decode[193] = 16'h2469;
-    decode[194] = 16'h8136;
-    decode[195] = 16'h8136;
-    decode[196] = 16'h861e;
-    decode[197] = 16'h3648;
-    decode[198] = 16'h4f24;
-    decode[199] = 16'h061e;
-    decode[200] = 16'h016f;
-    decode[201] = 16'h016f;
-    decode[202] = 16'h8136;
-    decode[203] = 16'h4005;
-    decode[204] = 16'h861e;
-    decode[205] = 16'h861e;
-    decode[206] = 16'h4f24;
-    decode[207] = 16'h061e;
-    decode[208] = 16'h016f;
-    decode[209] = 16'h2569;
-    decode[210] = 16'h8136;
-    decode[211] = 16'h0000;
-    decode[212] = 16'h861e;
-    decode[213] = 16'h3658;
-    decode[214] = 16'h4f24;
-    decode[215] = 16'h061e;
-    decode[216] = 16'h016f;
-    decode[217] = 16'h016f;
-    decode[218] = 16'h8136;
-    decode[219] = 16'h0000;
-    decode[220] = 16'h861e;
-    decode[221] = 16'h0000;
-    decode[222] = 16'h4f24;
-    decode[223] = 16'h061e;
-    decode[224] = 16'h52f8;
-    decode[225] = 16'h2e69;
-    decode[226] = 16'h19f8;
-    decode[227] = 16'h0000;
-    decode[228] = 16'h0000;
-    decode[229] = 16'h36e8;
-    decode[230] = 16'h4f24;
-    decode[231] = 16'h061e;
-    decode[232] = 16'h4624;
-    decode[233] = 16'h01e6;
-    decode[234] = 16'h93f8;
-    decode[235] = 16'h0000;
-    decode[236] = 16'h0000;
-    decode[237] = 16'h0000;
-    decode[238] = 16'h4f24;
-    decode[239] = 16'h061e;
-    decode[240] = 16'h5f29;
-    decode[241] = 16'h2769;
-    decode[242] = 16'h1f99;
-    decode[243] = 16'h0000;
-    decode[244] = 16'h0000;
-    decode[245] = 16'h3678;
-    decode[246] = 16'h4f24;
-    decode[247] = 16'h061e;
-    decode[248] = 16'h4e24;
-    decode[249] = 16'h06e1;
-    decode[250] = 16'h9f39;
-    decode[251] = 16'h0000;
-    decode[252] = 16'h0000;
-    decode[253] = 16'h0000;
-    decode[254] = 16'h4f24;
-    decode[255] = 16'h061e;
   end
+  // The regular MOV, ALU, INC/DEC and register-pair families share their
+  // operand fields. Keep the irregular control opcodes in an explicit table.
+  // This is the same 256-entry decoder, including every illegal opcode.
+  function [15:0] decode_opcode;
+    input [7:0] op;
+    reg [3:0] pair16, pairmem, dst8, src8;
+    reg dstmem, srcmem;
+    begin
+      case(op[5:4])
+        0: pair16=4'h4; // BC
+        1: pair16=4'h5; // DE
+        2: pair16=4'he; // HL
+        3: pair16=4'h6; // SP
+      endcase
+      pairmem=op[5] ? 4'he : {3'b010,op[4]};
+      dst8={1'b1,op[5:3]}; src8={1'b1,op[2:0]};
+      dstmem=op[5:3]==3'd6; srcmem=op[2:0]==3'd6;
+      decode_opcode=16'h0000;
+      case(op[7:6])
+        2'b00: case(op[2:0])
+          0: case(op[5:3])
+            0,2: decode_opcode=16'h0000;
+            1: decode_opcode=16'ha368;
+            default: decode_opcode=16'h4126;
+          endcase
+          1: decode_opcode=op[3] ? {4'h0,4'he,pair16,4'h4}
+                                          : {4'h8,pair16,4'h3,4'h1};
+          2: decode_opcode=op[3] ? {4'h1,4'hf,pairmem,4'h9}
+                                          : {4'h1,pairmem,4'hf,4'h8};
+          3: decode_opcode={4'h0,pair16,pair16,3'b001,op[3]};
+          4,5: decode_opcode={2'd0,dstmem,1'b0,dst8,dst8,dstmem,2'b01,op[0]};
+          6: decode_opcode={2'd1,1'b0,dstmem,dst8,4'h2,(dstmem ? 4'h8 : 4'h1)};
+          7: decode_opcode={4'h0,4'hf,4'hf,(op[5] ? 4'h4 : 4'h5)};
+        endcase
+        2'b01: if(!(dstmem && srcmem))
+          decode_opcode={2'd0,1'b0,(dstmem|srcmem),dst8,src8,
+                         (dstmem ? 4'h8 : srcmem ? 4'h9 : 4'h1)};
+        2'b10: decode_opcode={2'd0,1'b0,srcmem,4'hf,src8,srcmem,3'b100};
+        2'b11: case(op[2:0])
+          6: decode_opcode=16'h4f24;
+          7: decode_opcode=16'h061e;
+          default: case(op)
+            8'hc0,8'hc8,8'hc9,8'hd0,8'hd8,8'hd9: decode_opcode=16'h016f;
+            8'hc1: decode_opcode=16'h2469;
+            8'hc2,8'hc3,8'hca,8'hd2,8'hda: decode_opcode=16'h8136;
+            8'hc4,8'hcc,8'hcd,8'hd4,8'hdc: decode_opcode=16'h861e;
+            8'hc5: decode_opcode=16'h3648;
+            8'hcb: decode_opcode=16'h4005;
+            8'hd1: decode_opcode=16'h2569;
+            8'hd5: decode_opcode=16'h3658;
+            8'he0: decode_opcode=16'h52f8;
+            8'he1: decode_opcode=16'h2e69;
+            8'he2: decode_opcode=16'h19f8;
+            8'he5: decode_opcode=16'h36e8;
+            8'he8: decode_opcode=16'h4624;
+            8'he9: decode_opcode=16'h01e6;
+            8'hea: decode_opcode=16'h93f8;
+            8'hf0: decode_opcode=16'h5f29;
+            8'hf1: decode_opcode=16'h2769;
+            8'hf2: decode_opcode=16'h1f99;
+            8'hf5: decode_opcode=16'h3678;
+            8'hf8: decode_opcode=16'h4e24;
+            8'hf9: decode_opcode=16'h06e1;
+            8'hfa: decode_opcode=16'h9f39;
+            default: decode_opcode=16'h0000;
+          endcase
+        endcase
+      endcase
+    end
+  endfunction
   always @(posedge CLK) begin
-    DEC_Q <= decode[DEC_ADDR];
+    DEC_Q <= decode_opcode(DEC_ADDR);
     if(cpu_we) bytes[cpu_addr] <= cpu_data;
     cpu_q <= bytes[cpu_addr];
     CRAM_Q_B <= bytes[{1'b0,CRAM_ADDR_B}];

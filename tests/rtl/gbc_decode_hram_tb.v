@@ -42,6 +42,7 @@ module gbc_decode_hram_tb;
     // hosted runner, not from the new module's initialization statements.
     $readmemh("decode_reference.hex",reference_decode);
     for(i=0;i<128;i=i+1) begin reference_hram[i]=0; reference_cram[i]=0; end
+    #200; // Also wait out the installed Xilinx model's configuration reset.
     // Retain the original exhaustive opcode/HRAM address combinations.
     for(i=0;i<32768;i=i+1) begin
       opcode=i%256; addr=i/256; WE=$random(seed); data=$random(seed);

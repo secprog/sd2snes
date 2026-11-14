@@ -297,7 +297,7 @@ jobs:
               -c 'ngc2edif main.ngc main_native.edf'
           fi
 
-      - name: Verify MkII byte-wide log against the installed Xilinx RAM model
+      - name: Verify MkII log and shared CPU RAM against the installed Xilinx models
         if: always() && matrix.board == 'mk2' && matrix.core == 'gbc'
         run: |
           set -euo pipefail
@@ -307,12 +307,15 @@ jobs:
           fi
           # Use the licensed tool image in place; do not redistribute its model.
           docker run --rm --entrypoint /bin/bash sd2snes-ci:mk2 \
-            -c 'cat "$XILINX/verilog/src/unisims/RAMB16_S9_S36.v" "$XILINX/verilog/src/glbl.v"' \
+            -c 'cat "$XILINX/verilog/src/unisims/RAMB16_S9_S36.v" "$XILINX/verilog/src/unisims/RAMB16_S9_S9.v" "$XILINX/verilog/src/glbl.v"' \
             > "$RUNNER_TEMP/gbc-vendor-bram.v"
           iverilog -g2012 -s gbc_log_ram_tb -s glbl -o "$RUNNER_TEMP/gbc-vendor-bram.vvp" \
             tests/rtl/gbc_log_ram_tb.v verilog/sd2snes_gbc/mk2_memory.v \
             "$RUNNER_TEMP/gbc-vendor-bram.v"
           vvp "$RUNNER_TEMP/gbc-vendor-bram.vvp" | tee "$RUNNER_TEMP/gbc-log-vendor.log"
+          python3 .github/scripts/check-gbc-smallmem-native.py \
+            verilog/sd2snes_gbc/main_synth.v "$RUNNER_TEMP/gbc-vendor-bram.v" \
+            | tee "$RUNNER_TEMP/gbc-smallmem-vendor.log"
 
       - name: Collect FPGA image
         env:

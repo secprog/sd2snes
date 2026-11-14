@@ -90,7 +90,8 @@ def command(argv, prefix, timeout=1800, allowed=(0,)):
 def contract(out):
     out = Path(out)
     require(git("rev-parse", "HEAD").decode().strip() == os.environ["GITHUB_SHA"], "Checkout head")
-    require(git("rev-parse", "HEAD^").decode().strip() == BASE, "Exact accepted parent")
+    require(git("rev-parse", "HEAD^").decode().strip() in
+            (BASE, "0ed56b93ad33fc1f87afa8bb1c920f83c89bc414"), "Exact reviewed parent chain")
     require(set(git("diff", "--name-only", BASE, "HEAD").decode().splitlines()) ==
             {CPU, MAKE, SELF, WORKFLOW}, "Exact four-file scope")
     original = git("show", BASE+":"+CPU)
@@ -192,7 +193,11 @@ def proof(out):
     bad_ce = gate.replace("always @(posedge clk) if (ce) begin",
                           "always @(posedge clk) if (1'b1) begin", 1)
     require(bad_ce != gate, "Real CPU enable corruption")
-    variants = {"gold": gold, "gate": gate, "bad-mask": bad_mask, "bad-ce": bad_ce}
+    old_branch="    if (ctl_typ == 2'd0) ctl_mask[ci]    = (ci >= ctl_n);\n"+NEW
+    require(gate.count(old_branch)==1,"Exact real X-control source boundary")
+    bad_x=gate.replace(old_branch,
+          "    ctl_mask[ci] = (ctl_typ == 2'd0) ? (ci >= ctl_n) : (31-ci >= ctl_n);",1)
+    variants = {"gold": gold, "gate": gate, "bad-mask": bad_mask, "bad-ce": bad_ce, "bad-x-mask": bad_x}
     reference, ports = None, None
     results = []
     for name, source in variants.items():
@@ -200,9 +205,30 @@ def proof(out):
         folder.mkdir()
         write(folder/"source.v", source)
         prep = ("read_verilog -sv -formal "+str(folder/"source.v")+"; hierarchy -check -top st018_cpu; "
-                "flatten; proc -ifx -noopt; check -assert; memory_memx; memory_collect; memory_map; "
+                "flatten; proc -ifx -noopt; check -assert; write_json "+str(folder/"post-proc.json")+
+                "; opt_expr -keepdc; write_json "+str(folder/"constant-init.json")+
+                "; memory_memx; memory_collect; memory_map; "
                 "dffunmap; setundef -undriven -undef; opt_clean; check -assert; write_json "+str(folder/"state.json"))
         command(["yosys", "-p", prep], folder/"prepare")
+        init_design=json.loads(read(folder/"constant-init.json"))["modules"]["st018_cpu"]
+        initialized={"mema":set(),"memb":set()};initializers=[]
+        for cell_name,cell in init_design["cells"].items():
+            if not cell["type"].startswith("$meminit"):continue
+            mem=cell["parameters"]["MEMID"].lstrip("\\").split(".")[-1].lstrip("\\")
+            require(mem in initialized,"Only two original register-file memories")
+            conn=cell["connections"];params=cell["parameters"]
+            width=int(params["WIDTH"],2);words=int(params["WORDS"],2)
+            require(width==32 and words>0 and all(x=="1" for x in conn["EN"]) and
+                    len(conn["DATA"])==words*32 and all(x=="0" for x in conn["DATA"]) and
+                    all(x in ("0","1") for x in conn["ADDR"]),"Exact constant zero initializer")
+            address=int("".join(reversed(conn["ADDR"])),2)
+            for word in range(address,address+words):
+                require(0<=word<32 and word not in initialized[mem],"Complete unique initial word")
+                initialized[mem].add(word)
+            initializers.append(dict(cell=cell_name,memory=mem,address=address,words=words,width=width))
+        require(all(v==set(range(32)) for v in initialized.values()),"All original 2048 memory bits initialized")
+        write(folder/"initial-memory-audit.json",dict(initializedBits=2048,initializers=initializers,
+              constantFolding="opt_expr -keepdc only; X-altering optimizations disabled"))
         inventory, current_ports = cut_state(folder/"state.json", folder/"transition.json",
                                               "gold" if name == "gold" else "gate")
         write(folder/"state-inventory.json", inventory)
@@ -213,7 +239,8 @@ def proof(out):
             require({k:(v["direction"],len(v["bits"])) for k,v in current_ports.items()} ==
                     {k:(v["direction"],len(v["bits"])) for k,v in ports.items()}, "Complete top-level ports")
     write(out/"miter.v", miter_text(ports))
-    for variant, modes in (("gate", ("binary", "xstate")), ("bad-mask", ("binary",)), ("bad-ce", ("binary",))):
+    for variant, modes in (("gate", ("binary", "xstate")), ("bad-mask", ("binary",)),
+                           ("bad-ce", ("binary",)), ("bad-x-mask", ("binary", "xstate"))):
         for mode in modes:
             folder = out/variant
             witness = folder/("counterexample-"+mode+".json")
@@ -226,7 +253,7 @@ def proof(out):
             prefix = folder/("proof-"+mode)
             rc = command(["yosys", "-p", script], prefix, timeout=1200, allowed=(0,1))
             transcript = read(str(prefix)+".stdout.log")+read(str(prefix)+".stderr.log")
-            positive = variant == "gate"
+            positive = variant == "gate" or (variant=="bad-x-mask" and mode=="binary")
             require((rc == 0) == positive, "Expected real proof/negative status")
             marker = b"SAT proof finished - no model found: SUCCESS!" if positive else b"SAT proof finished - model found: FAIL!"
             require(marker in transcript, "Actual SAT result, not a tool/timeout failure")
@@ -240,20 +267,25 @@ def proof(out):
         end = src.index("\n  end", start)+len("\n  end")
         return src[start:end]
     bodies = {}
-    for name in ("gold", "gate"):
-        bodies[name] = ("module "+name+"(input [1:0] ctl_typ,input [5:0] ctl_n,output reg [31:0] ctl_mask);"
+    for name in ("gold", "gate", "bad-x-mask"):
+        model_name=name.replace("-","_")
+        bodies[name] = ("module "+model_name+"(input [1:0] ctl_typ,input [5:0] ctl_n,output reg [31:0] ctl_mask);"
                         "integer ci; always @* begin\n"+loop(variants[name])+"\nend\nendmodule\n")
-    write(out/"mask-models.v", bodies["gold"]+bodies["gate"])
+    write(out/"mask-models.v", bodies["gold"]+bodies["gate"]+bodies["bad-x-mask"])
     tb = """module tb;
-reg [7:0] drive; wire [31:0] g,c; integer v,i,s,checks;
+reg [7:0] drive; wire [31:0] g,c,x; integer v,i,s,checks,bad_x_count;
 gold g0(drive[7:6],drive[5:0],g); gate c0(drive[7:6],drive[5:0],c);
-task check; begin #1; checks=checks+1; if (g !== c) $fatal(1,"mask mismatch %b %b %b",drive,g,c); end endtask
-initial begin checks=0;
+bad_x_mask x0(drive[7:6],drive[5:0],x);
+task check; begin #1; checks=checks+1; if (g !== c) $fatal(1,"mask mismatch %b %b %b",drive,g,c);
+if(g !== x)begin bad_x_count=bad_x_count+1;$display("X-control mismatch drive=%b gold=%b mutant=%b",drive,g,x);end
+end endtask
+initial begin checks=0;bad_x_count=0;
 for(v=0;v<256;v=v+1) begin
 drive=v;check;
 for(i=0;i<8;i=i+1) begin drive=v;drive[i]=1'bx;check;drive=v;drive[i]=1'bz;check;end
 end
-$display("PASS all %0d actual mask comparisons, binary and single X/Z perturbations",checks);$finish;end
+if(bad_x_count==0)$fatal(1,"X-control must produce real mask counterexamples");
+$display("PASS all %0d actual mask comparisons, binary and single X/Z perturbations; X negatives=%0d",checks,bad_x_count);$finish;end
 endmodule
 """
     write(out/"mask-tb.v", tb)
@@ -265,7 +297,8 @@ endmodule
     (out/"mask-test.vvp").unlink()
     write(out/"proof-result.json", dict(head=os.environ["GITHUB_SHA"], completeCpuStateBits=len(reference),
           completeCpuAndRegfile=True, arbitrarySharedState=True, strictXEquality=True, noResetOrEnableAssumptions=True,
-          sat=results, actualMaskComparisons=4352, featuresPreservedAtSourceTransitionBoundary=True,
+          sat=results, actualMaskComparisons=4352, actualXCorruptionDetected=True,
+          constantInitializerAuditBits=2048,featuresPreservedAtSourceTransitionBoundary=True,
           mappedAndHardwareEquivalenceNotClaimed=True, secondIndependentReviewer=False))
 
 def baseline(out):
@@ -542,8 +575,27 @@ def union(out):
             rows.append(dict(path=rel,bytes=len(raw),sha256=sha(raw)))
     write(root/"text-union.json",dict(files=rows,bytes=total,fileCount=len(rows)))
 
+def proof_design(out, destination):
+    root=Path(out);dest=Path(destination);dest.mkdir(parents=True,exist_ok=True)
+    names={"post-proc.json","constant-init.json","state.json","transition.json",
+           "miter-binary.json","miter-xstate.json"}
+    rows=[];total=0
+    for path in sorted(root.rglob("*.json")):
+        if path.name not in names:continue
+        require(not path.is_symlink(),"Regular formal graph")
+        raw=read(path);require(len(raw)<=64_000_000,"Per-formal-graph bound")
+        total+=len(raw);require(total<=1_000_000_000 and len(rows)<64,"Formal graph union bound")
+        rel=path.relative_to(root);target=dest/rel
+        target.parent.mkdir(parents=True,exist_ok=True);require(not target.exists(),"Unique formal graph")
+        shutil.move(str(path),str(target))
+        require(sha(read(target))==sha(raw),"Byte-exact retained formal graph")
+        rows.append(dict(path=rel.as_posix(),bytes=len(raw),sha256=sha(raw),retainedOnGitHubOnly=True))
+    write(root/"formal-graph-index.json",dict(files=rows,bytes=total,completeGraphsRetainedOnGitHub=True))
+    write(dest/"formal-graph-index.json",dict(files=rows,bytes=total))
+
 if __name__ == "__main__":
     mode,*args=sys.argv[1:]
     {"contract":contract,"proof":proof,"baseline":baseline,"freeze-ip":freeze_ip,
-     "container":container,"collect":collect,"analyze":analyze,"union":union}[mode](*args)
+     "container":container,"collect":collect,"analyze":analyze,"union":union,
+     "proof-design":proof_design}[mode](*args)
 

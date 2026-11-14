@@ -50,7 +50,17 @@ jobs:
           printf 'Complete source and index unchanged\n' > "$report/integrity-verified.txt"
       - name: Audit all bounded proof text before upload
         if: always()
-        run: python3 .github/scripts/validate-st0018-mask-timing.py union "$RUNNER_TEMP/st0018-proof"
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/validate-st0018-mask-timing.py proof-design "$RUNNER_TEMP/st0018-proof" "$RUNNER_TEMP/st0018-proof-design"
+          python3 .github/scripts/validate-st0018-mask-timing.py union "$RUNNER_TEMP/st0018-proof"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: st0018-mask-formal-graphs-github-only
+          path: ${{ runner.temp }}/st0018-proof-design/
+          if-no-files-found: error
+          retention-days: 14
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -82,9 +92,10 @@ jobs:
           p=json.load(open(sys.argv[1]))
           assert p['head']==os.environ['GITHUB_SHA']
           assert p['completeCpuAndRegfile'] and p['strictXEquality'] and p['arbitrarySharedState']
-          assert p['actualMaskComparisons']==4352 and len(p['sat'])==4
+          assert p['actualMaskComparisons']==4352 and len(p['sat'])==6
+          assert p['actualXCorruptionDetected'] and p['constantInitializerAuditBits']==2048
           assert all(x['actualSatResult'] for x in p['sat'])
-          assert [x['exit'] for x in p['sat']]==[0,0,1,1]
+          assert [x['exit'] for x in p['sat']]==[0,0,1,1,0,1]
           PY
           cmp "$report/source-contract.json" "$RUNNER_TEMP/st0018-proof-binding/source-contract.json"
           cp "$RUNNER_TEMP/st0018-proof-binding/models/proof-result.json" "$report/accepted-source-proof.json"

@@ -134,7 +134,7 @@ hard_and_outputs = {c["connections"]["LO"][0] for c in native["cells"].values()
 hard_and_carry = {n for n, c in carry.items()
                   if c["connections"]["DI"][0] in hard_and_outputs}
 compare_carry, gate_carry, short_carry, visited = set(), set(), set(), set()
-critical_carry = set()
+critical_carry, window_carry = set(), set()
 
 
 def critical_timing_cone(name):
@@ -155,6 +155,8 @@ for name in carry:
     visited |= chain
     if any(critical_timing_cone(member) for member in chain):
         critical_carry |= chain
+    if any("_cpu_Mcompar_ppu_pix_win_active_" in member for member in chain):
+        window_carry |= chain
     if not chain & (sum_carry | hard_and_carry):
         gate_carry |= chain
         if not any("_wg_cy" in n for n in chain):
@@ -250,6 +252,9 @@ profiles = (("fixed-mux", False, None),
              "dch -f; if -K 4; mfs2; lutpack -S 1; &get -m -n; " +
              "&mfs2 -K 4; " * 4 + "&satlut -N 64 -C 2000; &put; lutpack -S 1"),
             ("gate-lut4-critical-satlut", True, structural_sat + "&put; lutpack -S 1"),
+            # The next routed report identifies window-activation comparisons
+            # ahead of the window counters. Retain their fast carry hardware.
+            ("gate-lut4-window-satlut", True, structural_sat + "&put; lutpack -S 1"),
             # Cost 1/2/4 for LUT4/5/6 reflects their decomposition into real
             # LUT4s plus MUXF5/F6. Let ABC select and group these cones anew.
             ("wide-lut5-resub", True, "strash; " + resub + "dch -f; if -a; mfs2"),
@@ -283,7 +288,7 @@ for profile, remap_mux, abc_script in profiles:
         logic_names |= compare_carry
     if profile.startswith("gate-lut4-"):
         logic_names |= gate_carry
-    if profile == "gate-lut4-critical-satlut":
+    if profile in {"gate-lut4-critical-satlut", "gate-lut4-window-satlut"}:
         mux_types = {"MUXF5", "MUXF6", "MUXF7", "MUXF8"}
         critical_mux = {n for n, c in native["cells"].items()
                         if critical_timing_cone(n) and c["type"] in mux_types}
@@ -296,6 +301,11 @@ for profile, remap_mux, abc_script in profiles:
         logic_types -= mux_types
         print(f"Preserving {len(critical_carry)} critical carry cells and "
               f"{len(critical_mux)} critical fast multiplexers", flush=True)
+        if profile == "gate-lut4-window-satlut":
+            if not window_carry:
+                raise ValueError("The reported window comparison chains were not found")
+            logic_names -= window_carry
+            print(f"Also preserving {len(window_carry)} window-comparator carry cells", flush=True)
     if profile == "short-carry-sat":
         logic_names |= short_carry | short_sums
     logic = [c for n, c in native["cells"].items() if n in logic_names]

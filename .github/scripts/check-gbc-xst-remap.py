@@ -194,6 +194,10 @@ profiles = (("fixed-mux", False, None),
              "; &get -m -n; &mfs2 -K 4; &put; lutpack -S 1"),
             ("gate-lut4-sat", True, "strash; " + resub + area_tail +
              "; &get -m -n; &mfs2 -K 4; &put; lutpack -S 1"),
+            ("gate-lut4-sat-area", True, "strash; " + resub + area_tail +
+             "; &get -m -n; &mfs2 -K 4 -a; &put; lutpack -S 1"),
+            ("gate-lut4-sat2", True, "strash; " + resub + area_tail +
+             "; &get -m -n; &mfs2 -K 4; &mfs2 -K 4; &put; lutpack -S 1"),
             # Cost 1/2/4 for LUT4/5/6 reflects their decomposition into real
             # LUT4s plus MUXF5/F6. Let ABC select and group these cones anew.
             ("wide-lut5-resub", True, "strash; " + resub + "dch -f; if -a; mfs2"),
@@ -225,7 +229,7 @@ for profile, remap_mux, abc_script in profiles:
                    or (profile.startswith("widegate-") and c["type"] == "MUXCY" and "_wg_cy" in n)}
     if profile.startswith("compare-"):
         logic_names |= compare_carry
-    if profile == "gate-lut4-sat":
+    if profile.startswith("gate-lut4-"):
         logic_names |= gate_carry
     if profile == "short-carry-sat":
         logic_names |= short_carry | short_sums

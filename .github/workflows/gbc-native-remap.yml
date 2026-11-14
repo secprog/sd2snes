@@ -15,6 +15,9 @@ on:
       placement_seed:
         type: number
         default: 3
+      par_continue:
+        type: boolean
+        default: false
   workflow_dispatch:
     inputs:
       native_run:
@@ -37,6 +40,10 @@ on:
         description: Candidate MAP and PAR cost-table seed (1..100)
         type: number
         default: 3
+      par_continue:
+        description: Continue PAR timing recovery with extra effort (same constraints)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -103,10 +110,11 @@ jobs:
           PROFILE: ${{ inputs.profile }}
           MAP_DUPLICATION: ${{ inputs.register_duplication }}
           PLACEMENT_SEED: ${{ inputs.placement_seed }}
+          PAR_CONTINUE: ${{ inputs.par_continue }}
         run: |
           set -o pipefail
           docker run --rm --user 0:0 --mac-address 08:00:27:68:c9:35 \
-            --volume "$GITHUB_WORKSPACE:/work" --workdir /work --env PROFILE --env MAP_DUPLICATION --env PLACEMENT_SEED \
+            --volume "$GITHUB_WORKSPACE:/work" --workdir /work --env PROFILE --env MAP_DUPLICATION --env PLACEMENT_SEED --env PAR_CONTINUE \
             --entrypoint /bin/bash sd2snes-ci:mk2 \
             .github/scripts/implement-gbc-remap.sh 2>&1 | tee .ci-tools/gbc-remap/reports/implementation.log
       - uses: actions/upload-artifact@v4

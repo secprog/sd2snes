@@ -33,6 +33,23 @@ for i in "${!candidate_par_args[@]}"; do
   fi
 done
 [[ "$changed" == 1 ]]
+case "${PAR_CONTINUE:-false}" in
+  false) ;;
+  true)
+    # UG628: -xe c continues recovery when normal extra effort would stop.
+    # This is still bounded by the hosted job timeout and every STA gate.
+    changed=0
+    for i in "${!candidate_par_args[@]}"; do
+      if [[ "${candidate_par_args[$i]}" == -xe ]]; then
+        [[ "${candidate_par_args[$((i+1))]}" == n ]]
+        candidate_par_args[$((i+1))]=c
+        changed=$((changed+1))
+      fi
+    done
+    [[ "$changed" == 1 ]]
+    ;;
+  *) exit 2 ;;
+esac
 case "${MAP_DUPLICATION:-project}" in
   project) ;;
   off)

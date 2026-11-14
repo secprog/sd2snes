@@ -39,6 +39,10 @@ on:
       gbc_remap_profiles:
         description: Optional JSON array of native GBC mapping profiles; empty uses the timing experiment matrix
         type: string
+      gbc_par_continue:
+        description: Give GBC remap routing extra recovery effort without changing timing requirements
+        type: boolean
+        default: false
       placement_seeds:
         description: For MkII fpga mode only, optional comma-separated placer seeds (1..100)
         type: string
@@ -182,6 +186,7 @@ jobs:
       native_run: ${{ inputs.mk2_run_id }}
       profile: ${{ matrix.profile }}
       placement_seed: ${{ matrix.seed }}
+      par_continue: ${{ inputs.gbc_par_continue || false }}
       register_duplication: ${{ matrix.register_duplication }}
 
   package-contract:

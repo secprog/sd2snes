@@ -28,7 +28,7 @@
 #include <stdint.h>
 
 /* SNES-side player, loaded as the booted LoROM image in place of sgbN_snes.bin.
-   Built from snes/gbc/gbc_snes.asm; the .bi3 and this file are a COUPLED PAIR
+   Built from snes/gbc/gbc_snes.asm; the board's FPGA image and player are a COUPLED PAIR
    (GBC-CORE-CONTRACT.md sec. 13) and are never shipped apart. */
 #ifdef CONFIG_MK2
 #define GBC_PLAYER_FILE_STR "/sd2snes/gbc_snes_mk2.bin"

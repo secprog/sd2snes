@@ -74,9 +74,27 @@ reg [7:0] flash_cmd0;
 // slotted cart -> gate them off in slot mode so the game's low banks are free.
 wire cart_enable = (use_bsx) && ~bs_slot && ((snes_addr[23:12] & 12'hf0f) == 12'h005);
 
+`ifdef MK2
+`ifdef BASE_EXT
+// BASEX_WINDOW_PREDECODE_BEGIN
+// Capture the original window predicate alongside the original address.
+// Feature/use qualifiers stay after this stage and keep their original priority.
+(* KEEP="TRUE" *) wire bsx_base_window_d = (!snes_addr_in[22] && (snes_addr_in[15:0] >= 16'h2188)
+                                 && (snes_addr_in[15:0] <= 16'h219f));
+(* KEEP="TRUE" *) reg bsx_base_window_q;
+always @(posedge clkin) bsx_base_window_q <= bsx_base_window_d;
+wire base_enable = feat_bs_base_enable & (use_bsx) && bsx_base_window_q;
+// BASEX_WINDOW_PREDECODE_END
+`else
 wire base_enable = feat_bs_base_enable
                    & (use_bsx) && (!snes_addr[22] && (snes_addr[15:0] >= 16'h2188)
                                  && (snes_addr[15:0] <= 16'h219f));
+`endif
+`else
+wire base_enable = feat_bs_base_enable
+                   & (use_bsx) && (!snes_addr[22] && (snes_addr[15:0] >= 16'h2188)
+                                 && (snes_addr[15:0] <= 16'h219f));
+`endif
 
 // flash window: base $C0, LoROM slot $C0-$DF, HiROM slot $E0-$EF
 wire flash_enable = bs_hirom

@@ -6,8 +6,8 @@
 
    gbc.c: route a Game Boy image to the FPGA_GBC core. See gbc.h for the model.
 
-   Normal Mk.II firmware keeps the SGB path. The experimental Mk.II build
-   enables this policy with CONFIG_MK2_GBC and uses the wire-$05 player.
+   Mk.II uses the GB/GBC core for every Game Boy image, with its wire-$05
+   player. Mk.III retains its existing configurable SGB/GBC selection.
 */
 
 #include <string.h>
@@ -25,8 +25,6 @@
 extern cfg_t CFG;
 extern sgb_romprops_t sgb_romprops;
 
-#if !defined(CONFIG_MK2) || defined(CONFIG_MK2_GBC)
-
 /* Both names are written into the SGB globals, so they have to fit them. */
 _Static_assert(sizeof(GBC_BOOT_FILE_STR) <= sizeof(SGBFW),
                "GBC_BOOT_FILE does not fit SGBFW[]");
@@ -37,11 +35,14 @@ _Static_assert(sizeof(GBC_PLAYER_FILE_STR) <= sizeof(SGBSR),
    BOTH .gb and .gbc in as Game Boy images -- what is decided here is only which of
    the two cores runs them, so this is a plain extension test, not a second
    definition of "is a Game Boy file". */
+#ifndef CONFIG_MK2
 static uint8_t gbc_ext_is_gbc(const uint8_t *filename) {
   if (!filename) return 0;
   char *dot = strrchr((char*)filename, '.');
   return (dot && !strcasecmp(dot + 1, "gbc")) ? 1 : 0;
 }
+
+#endif
 
 void gbc_id(sgb_romprops_t *props, uint8_t *filename) {
   /* Not a Game Boy image at all: sgb_id() left everything zeroed and there is
@@ -53,6 +54,12 @@ void gbc_id(sgb_romprops_t *props, uint8_t *filename) {
   uint8_t cgb = props->header.name[15];
   uint8_t want_gbc;
 
+#ifdef CONFIG_MK2
+  /* The fitted GB/GBC implementation replaces the old MkII GB-only core.
+     Apply this to existing configurations too, including GbcMode=Auto. */
+  (void)filename;
+  want_gbc = 1;
+#else
   switch (CFG.gbc_mode) {
     case GBC_MODE_PREFER_SGB:
       /* Keep the SGB (borders, its own colourisation) wherever it can run the
@@ -70,6 +77,7 @@ void gbc_id(sgb_romprops_t *props, uint8_t *filename) {
       want_gbc = (gbc_ext_is_gbc(filename) || (cgb & 0x80)) ? 1 : 0;
       break;
   }
+#endif
   if (!want_gbc) return;
 
   props->core_is_gbc = 1;
@@ -136,23 +144,3 @@ void gbc_stage_config(uint32_t image_addr) {
   printf("GBC:  player config stretch=%d rotate=%d\n", CFG.gbc_stretch ? 1 : 0,
     CFG.gb_rotate_buttons ? 1 : 0);
 }
-
-#else /* Production Mk.II: no-op stubs until the experimental port is qualified.
-         A .gb/.gbc
-         is NOT refused here the way .nes/.sms/.a26 are: core_is_gbc stays 0 and
-         the image boots the SGB, which is a complete Game Boy on this board. */
-
-void gbc_id(sgb_romprops_t *props, uint8_t *filename) {
-  (void)props;
-  (void)filename;
-}
-
-uint8_t gbc_bios_state(void) {
-  return SGB_BIOS_MISSING;
-}
-
-void gbc_stage_config(uint32_t image_addr) {
-  (void)image_addr;
-}
-
-#endif /* Mk.III or experimental Mk.II GBC */

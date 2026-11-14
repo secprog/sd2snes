@@ -29,7 +29,7 @@ on:
         options: [none, all, clock]
         default: none
       gbc_mcu_check:
-        description: Also compile normal and experimental MkII GBC firmware with a freshly built bootstrap
+        description: Also compile the default MkII GB/GBC firmware with a freshly built bootstrap
         type: boolean
         default: false
       gbc_yosys_check:
@@ -103,6 +103,7 @@ jobs:
           args=()
           if [[ "$RTL_ONLY" == clock ]]; then args+=(--clock-only); fi
           python3 .github/scripts/check-gbc-board-isolation.py | tee "$RUNNER_TEMP/gbc-board-isolation.log"
+          python3 .github/scripts/check-gbc-routing.py | tee "$RUNNER_TEMP/gbc-routing.log"
           python3 tests/test_gbc_mk2.py "${args[@]}" | tee "$RUNNER_TEMP/gbc-rtl.log"
           python3 .github/scripts/check-gbc-clock-slew.py | tee "$RUNNER_TEMP/gbc-clock-slew-proof.log"
           if [[ "$RTL_ONLY" != clock ]]; then
@@ -497,7 +498,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Upload MkIII players and source records
+      - name: Upload SNES players and source records
         uses: actions/upload-artifact@v4
         with:
           name: mk3-players
@@ -506,6 +507,7 @@ jobs:
             misc/nes_snes.map
             misc/sms_snes.bin
             misc/gbc_snes.bin
+            misc/gbc_snes_mk2.bin
             misc/a26_snes.bin
             misc/cgb_boot.bin
             misc/cgb_boot.LICENSE
@@ -563,7 +565,7 @@ jobs:
 
   gbc-mcu:
     if: inputs.build == 'fpga' && inputs.gbc_mcu_check && contains(inputs.fpga_cores, 'mk2:gbc')
-    name: Check production and experimental MkII GBC firmware
+    name: Check default MkII GB/GBC firmware
     needs: [mini-mk2, prepare-software]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
@@ -576,11 +578,10 @@ jobs:
       - uses: ./.github/actions/prepare-build-image
         with:
           target: software
-      - name: Compile and verify both routing policies
+      - name: Compile and verify default MkII firmware
         run: |
           docker run --rm --user 0:0 --volume "$GITHUB_WORKSPACE:/work" --workdir /work \
-            sd2snes-ci:software /bin/bash -c \
-            'bash .github/scripts/check-mcu.sh mk2 && bash .github/scripts/check-mcu.sh mk2-gbc'
+            sd2snes-ci:software /bin/bash .github/scripts/check-mcu.sh mk2
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -721,15 +722,13 @@ jobs:
         if: matrix.board == 'mk2'
         run: sha256sum --strict --check snes/atari/source-output.sha256
 
-      - name: Download MkIII players and source records
-        if: matrix.board != 'mk2'
+      - name: Download SNES players and source records
         uses: actions/download-artifact@v4
         with:
           name: mk3-players
           path: .
 
-      - name: Verify MkIII player source and output identity
-        if: matrix.board != 'mk2'
+      - name: Verify SNES player source and output identity
         run: sha256sum --strict --check snes/players/source-output.sha256
 
       - name: Verify board FPGA inputs

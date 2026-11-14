@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[2]
 # project files. Legacy NES/SMS .xise files do not make their MCU loaders work
 # on MkII. New core directories require an explicit board-support audit here.
 EXCLUDED = {
-    "mk2": {"a26", "gbc", "nes", "nes_k", "nes_mmc3", "nes_mmc5", "sms"},
+    "mk2": {"a26", "nes", "nes_k", "nes_mmc3", "nes_mmc5", "sms", "sgb", "sgb_msu"},
     "mk3": {"atari", "basex", "dspx", "sgb_msu"},
 }
 EXT = {"mk2": "bit", "mk3": "bi3"}
@@ -135,7 +135,8 @@ def package_files(board, *, root=None, image_paths=None):
         add(obj / f"ovl{number}.{suffix}")
     if board == "mk2":
         add(obj / "bootscr.img")
-        add(root / "misc" / "atari_snes.bin")
+        for name in ("atari_snes.bin", "gbc_snes_mk2.bin", "cgb_boot.bin", "cgb_boot.LICENSE"):
+            add(root / "misc" / name)
     else:
         for name in MK3_PLAYERS:
             add(root / "misc" / name)
@@ -274,10 +275,10 @@ def inventory_self_test():
     """Exercise the real inventory reader on complete synthetic board trees only."""
     # Independent expected paths make omissions from production constants visible.
     fpga_names = {
-        "mk2": "atari base basex bootleg col20 cx4 dsp dspx gsu gsu3 obc1 sa1 sdd1 sgb sgb_msu spc7110 st0011 st0018 test xc mini".split(),
+        "mk2": "atari base basex bootleg col20 cx4 dsp dspx gbc gsu gsu3 obc1 sa1 sdd1 spc7110 st0011 st0018 test xc mini".split(),
         "mk3": "a26 base bootleg col20 cx4 dsp gbc gsu gsu3 nes nes_k nes_mmc3 nes_mmc5 obc1 sa1 sdd1 sgb sms spc7110 st0011 st0018 test xc mini".split(),
     }
-    if {board: len(names) for board, names in fpga_names.items()} != {"mk2": 21, "mk3": 24}:
+    if {board: len(names) for board, names in fpga_names.items()} != {"mk2": 20, "mk3": 24}:
         raise RuntimeError("Incomplete synthetic FPGA inventory")
     counts = {"positive": 0, "negative": 0}
     for board, firmware, suffix, menu in (("mk2", "firmware.img", "img", "menu.bin"),
@@ -299,7 +300,8 @@ def inventory_self_test():
             mapping["misc/" + name] = "sd2snes/" + name
         if family == "mk2":
             mapping[obj + "bootscr.img"] = "sd2snes/bootscr.img"
-            mapping["misc/atari_snes.bin"] = "sd2snes/atari_snes.bin"
+            for name in ("atari_snes.bin", "gbc_snes_mk2.bin", "cgb_boot.bin", "cgb_boot.LICENSE"):
+                mapping["misc/" + name] = "sd2snes/" + name
         else:
             for name in ("nes_snes.bin", "sms_snes.bin", "gbc_snes.bin", "a26_snes.bin", "cgb_boot.bin", "cgb_boot.LICENSE"):
                 mapping["misc/" + name] = "sd2snes/" + name
@@ -365,7 +367,7 @@ def inventory_self_test():
             foreign_overlay = scratch / obj / f"ovl1.{foreign_suffix}"
             overlay.rename(foreign_overlay)
             rejected("foreign board overlay suffix cannot replace required suffix")
-    if counts != {"positive": 3, "negative": 194}:
+    if counts != {"positive": 3, "negative": 196}:
         raise RuntimeError(f"Incomplete inventory controls: {counts}")
     print("Package inventory controls: " + json.dumps(counts, sort_keys=True))
 
@@ -515,10 +517,6 @@ def main():
         selection = os.environ.get("FPGA_CORES", "").strip()
         if selection:
             requested = set(selection.split(","))
-            # The GBC Mk.II port can be fitted explicitly without advertising
-            # an unqualified core in normal board inventories or release ZIPs.
-            if "mk2:gbc" in requested and "mk2" in selected_fpga:
-                matrix.append({"board": "mk2", "core": "gbc", "extension": "bit"})
             known = {f"{item['board']}:{item['core']}" for item in matrix}
             if requested - known:
                 raise RuntimeError(f"Unknown FPGA targets: {sorted(requested - known)}")
@@ -559,8 +557,7 @@ def main():
         boot_header = (obj / "bootzx0.h").read_bytes() if board == "mk2" else b""
         with zipfile.ZipFile(sys.argv[3]) as archive:
             verify_archive(archive, board, files, fw_header, boot_header)
-        if board != "mk2":
-            verify_cgb_boot(files, accepted_cgb_boot())
+        verify_cgb_boot(files, accepted_cgb_boot())
     else:
         raise RuntimeError(f"Unknown check: {mode}")
     print(f"{board}: verified {len(expected)} FPGA images ({mode})")

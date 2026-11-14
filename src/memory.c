@@ -822,7 +822,6 @@ static void load_set_features(const load_ctx_t *c) {
     romprops.fpga_features |= FEAT_SATELLABASE;
   }
 
-#if !defined(CONFIG_MK2) || defined(CONFIG_MK2_GBC)
   /* GBC core: the in-game button gestures (reset the game / back to the menu) are
      matched by the player itself, which then writes the command to MCU_CMD ($2A00).
      No NMI hook runs under the player, so nothing raises snescmd_unlock, and in
@@ -834,7 +833,6 @@ static void load_set_features(const load_ctx_t *c) {
   if(sgb_romprops.has_sgb && sgb_romprops.core_is_gbc) {
     romprops.fpga_features |= FEAT_CMD_UNLOCK;
   }
-#endif
 }
 /* Chip BIOSes and firmware blobs the staged ROM needs: BS-X, Sufami Turbo, DSPx.
    Takes ticksstart only to close out the load timer printed here. */

@@ -14,9 +14,8 @@
    SGBFW (boot ROM), SGBSR (SNES-side image), fpga_sgbfeat (CHIPFEAT $EF) and
    sgb_romprops.core_is_gbc -- so every consumer downstream keeps working unchanged.
 
-   Production Mk.II firmware keeps no-op stubs and boots the SGB. The separate
-   experimental Mk.II build enables the same policy with CONFIG_MK2_GBC, loading
-   fpga_gbc.bit and its wire-$05 player from the card.
+   Mk.II routes all Game Boy images to fpga_gbc.bit and its wire-$05 player.
+   Mk.III retains the configurable SGB/GBC policy and its wire-$03 player.
 
    sgb.h has to be included before this header (it defines sgb_romprops_t), the way
    sgb.h itself relies on smc.h for snes_romprops_t.

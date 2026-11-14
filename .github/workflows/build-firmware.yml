@@ -43,6 +43,10 @@ on:
         description: Give GBC remap routing extra recovery effort without changing timing requirements
         type: boolean
         default: false
+      gbc_map_continue:
+        description: Give GBC remap packing and placement extra effort without changing timing requirements
+        type: boolean
+        default: false
       placement_seeds:
         description: For MkII fpga mode only, optional comma-separated placer seeds (1..100)
         type: string
@@ -187,6 +191,7 @@ jobs:
       profile: ${{ matrix.profile }}
       placement_seed: ${{ matrix.seed }}
       par_continue: ${{ inputs.gbc_par_continue || false }}
+      map_continue: ${{ inputs.gbc_map_continue || false }}
       register_duplication: ${{ matrix.register_duplication }}
 
   package-contract:

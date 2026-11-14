@@ -50,6 +50,22 @@ case "${PAR_CONTINUE:-false}" in
     ;;
   *) exit 2 ;;
 esac
+case "${MAP_CONTINUE:-false}" in
+  false) ;;
+  true)
+    # With -timing, Spartan-3 placement happens in MAP, not PAR (UG628).
+    changed=0
+    for i in "${!candidate_args[@]}"; do
+      if [[ "${candidate_args[$i]}" == -xe ]]; then
+        [[ "${candidate_args[$((i+1))]}" == n ]]
+        candidate_args[$((i+1))]=c
+        changed=$((changed+1))
+      fi
+    done
+    [[ "$changed" == 1 ]]
+    ;;
+  *) exit 2 ;;
+esac
 case "${MAP_DUPLICATION:-project}" in
   project) ;;
   off)

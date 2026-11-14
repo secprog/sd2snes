@@ -132,10 +132,19 @@ reg         hold_eff_r, en_eff_r;                              // in force (LY=0
 // decode off the 84 MHz path.
 reg         ctl_wr_r, rowdone_wr_r;
 reg  [7:0]  wr_data_r;
+`ifdef GBC_EXTERNAL_FB
+// Decode the command in the existing input stage. These flags take effect
+// on the same clock as rowdone_wr_r, before the frozen-row and dirty muxes.
+reg         rowdone_all_r, rowdone_one_r;
+`endif
 always @(posedge CLK) begin
   ctl_wr_r     <= CTL_WR & ~RST;
   rowdone_wr_r <= ROWDONE_WR & ~RST;
   if (CTL_WR | ROWDONE_WR) wr_data_r <= WR_DATA;
+`ifdef GBC_EXTERNAL_FB
+  rowdone_all_r <= ROWDONE_WR & ~RST & (WR_DATA == 8'hFF);
+  rowdone_one_r <= ROWDONE_WR & ~RST & (WR_DATA < 8'd18);
+`endif
 end
 
 always @(posedge CLK) begin
@@ -242,8 +251,13 @@ wire [17:0] rd_mask;
 
 // ROW_DONE decode ($EF0007). Declare the command signals before the cache
 // invalidation expression: the Spartan-3 XST front end requires this order.
+`ifdef GBC_EXTERNAL_FB
+wire        rd_all     = rowdone_all_r;
+wire        rd_one     = rowdone_one_r;
+`else
 wire        rd_all     = rowdone_wr_r & (wr_data_r == 8'hFF);
 wire        rd_one     = rowdone_wr_r & (wr_data_r < 8'd18);
+`endif
 wire [4:0]  rd_row     = wr_data_r[4:0];
 
 `ifdef GBC_EXTERNAL_FB

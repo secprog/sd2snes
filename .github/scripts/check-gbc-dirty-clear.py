@@ -16,6 +16,54 @@ with tempfile.TemporaryDirectory(prefix="gbc-dirty-clear-proof-") as tmp:
     subprocess.run(["iverilog", "-E", "-DMK2", "-I", str(root / "verilog/sd2snes_gbc"),
                     "-o", str(preprocessed), str(root / "verilog/sd2snes_gbc/c6_fb.v")], check=True)
     c6 = preprocessed.read_text()
+    subprocess.run(["iverilog", "-E", "-I", str(root / "verilog/sd2snes_gbc"),
+                    "-o", str(preprocessed), str(root / "verilog/sd2snes_gbc/c6_fb.v")], check=True)
+    reference = preprocessed.read_text()
+    captures = []
+    for source, suffix in ((c6, ""), (reference, "_ref")):
+        capture = re.search(r"always @\(posedge CLK\) begin\n.*?\nend", source, re.S)[0]
+        names = ["ctl_wr_r", "rowdone_wr_r", "wr_data_r"]
+        if not suffix:
+            names += ["rowdone_all_r", "rowdone_one_r"]
+        declarations = []
+        for name in names:
+            writes = re.findall(r"\b" + name + r"\s*<=.*?;", source, re.S)
+            if len(writes) != 1 or writes[0] not in capture:
+                raise RuntimeError("The row-command register writer coverage changed")
+            declarations.append(re.search(r"reg\s+[^;\n]*\b" + name + r"\b[^;\n]*;", source)[0])
+        capture = "\n".join(dict.fromkeys(declarations)) + "\n" + capture
+        for name in ("rd_all", "rd_one"):
+            capture += "\n" + re.search(r"wire\s+" + name + r"\s*=.*?;", source, re.S)[0]
+        if suffix:
+            capture = re.sub(r"\b(?:ctl_wr_r|rowdone_wr_r|wr_data_r|rd_all|rd_one)\b",
+                             lambda match: match[0] + suffix, capture)
+        captures.append(capture)
+    # One unconstrained transition proves the retimed decode without any
+    # initialization, command-spacing or input-data stability assumption.
+    for negative in (False, True):
+        actual = captures[0]
+        if negative:
+            actual, count = re.subn(r"WR_DATA < 8'd18", "WR_DATA < 8'd19", actual)
+            if count != 1:
+                raise RuntimeError("Cannot construct the row-range negative control")
+        source = work / "command-stage.v"
+        source.write_text('''module check(input CLK,RST,CTL_WR,ROWDONE_WR,
+ input [7:0] WR_DATA, output equivalent);
+''' + actual + "\n" + captures[1] + '''
+assign equivalent = (rd_all == rd_all_ref) && (rd_one == rd_one_ref);
+endmodule
+''')
+        script = work / "command-stage.ys"
+        script.write_text(f'read_verilog "{source}"\nprep -top check\n'
+                          'sat -verify -seq 2 -prove-skip 1 -prove equivalent 1 -show-inputs\n')
+        result = subprocess.run(["yosys", "-Q", "-s", str(script)],
+                                capture_output=True, text=True, timeout=120)
+        log = result.stdout + result.stderr
+        if negative:
+            if result.returncode == 0 or "proof did fail" not in log:
+                raise RuntimeError("SAT accepted the out-of-range row command\n" + log)
+        elif result.returncode or "SUCCESS" not in log:
+            raise RuntimeError("Registered row-command decode differs from the reference\n" + log)
     definitions = []
     for name in ("rd_all", "rd_one", "rd_row", "dirty_write_clear", "cache_clear"):
         definitions.append(re.search(r"wire\s+(?:\[[^\]]+\]\s+)?" + name + r"\s*=.*?;", c6, re.S)[0])
@@ -32,7 +80,8 @@ with tempfile.TemporaryDirectory(prefix="gbc-dirty-clear-proof-") as tmp:
     ram = (root / "verilog/sd2snes_gbc/mk2_memory.v").read_text()
     for name in ("use_saved", "use_default", "base_word"):
         definitions.append(re.search(r"wire\s+(?:\[[^\]]+\]\s+)?" + name + r"\s*=.*?;", ram, re.S)[0])
-    body = '''module check(input rowdone_wr_r, RST, input [7:0] wr_data_r,
+    body = '''module check(input rowdone_wr_r, rowdone_all_r, rowdone_one_r, RST,
+ input [7:0] wr_data_r,
  input [4:0] wr_row2_r, cache_row, input [17:0] row_frozen_r, valid, default_one,
  input [19:0] write_word, output equivalent);
 wire [4:0] ROW = wr_row2_r;
@@ -110,6 +159,7 @@ endmodule
                 raise RuntimeError("SAT accepted the unvalidated-cache-row control\n" + log)
         elif result.returncode or "Induction step proven" not in log:
             raise RuntimeError("Cache tag range induction failed\n" + log)
-    print("PASS: direct dirty/cache clears and shared data masks match every valid row, command and stored bit; "
+    print("PASS: row-command decode preserves its exact cycle and rejects invalid rows; "
+          "direct dirty/cache clears and shared data masks match every valid row, command and stored bit; "
           "cache tags stay in range; "
           "SAT rejects the wrong-row control")

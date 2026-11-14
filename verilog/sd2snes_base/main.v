@@ -281,6 +281,17 @@ wire SNES_RD_start = (SNES_READr[6:1] == 6'b111110);
 wire SNES_RD_end = (SNES_READr[6:1] == 6'b000001);
 wire SNES_WR_start = (SNES_WRITEr[6:1] == 6'b111000);
 wire SNES_WR_end = (SNES_WRITEr[6:1] == 6'b000001);
+`ifdef MK2
+`ifdef BASE_EXT
+// Private predicates for the programming priority path only. After each edge
+// they equal the two halves of the original current write history.
+reg [1:0] basex_wr_halves = 2'b00;
+always @(posedge CLK2) begin
+  basex_wr_halves[0] <= (SNES_WRITEr[2:0] == 3'b001);
+  basex_wr_halves[1] <= (SNES_WRITEr[5:3] == 3'b000);
+end
+`endif
+`endif
 wire SNES_cycle_start = (SNES_CPU_CLKr[6:1] == 6'b000001);
 wire SNES_cycle_end = (SNES_CPU_CLKr[6:1] == 6'b111110);
 wire SNES_WRITE = SNES_WRITEr[2] & SNES_WRITEr[1];
@@ -938,6 +949,11 @@ cheat snes_cheat(
   .SNES_DATA(SNES_DATA),
   .SNES_reset_strobe(SNES_reset_strobe),
   .SNES_wr_strobe(SNES_WR_end),
+`ifdef MK2
+`ifdef BASE_EXT
+  .basex_wr_halves(basex_wr_halves),
+`endif
+`endif
   .SNES_rd_strobe(SNES_RD_start),
   .SNES_rd_end_strobe(SNES_RD_end),
   .SNES_PAWR_raw(SNES_PAWR_IN), // use raw SNES_PAWR to capture on cycle_start strobe

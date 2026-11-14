@@ -42,6 +42,11 @@ module cheat(
   input pgm_we,
   input [31:0] pgm_in,
   input feat_cmd_unlock_in,
+`ifdef MK2
+`ifdef BASE_EXT
+  input [1:0] basex_wr_halves,
+`endif
+`endif
   output [7:0] data_out,
   output cheat_hit,
   output snescmd_unlock,
@@ -83,6 +88,101 @@ wire reset_unlock = |reset_unlock_r;
 reg [23:0] cheat_addr[5:0];
 reg [7:0] cheat_data[5:0];
 reg [5:0] cheat_enable_mask;
+`ifdef MK2
+`ifdef BASE_EXT
+wire basex_program_permit;
+wire [5:0] basex_program_selected, basex_program_write;
+basex_cheat_program_permit program_permit(
+  .low_half(basex_wr_halves[0]), .high_half(basex_wr_halves[1]),
+  .unlocked(snescmd_unlock), .enabled(snescmd_enable), .permit(basex_program_permit)
+);
+basex_cheat_program_select #(.WORD(3'd0)) program_select_0(
+  .reset(SNES_reset_strobe), .pgm_we(pgm_we), .index(pgm_idx),
+  .selected(basex_program_selected[0])
+);
+basex_cheat_program_join program_join_0(
+  .selected(basex_program_selected[0]), .permit(basex_program_permit),
+  .write(basex_program_write[0])
+);
+always @(posedge clk) begin
+  if (basex_program_write[0]) begin
+    cheat_addr[0] <= pgm_in[31:8];
+    cheat_data[0] <= pgm_in[7:0];
+  end
+end
+basex_cheat_program_select #(.WORD(3'd1)) program_select_1(
+  .reset(SNES_reset_strobe), .pgm_we(pgm_we), .index(pgm_idx),
+  .selected(basex_program_selected[1])
+);
+basex_cheat_program_join program_join_1(
+  .selected(basex_program_selected[1]), .permit(basex_program_permit),
+  .write(basex_program_write[1])
+);
+always @(posedge clk) begin
+  if (basex_program_write[1]) begin
+    cheat_addr[1] <= pgm_in[31:8];
+    cheat_data[1] <= pgm_in[7:0];
+  end
+end
+basex_cheat_program_select #(.WORD(3'd2)) program_select_2(
+  .reset(SNES_reset_strobe), .pgm_we(pgm_we), .index(pgm_idx),
+  .selected(basex_program_selected[2])
+);
+basex_cheat_program_join program_join_2(
+  .selected(basex_program_selected[2]), .permit(basex_program_permit),
+  .write(basex_program_write[2])
+);
+always @(posedge clk) begin
+  if (basex_program_write[2]) begin
+    cheat_addr[2] <= pgm_in[31:8];
+    cheat_data[2] <= pgm_in[7:0];
+  end
+end
+basex_cheat_program_select #(.WORD(3'd3)) program_select_3(
+  .reset(SNES_reset_strobe), .pgm_we(pgm_we), .index(pgm_idx),
+  .selected(basex_program_selected[3])
+);
+basex_cheat_program_join program_join_3(
+  .selected(basex_program_selected[3]), .permit(basex_program_permit),
+  .write(basex_program_write[3])
+);
+always @(posedge clk) begin
+  if (basex_program_write[3]) begin
+    cheat_addr[3] <= pgm_in[31:8];
+    cheat_data[3] <= pgm_in[7:0];
+  end
+end
+basex_cheat_program_select #(.WORD(3'd4)) program_select_4(
+  .reset(SNES_reset_strobe), .pgm_we(pgm_we), .index(pgm_idx),
+  .selected(basex_program_selected[4])
+);
+basex_cheat_program_join program_join_4(
+  .selected(basex_program_selected[4]), .permit(basex_program_permit),
+  .write(basex_program_write[4])
+);
+always @(posedge clk) begin
+  if (basex_program_write[4]) begin
+    cheat_addr[4] <= pgm_in[31:8];
+    cheat_data[4] <= pgm_in[7:0];
+  end
+end
+basex_cheat_program_select #(.WORD(3'd5)) program_select_5(
+  .reset(SNES_reset_strobe), .pgm_we(pgm_we), .index(pgm_idx),
+  .selected(basex_program_selected[5])
+);
+basex_cheat_program_join program_join_5(
+  .selected(basex_program_selected[5]), .permit(basex_program_permit),
+  .write(basex_program_write[5])
+);
+always @(posedge clk) begin
+  if (basex_program_write[5]) begin
+    cheat_addr[5] <= pgm_in[31:8];
+    cheat_data[5] <= pgm_in[7:0];
+  end
+end
+
+`endif
+`endif
 
 reg exe_unlock_r; initial exe_unlock_r = 0;
 assign exe_unlock = exe_unlock_r;
@@ -546,8 +646,17 @@ always @(posedge clk) begin
       end
     end else if(pgm_we) begin
       if(pgm_idx < 6) begin
+`ifdef MK2
+`ifdef BASE_EXT
+        // Private word blocks above retain the complete original programming priority.
+`else
         cheat_addr[pgm_idx] <= pgm_in[31:8];
         cheat_data[pgm_idx] <= pgm_in[7:0];
+`endif
+`else
+        cheat_addr[pgm_idx] <= pgm_in[31:8];
+        cheat_data[pgm_idx] <= pgm_in[7:0];
+`endif
       end else if(pgm_idx == 6) begin // set rom patch enable
         cheat_enable_mask <= pgm_in[5:0];
       end else if(pgm_idx == 7) begin // set/reset global enable / hooks
@@ -658,3 +767,40 @@ always @* begin
 end
 
 endmodule
+
+`ifdef MK2
+`ifdef BASE_EXT
+// These four inputs are the private registered write-history halves and the
+// original combined unlock and command-enable signals. Procedural priority
+// keeps an unknown command predicate on the original programming branch.
+(* LUT_MAP="yes" *)
+module basex_cheat_program_permit(
+  input low_half, high_half, unlocked, enabled,
+  output reg permit
+);
+always @* begin
+  permit = 1'b1;
+  if (low_half & high_half & unlocked & enabled) permit = 1'b0;
+end
+endmodule
+
+module basex_cheat_program_select #(parameter [2:0] WORD = 3'd0)(
+  input reset, pgm_we, input [2:0] index,
+  output reg selected
+);
+always @* begin
+  selected = 1'b0;
+  if (reset) begin
+  end else if (pgm_we) begin
+    if (index == WORD) selected = 1'b1;
+  end
+end
+endmodule
+
+(* LUT_MAP="yes" *)
+module basex_cheat_program_join(input selected, permit, output write);
+assign write = selected & permit;
+endmodule
+
+`endif
+`endif

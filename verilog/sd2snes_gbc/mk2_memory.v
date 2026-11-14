@@ -228,14 +228,19 @@ module c6_dirty_ram(input CLK, RST, ALL, SET, input [4:0] ROW, COL,
   // the banks avoids a 20-bit, 32-deep read mux and a wide nibble shifter.
   (* ram_style = "distributed" *) reg [19:0] even_rows [0:15];
   (* ram_style = "distributed" *) reg [19:0] odd_rows [0:15];
-  wire [19:0] write_word = ROW[0] ? odd_rows[ROW[4:1]] : even_rows[ROW[4:1]];
-  wire [19:0] base_word = clear_rows[ROW] ? 20'd0
-                       : valid[ROW] ? write_word : {20{default_one[ROW]}};
+  // Each bank feeds back its own word. Selecting a 20-bit word before the
+  // update creates a mux even though only that selected bank can be written.
+  wire keep_word = valid[ROW] && !clear_rows[ROW];
+  wire fill_word = !valid[ROW] && default_one[ROW] && !clear_rows[ROW];
+  wire [19:0] even_next = (even_rows[ROW[4:1]] & {20{keep_word}})
+                        | {20{fill_word}} | col_mask;
+  wire [19:0] odd_next = (odd_rows[ROW[4:1]] & {20{keep_word}})
+                       | {20{fill_word}} | col_mask;
   wire [19:0] read_even = even_rows[BIDX[6:3]], read_odd = odd_rows[BIDX[6:3]];
   reg [7:0] read_byte, mask_byte;
   always @(posedge CLK) begin
-    if(set_ok && !ALL && !ROW[0]) even_rows[ROW[4:1]] <= base_word | col_mask;
-    if(set_ok && !ALL &&  ROW[0])  odd_rows[ROW[4:1]] <= base_word | col_mask;
+    if(set_ok && !ALL && !ROW[0]) even_rows[ROW[4:1]] <= even_next;
+    if(set_ok && !ALL &&  ROW[0])  odd_rows[ROW[4:1]] <= odd_next;
     valid <= ALL ? 18'd0 : ((valid & ~clear_rows) | set_rows);
     default_one <= ALL ? 18'h3ffff : (default_one & ~clear_rows);
   end

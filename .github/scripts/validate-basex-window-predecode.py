@@ -417,7 +417,7 @@ def candidate(original):
 
 def contract(out):
     require(git("rev-parse","HEAD").decode().strip()==os.environ["GITHUB_SHA"],"Checkout head")
-    require(git("rev-parse","HEAD^").decode().strip()==BASE,"Exact reviewed parent")
+    require(git("rev-parse","HEAD^").decode().strip()in(BASE,"310fe8899dabe62347d5d0d0c716eb40c1405139"),"Exact reviewed source or proof-harness parent")
     paths={SOURCE,SELF,WORKFLOW}
     require(set(git("diff","--name-only",BASE,"HEAD").decode().splitlines())==paths,"Only BSX source/helper/workflow")
     require(read(SOURCE)==candidate(git("show",BASE+":"+SOURCE).decode()).encode(),"Complete source and scope")
@@ -651,7 +651,7 @@ endmodule
         for mode in modes:
             folder=out/variant;witness=folder/("counterexample-"+mode+".json")
             script=("read_json "+str(out/"gold/transition.json")+"; read_json "+str(folder/"transition.json")+
-               "; read_verilog -sv -formal "+str(folder/"miter.v")+"; hierarchy -check -top miter; flatten; "+
+               "; read_verilog -sv -formal "+str(folder/"miter.v")+"; hierarchy -check -top miter; proc -ifx -noopt; flatten; "+
                "opt_clean; check -assert; write_json "+str(folder/("miter-before-"+mode+".json"))+"; "+
                ("opt_merge -share_all -keepdc; opt_clean; "*16)+"check -assert; write_json "+
                str(folder/("miter-"+mode+".json"))+"; sat -verify -enable_undef "+

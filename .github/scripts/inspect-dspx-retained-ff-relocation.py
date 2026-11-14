@@ -54,10 +54,35 @@ def canonical_body(text):
     need(first is not None,'No design statement')
     return ''.join(lines[first:]).strip()
 
-def parse(text,full=True):
+def configuration_tokens(value):
+    # Preserve escaped spaces, quotes and backslashes as opaque token bytes.
+    # No unescaping, expression interpretation or Boolean evaluation.
+    matches=list(re.finditer(r'(?:\\.|[^\s\\])+',value,re.S));cursor=0;tokens=[]
+    for match in matches:
+        need(not value[cursor:match.start()].strip(),'Unparsed configuration escape')
+        tokens.append(match[0]);cursor=match.end()
+    need(not value[cursor:].strip(),'Incomplete configuration escape')
+    need(all(re.match(r'^[A-Za-z0-9_]+:',x) for x in tokens),'Unknown config token grammar')
+    return tokens
+
+def lexical_tokens(value):
+    # Quoted CFG values are single lexer tokens, so apparent "inpin" words
+    # inside quoted properties cannot become electrical net-pin entries.
+    matches=list(re.finditer(r'"(?:\\.|[^"\\])*"|(?:\\.|[^\s"\\,;])+|[,;]',value,re.S))
+    cursor=0;tokens=[]
+    for match in matches:
+        need(not value[cursor:match.start()].strip(),'Unparsed quoted-token grammar')
+        tokens.append(match[0]);cursor=match.end()
+    need(not value[cursor:].strip(),'Incomplete quoted-token escape')
+    return tokens
+
+def parse(text,full=True,rejected=None):
     need('\0' not in text and text.isascii(),'Only actual ASCII XDL grammar accepted')
-    records=list(re.finditer(r'(?ms)^(design|inst|net)\s+"([^"\n]+)".*?;',text))
+    # A semicolon inside a quoted property is not a record terminator.
+    records=list(re.finditer(r'(?ms)^(design|inst|net)\s+"([^"\n]+)"(?:"(?:\\.|[^"\\])*"|[^";])*;',text))
     need(records,'Empty design')
+    need(len(records)==len(re.findall(r'(?m)^(?:design|inst|net)\s+"',text)),
+         'Incomplete or unparsed design-record boundary')
     cursor=0;raw={};instances={};nets={};design=[]
     for m in records:
         gap=text[cursor:m.start()]
@@ -66,23 +91,82 @@ def parse(text,full=True):
         cursor=m.end();kind,name=m[1],m[2];body=m[0]
         need((kind,name) not in raw,'Duplicate complete design record');raw[kind,name]=body
         need(not re.search(r'\s',name),'Whitespace-bearing identifier outside reviewed grammar')
-        if kind=='design':
-            design.append(' '.join(body.split()));continue
-        if kind=='inst':
-            g=re.fullmatch(r'inst\s+"([^"]+)"\s+"([^"]+)"\s*,\s*(.*?)\s*,\s*cfg\s+"([^"]*)"\s*;',body,re.S)
-            need(g is not None,'Unknown complete instance grammar')
-            where=' '.join(g[3].split());tokens=g[4].split()
-            need(all(re.match(r'^[A-Za-z0-9_]+:',x) and '\\' not in x for x in tokens),'Unknown config token grammar')
-            instances[name]=dict(type=g[2],placement=where,cfg=sorted(tokens))
-        else:
-            pins=PIN.findall(body);need(len(pins)==len(set(pins)),'Duplicate actual net pin')
-            residue=' '.join(PIN.sub('',body).split())
-            nets[name]=dict(pins=sorted(pins),residue=residue)
+        try:
+            if kind=='design':
+                design.append(lexical_tokens(body));continue
+            if kind=='inst':
+                g=re.fullmatch(r'inst\s+"([^"]+)"\s+"([^"]+)"\s*,\s*(.*?)\s*,\s*cfg\s+"((?:\\.|[^"\\])*)"\s*;',body,re.S)
+                need(g is not None,'Unknown complete instance grammar')
+                where=' '.join(g[3].split());tokens=configuration_tokens(g[4])
+                instances[name]=dict(type=g[2],placement=where,cfg=sorted(tokens))
+            else:
+                tokens=lexical_tokens(body);pins=[];residue=[];index=0
+                while index<len(tokens):
+                    token=tokens[index]
+                    if token in ('outpin','inpin'):
+                        need(index+2<len(tokens),'Incomplete actual net pin')
+                        comp=tokens[index+1];pin=tokens[index+2]
+                        need(re.fullmatch(r'"[^"\s\\]+"',comp) and re.fullmatch(r'[A-Za-z0-9_]+',pin),
+                             'Unknown actual net-pin identifier grammar')
+                        pins.append((token,comp[1:-1],pin));index+=3
+                    elif token=='cfg':
+                        need(index+1<len(tokens),'Incomplete net configuration')
+                        config=tokens[index+1]
+                        need(config.startswith('"') and config.endswith('"'),'Unquoted net configuration')
+                        residue.extend(['cfg',configuration_tokens(config[1:-1])]);index+=2
+                    else:
+                        residue.append(token);index+=1
+                need(len(pins)==len(set(pins)),'Duplicate actual net pin')
+                nets[name]=dict(pins=sorted(pins),residue=json.dumps(residue,separators=(',',':')))
+        except ValueError as problem:
+            if rejected is not None:
+                b=body.encode()
+                save(str(rejected)+'-identity.json',dict(kind=kind,name=name,bytes=len(b),sha256=sha(b),
+                     error=str(problem),wholeRecordRetained=len(b)<=3000000))
+                if len(b)<=3000000:Path(str(rejected)+'-raw.txt').write_bytes(b)
+            raise
     need(all(not line.strip() or line.lstrip().startswith('#') for line in text[cursor:].splitlines()),
          'Unknown trailing design data')
+    need(len(design)==1,'Design header count changed')
     if full:
-        need(len(design)==1 and len(instances)==3603 and len(nets)==8657,'Original full inventory changed')
+        need(len(instances)==3603 and len(nets)==8657,'Original full inventory changed')
     return dict(design=design,instances=instances,nets=nets),raw
+
+def parser_controls(output):
+    # Actual bounded original record, independently retained before this parser.
+    actual_escaped='inst "snes_spi/Result<0>1_FRB" "SLICEL",placed R17C19 SLICE_X36Y30  ,\n  cfg " BXINV::BX BYINV::#OFF CEINV::CE CLKINV::CLK COUTUSED::0 CY0F::1\n       CY0G::0 CYINIT::BX CYSELF::F CYSELG::G DXMUX::1 DYMUX::1 F:snes_spi/Mcount_byte_cnt_r_lut<0>_INV_0:#LUT:D=~A1\n       F5USED::#OFF FFX:snes_spi/Result<0>1_FRB:#FF FFX_INIT_ATTR::INIT1\n       FFX_SR_ATTR::SRHIGH FFY:snes_spi/Result<1>1_FRB:#FF FFY_INIT_ATTR::INIT0\n       FFY_SR_ATTR::SRLOW FXMUX::FXOR FXUSED::#OFF G:snes_spi/Result<1>1_FRB_rt:#LUT:D=A1\n       _BEL_PROP::G:PK_PACKTHRU: GYMUX::GXOR REVUSED::#OFF SRINV::SR SYNC_ATTR::SYNC\n       XBUSED::#OFF XUSED::#OFF YBUSED::#OFF YUSED::#OFF C1VDD:ProtoComp532.C1VDD:\n       CYMUXF:snes_spi/Mcount_byte_cnt_r_cy<0>: CYMUXG:snes_spi/Mcount_byte_cnt_r_cy<1>:\n       GNDG:ProtoComp532.GNDG: XORF:snes_spi/Mcount_byte_cnt_r_xor<0>: XORG:snes_spi/Mcount_byte_cnt_r_xor<1>:\n       _INST_PROP::XDL_SHAPE_DESC:Shape_20:CARRY,A\\ carry\\ chain\\ starting\\ with\\ carry\\ mux\\ \\"snes_spi/Mcount_byte_cnt_r_cy<0>\\"\n       _INST_PROP::XDL_SHAPE_MEMBER:Shape_20:0,0 "\n  ;'
+    base='design "main" xc3s400pq208-4 v3.2;\n'
+    inst='inst "a" "SLICEL",placed R1C1 SLICE_X0Y0, cfg " F:f:#LUT:D=A1 ";\n'
+    net='net "n", outpin "a" X, inpin "b" F1;\n'
+    cases=[
+        ('plain complete grammar',base+inst+net,True),
+        ('actual escaped original carry-shape metadata',base+actual_escaped+'\n'+net,True),
+        ('quoted pin text remains opaque',base+inst+'net "n", cfg " _PROP::inpin\\ \\"ignored\\"\\ BX ", outpin "a" X;\n',True),
+        ('semicolon inside quoted CFG',base+inst.replace('F:f:#LUT:D=A1','_PROP::opaque;value')+net,True),
+        ('empty export','',False),
+        ('missing design',inst+net,False),
+        ('incomplete instance',base+inst[:-3]+'\n'+net,False),
+        ('duplicate instance',base+inst+inst+net,False),
+        ('duplicate net',base+inst+net+net,False),
+        ('duplicate actual pin',base+inst+'net "n", outpin "a" X, outpin "a" X;\n',False),
+        ('unknown inter-record data',base+'CORRUPT\n'+inst+net,False),
+        ('broken escaped string',base+inst.replace('D=A1 "',r'D=A1 \"')+net,False),
+        ('unparsed trailing data',base+inst+net+'CORRUPT',False)]
+    rows=[]
+    for name,text,expected in cases:
+        error=None;model=None
+        try:model,_=parse(text,full=False);accepted=True
+        except ValueError as problem:accepted=False;error=str(problem)
+        passed=accepted==expected
+        if name=='quoted pin text remains opaque' and accepted:
+            passed=passed and model['nets']['n']['pins']==[('outpin','a','X')]
+        if name=='actual escaped original carry-shape metadata' and accepted:
+            tokens=model['instances']['snes_spi/Result<0>1_FRB']['cfg']
+            passed=passed and len([x for x in tokens if x.startswith('_INST_PROP::XDL_SHAPE_DESC:')])==1
+        rows.append(dict(name=name,expectedAcceptance=expected,accepted=accepted,passed=passed,error=error))
+    save(output/'parser-controls.json',dict(controls=rows,passed=all(x['passed'] for x in rows),
+         actualEscapedRecordBytes=len(actual_escaped.encode()),actualEscapedRecordSha256=sha(actual_escaped.encode())))
+    need(all(x['passed'] for x in rows),'Hosted complete-record lexer controls failed')
 
 def cfg_map(row):
     out={}
@@ -317,8 +401,9 @@ def tool(scratch,report,label,argv,help_only=False,expected_exit=0):
 def collect(archive,api,scratch,output,tcl_path):
     output.mkdir(parents=True,exist_ok=False);scratch.mkdir(parents=True,exist_ok=False)
     original=scratch/'original';original.mkdir();control=scratch/'control';control.mkdir();changed=scratch/'changed';changed.mkdir()
+    parser_controls(output)
     identities=load_original(archive,api,original);save(output/'original-input-identities.json',identities)
-    original_text=(original/'map.xdl').read_text();before,before_raw=parse(original_text)
+    original_text=(original/'map.xdl').read_text();before,before_raw=parse(original_text,rejected=output/"original-rejected")
     body=canonical_body(original_text);fingerprint=sha(body.encode())
     (scratch/'source-body.sha256').write_text(fingerprint+'\n')
     save(output/'source-body-fingerprint.json',dict(sha256=fingerprint,bytes=len(body.encode()),
@@ -333,7 +418,7 @@ def collect(archive,api,scratch,output,tcl_path):
     help_text=(output/'help-stdout.txt').read_text()+(output/'help-stderr.txt').read_text()
     need('-xdl2ncd' in help_text and '-ncd2xdl' in help_text,'Actual installed XDL conversion help not confirmed')
     tool(scratch,output,'fresh-export',['xdl','-ncd2xdl','/scratch/original/main_map.ncd','/scratch/fresh-original.xdl'])
-    fresh_text=(scratch/'fresh-original.xdl').read_text();fresh,fresh_raw=parse(fresh_text)
+    fresh_text=(scratch/'fresh-original.xdl').read_text();fresh,fresh_raw=parse(fresh_text,rejected=output/"fresh-rejected")
     indexes(fresh_raw,output,'fresh')
     require_equal(fresh,before,'fresh original NCD export')
     need(sha(canonical_body(fresh_text).encode())==fingerprint,'Fresh exact original design-body bytes differ')
@@ -351,7 +436,7 @@ def collect(archive,api,scratch,output,tcl_path):
     need('TCL_VERSION=8.4.14\n' in tcl_stdout and 'SOURCE_BODY_SHA256='+fingerprint+'\n' in tcl_stdout
          and 'DECLARED_COMPONENTS=2 DECLARED_NETS=7 MOVED_FF_BITS=2\n' in tcl_stdout,
          'Actual runtime Tcl/version/fingerprint report missing')
-    changed_text=(changed/'moved.xdl').read_text();planned,planned_raw=parse(changed_text)
+    changed_text=(changed/'moved.xdl').read_text();planned,planned_raw=parse(changed_text,rejected=output/"planned-rejected")
     contract=validate_move(before,planned,'actual Tcl output')
     changed_records=[dict(kind=k,name=n) for (k,n),raw in before_raw.items() if raw!=planned_raw[k,n]]
     need(set((x['kind'],x['name']) for x in changed_records)=={('inst',SRC),('inst',DST)}|{('net',n) for n in MOVES},
@@ -359,12 +444,12 @@ def collect(archive,api,scratch,output,tcl_path):
     save(output/'pre-conversion-conservation.json',dict(changedRecords=changed_records,ffContract=contract,accepted=True))
     tool(scratch,output,'control-import',['xdl','-xdl2ncd','/scratch/original/map.xdl','/scratch/control/main_map.ncd'])
     tool(scratch,output,'control-export',['xdl','-ncd2xdl','/scratch/control/main_map.ncd','/scratch/control/control.xdl'])
-    control_model,control_raw=parse((control/'control.xdl').read_text())
+    control_model,control_raw=parse((control/'control.xdl').read_text(),rejected=output/'control-rejected')
     require_equal(control_model,before,'actual unmodified conversion control')
     indexes(control_raw,output,'control')
     tool(scratch,output,'move-import',['xdl','-xdl2ncd','/scratch/changed/moved.xdl','/scratch/changed/main_map.ncd'])
     tool(scratch,output,'move-export',['xdl','-ncd2xdl','/scratch/changed/main_map.ncd','/scratch/changed/reexport.xdl'])
-    final_text=(changed/'reexport.xdl').read_text();after,after_raw=parse(final_text)
+    final_text=(changed/'reexport.xdl').read_text();after,after_raw=parse(final_text,rejected=output/"converted-rejected")
     contract=validate_move(before,after,'actual converted relocation')
     indexes(after_raw,output,'converted');bounded(after_raw,after,output,'converted')
     for name,identity in identities.items():

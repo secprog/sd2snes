@@ -27,13 +27,14 @@ jobs:
           import hashlib,json,os,subprocess,sys
           from pathlib import Path
           def git(*args):return subprocess.check_output(['git',*args])
-          parent='4d0199bf639629284546858b2b92abcd840b48a9'
+          base='4d0199bf639629284546858b2b92abcd840b48a9'
+          parent='b154e867507257234d60e79dcf83dfb999751552'
           expected={
-              '.github/scripts/inspect-dspx-retained-ff-relocation.py':'cc8974b90ec30e14f2cdc683eeccf97c2955aecf',
+              '.github/scripts/inspect-dspx-retained-ff-relocation.py':'ca65e8a6132df6e19facdf22896cef4d00894815',
               'verilog/sd2snes_dspx/dma4_ff_relocation.tcl':'e29662ffe5b0fe2a67da531eb48a876b281707f7'}
           assert git('rev-parse','HEAD').decode().strip()==os.environ['GITHUB_SHA']
           assert git('rev-parse','HEAD^').decode().strip()==parent
-          changed=set(git('diff','--name-only',parent,'HEAD').decode().splitlines())
+          changed=set(git('diff','--name-only',base,'HEAD').decode().splitlines())
           assert changed==set(expected)|{'.github/workflows/validate-dspx-stack-timing.yml'}
           rows=[]
           for name,want in expected.items():
@@ -44,10 +45,10 @@ jobs:
           for name in ['verilog/common.mk','verilog/sd2snes_dspx/Makefile',
                        'verilog/sd2snes_dsp/main.v','verilog/sd2snes_dsp/upd77c25.v',
                        '.github/scripts/post-sync-evidence.py','.github/actions/prepare-build-image/action.yml']:
-              assert Path(name).read_bytes()==git('show',parent+':'+name)
-          assert git('diff',parent,'HEAD','--','verilog/sd2snes_dsp','verilog/sd2snes_base')==b''
+              assert Path(name).read_bytes()==git('show',base+':'+name)
+          assert git('diff',base,'HEAD','--','verilog/sd2snes_dsp','verilog/sd2snes_base')==b''
           assert not Path('verilog/sd2snes_dspx/ucf.extra').exists()
-          result=dict(head=os.environ['GITHUB_SHA'],parent=parent,files=rows,
+          result=dict(head=os.environ['GITHUB_SHA'],parent=parent,base=base,files=rows,
               exactChangedFiles=sorted(changed),allOtherTrackedFilesEqualParent=True,
               productionRtlMakefilesConstraintsAndOriginalParTraceUnchanged=True,
               productionHookWired=False,nativeEligible=False,noTimingResult=True)
